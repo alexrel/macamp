@@ -178,6 +178,24 @@ public class AudioEngine {
         playbackTimer = nil
     }
     
+    public func togglePause() {
+        if status == .playing {
+            pause()
+        } else if status == .paused {
+            play()
+        }
+    }
+    
+    public var currentTime: TimeInterval {
+        guard let nodeTime = playerNode.lastRenderTime,
+              let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return 0 }
+        return Double(startFrameOffset + playerTime.sampleTime) / sampleRate
+    }
+    
+    public var volume: Double {
+        Double(engine.mainMixerNode.outputVolume)
+    }
+    
     public func stop() {
         playerNode.stop()
         status = .stopped

@@ -19,6 +19,8 @@ public class WinampWindow: NSWindow {
         self.isMovable = false // We handle movement via custom magnetic drag
         self.isReleasedWhenClosed = false
         
+        self.registerForDraggedTypes([.fileURL])
+        
         WindowLayoutManager.shared.register(window: self, for: windowID)
     }
     
@@ -46,5 +48,27 @@ public class WinampWindow: NSWindow {
     public func endWindowDrag(with event: NSEvent) {
         WindowLayoutManager.shared.endDrag(for: windowID)
         dragStartOrigins.removeAll()
+    }
+    
+    // MARK: - Drag & Drop Destination
+    public func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        return .copy
+    }
+    
+    public func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let pasteboard = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] else {
+            return false
+        }
+        let paths = pasteboard.map { $0.path }
+        PlayerCoordinator.shared.handleDroppedFiles(paths)
+        return true
+    }
+    
+    // MARK: - Keyboard Shortcuts
+    public override func keyDown(with event: NSEvent) {
+        if PlayerCoordinator.shared.handleKeyDown(event) {
+            return
+        }
+        super.keyDown(with: event)
     }
 }

@@ -17,6 +17,10 @@ open class WinampControlView: NSView {
         self.wantsLayer = true
         self.layerContentsRedrawPolicy = .onSetNeedsDisplay
     }
+    
+    open override func rightMouseDown(with event: NSEvent) {
+        PlayerCoordinator.shared.showMainContextMenu(at: NSEvent.mouseLocation)
+    }
 }
 
 // MARK: - SkinButton

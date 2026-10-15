@@ -21,6 +21,7 @@ public struct AppState: Codable {
     public var isEqWindowShade: Bool = false
     public var isPlaylistVisible: Bool = true
     public var isPlaylistShade: Bool = false
+    public var isAlwaysOnTop: Bool = false
     
     public var windowPositions: [String: [Double]] = [:]
     public var playlistWindowSize: [Double] = [Double(AppConstants.Window.width), Double(AppConstants.Window.height)]
