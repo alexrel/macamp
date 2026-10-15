@@ -105,7 +105,7 @@ public class WindowLayoutManager: NSObject {
     }
     
     // MARK: - Adjacency Graph
-    private func updateAdjacencies() {
+    public func updateAdjacencies() {
         adjacencies.removeAll()
         for id in windows.keys {
             adjacencies[id] = []
@@ -235,7 +235,7 @@ public class WindowLayoutManager: NSObject {
     
     public func handleWindowHeightChange(id: WindowID, newHeightUnscaled: CGFloat) {
         guard let win = windows[id] else { return }
-        let scale = currentScale
+        let scale = (id == .playlist) ? 1.0 : currentScale
         let newH = newHeightUnscaled * scale
         let oldFrame = win.frame
         let diff = oldFrame.height - newH
@@ -251,7 +251,7 @@ public class WindowLayoutManager: NSObject {
         win.setFrame(newTargetFrame, display: true, animate: false)
         
         if let content = win.contentView {
-            let unscaledW = win.frame.width / scale
+            let unscaledW = (id == .playlist) ? win.frame.width : (win.frame.width / scale)
             content.bounds = NSRect(x: 0, y: 0, width: unscaledW, height: newHeightUnscaled)
             content.needsDisplay = true
         }
@@ -278,23 +278,39 @@ public class WindowLayoutManager: NSObject {
         let anchorX = mainWin.frame.minX
         let anchorY = mainWin.frame.maxY
         
-        for (_, win) in windows {
-            let deltaX = (win.frame.minX - anchorX) / oldScale
-            let deltaY = (anchorY - win.frame.maxY) / oldScale
-            let unscaledW = win.frame.width / oldScale
-            let unscaledH = win.frame.height / oldScale
-            
-            let newW = unscaledW * newScale
-            let newH = unscaledH * newScale
-            let newMinX = anchorX + (deltaX * newScale)
-            let newMaxY = anchorY - (deltaY * newScale)
-            let newMinY = newMaxY - newH
-            
-            win.setFrame(NSRect(x: newMinX, y: newMinY, width: newW, height: newH), display: true, animate: false)
-            
-            if let content = win.contentView {
-                content.bounds = NSRect(x: 0, y: 0, width: unscaledW, height: unscaledH)
-                content.needsDisplay = true
+        for (id, win) in windows {
+            if id == .playlist {
+                // Playlist window remains at 1x resolution (canDouble = false in Winamp)
+                let deltaX = (win.frame.minX - anchorX) / oldScale
+                let deltaY = (anchorY - win.frame.maxY) / oldScale
+                
+                let newMinX = anchorX + (deltaX * newScale)
+                let newMaxY = anchorY - (deltaY * newScale)
+                let newMinY = newMaxY - win.frame.height
+                
+                win.setFrame(NSRect(x: newMinX, y: newMinY, width: win.frame.width, height: win.frame.height), display: true, animate: false)
+                if let content = win.contentView {
+                    content.bounds = NSRect(x: 0, y: 0, width: win.frame.width, height: win.frame.height)
+                    content.needsDisplay = true
+                }
+            } else {
+                let deltaX = (win.frame.minX - anchorX) / oldScale
+                let deltaY = (anchorY - win.frame.maxY) / oldScale
+                let unscaledW = win.frame.width / oldScale
+                let unscaledH = win.frame.height / oldScale
+                
+                let newW = unscaledW * newScale
+                let newH = unscaledH * newScale
+                let newMinX = anchorX + (deltaX * newScale)
+                let newMaxY = anchorY - (deltaY * newScale)
+                let newMinY = newMaxY - newH
+                
+                win.setFrame(NSRect(x: newMinX, y: newMinY, width: newW, height: newH), display: true, animate: false)
+                
+                if let content = win.contentView {
+                    content.bounds = NSRect(x: 0, y: 0, width: unscaledW, height: unscaledH)
+                    content.needsDisplay = true
+                }
             }
         }
         

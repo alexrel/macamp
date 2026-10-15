@@ -52,6 +52,9 @@ public class VisualizerView: WinampControlView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
         
+        context.saveGState()
+        context.clip(to: bounds)
+        
         let colors = SkinManager.shared.currentSkin?.visualizerColors.colors ?? VisualizerColors.defaultColors()
         
         // Background (black / color 0)
@@ -59,31 +62,42 @@ public class VisualizerView: WinampControlView {
         context.setFillColor(bgColor.cgColor)
         context.fill(bounds)
         
-        guard mode != .off else { return }
+        guard mode != .off else {
+            context.restoreGState()
+            return
+        }
         
         if mode == .spectrum {
             drawSpectrum(in: context, colors: colors)
         } else if mode == .oscilloscope {
             drawOscilloscope(in: context, colors: colors)
         }
+        
+        context.restoreGState()
     }
     
     private func drawSpectrum(in context: CGContext, colors: [NSColor]) {
-        let maxBarHeight: CGFloat = 16.0
-        let barW: CGFloat = 3.0
+        let isCompact = bounds.height <= 8
+        let maxBarHeight: CGFloat = isCompact ? bounds.height : 16.0
+        let barW: CGFloat = isCompact ? 1.0 : 3.0
+        let stepX: CGFloat = isCompact ? 2.0 : 4.0
         let dotColor = colors.count > 1 ? colors[1].cgColor : NSColor.white.cgColor
         
         for i in 0..<AppConstants.Visualizer.numSpectrumBars {
             let amp = i < spectrumAmplitudes.count ? spectrumAmplitudes[i] : 0.0
             let barH = round(CGFloat(amp) * maxBarHeight)
-            let x = CGFloat(i * 4)
+            let x = CGFloat(i) * stepX
             
             // Draw gradient-colored bar from bottom to top
             if barH > 0 {
                 for y in 0..<Int(barH) {
                     let py = bounds.height - 1.0 - CGFloat(y)
-                    // Map y to color index: 17 (bottom) to 2 (top)
-                    let colorIndex = 17 - min(15, y)
+                    let colorIndex: Int
+                    if isCompact {
+                        colorIndex = 17 - min(15, Int(round(Double(y) / max(1.0, maxBarHeight - 1.0) * 15.0)))
+                    } else {
+                        colorIndex = 17 - min(15, y)
+                    }
                     let col = colorIndex < colors.count ? colors[colorIndex].cgColor : NSColor.green.cgColor
                     context.setFillColor(col)
                     context.fill(CGRect(x: x, y: py, width: barW, height: 1.0))
@@ -105,10 +119,17 @@ public class VisualizerView: WinampControlView {
         context.setFillColor(oscColor)
         
         let midY = bounds.height / 2.0
-        let halfH = (bounds.height / 2.0) - 1.0
+        let halfH = max(1.0, (bounds.height / 2.0) - 1.0)
+        let count = Int(bounds.width)
         
-        for x in 0..<min(Int(bounds.width), waveformPoints.count) {
-            let sample = CGFloat(waveformPoints[x])
+        for x in 0..<count {
+            let sampleIdx: Int
+            if waveformPoints.count > 0 {
+                sampleIdx = min(waveformPoints.count - 1, Int(Float(x) / Float(max(1, count)) * Float(waveformPoints.count)))
+            } else {
+                sampleIdx = 0
+            }
+            let sample = CGFloat(sampleIdx < waveformPoints.count ? waveformPoints[sampleIdx] : 0)
             let y = round(midY + sample * halfH)
             let clampedY = max(0, min(bounds.height - 1, y))
             context.fill(CGRect(x: CGFloat(x), y: clampedY, width: 1.0, height: 1.0))

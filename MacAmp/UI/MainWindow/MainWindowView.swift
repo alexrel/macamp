@@ -247,9 +247,9 @@ public class MainWindowView: WinampControlView {
             shadeButton.normalSlice = SpriteCatalog.mainShadeButtonSelected
             shadeButton.pressedSlice = SpriteCatalog.mainShadeButtonSelectedDepressed
             
-            // Move visualizer to shade header (x: 79, y: 5)
-            visualizer.frame = NSRect(x: 79, y: 5, width: CGFloat(AppConstants.Visualizer.width), height: 8)
-            timeDisplay.frame = NSRect(x: 127, y: 4, width: 35, height: 6)
+            // Move visualizer to shade header (x: 79, y: 5, w: 38, h: 5)
+            visualizer.frame = NSRect(x: 79, y: 5, width: 38, height: 5)
+            timeDisplay.frame = NSRect(x: 125, y: 4, width: 35, height: 6)
             
             // Position mini seek bar
             seekSlider.isHidden = false

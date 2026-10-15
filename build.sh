@@ -52,6 +52,7 @@ clean_artifacts() {
 
 build_debug() {
     log_step "Building Debug configuration"
+    rm -rf "$DEBUG_APP"
     xcodebuild -scheme "$SCHEME" \
                -configuration Debug \
                -derivedDataPath "$DERIVED_DATA" \

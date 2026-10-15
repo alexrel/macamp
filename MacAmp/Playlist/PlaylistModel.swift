@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 
 public struct TrackItem: Codable, Identifiable, Equatable {
     public let id: UUID
@@ -13,6 +14,19 @@ public struct TrackItem: Codable, Identifiable, Equatable {
         self.title = title
         self.artist = artist
         self.duration = duration
+    }
+    
+    /// Creates a TrackItem and extracts duration from audio file header immediately
+    public static func create(from url: URL) -> TrackItem {
+        var duration: TimeInterval = 0
+        if let file = try? AVAudioFile(forReading: url) {
+            let sr = file.processingFormat.sampleRate
+            if sr > 0 {
+                duration = Double(file.length) / sr
+            }
+        }
+        let title = url.deletingPathExtension().lastPathComponent
+        return TrackItem(url: url, title: title, artist: "Unknown Artist", duration: duration)
     }
     
     public var formattedDuration: String {
@@ -49,8 +63,23 @@ public class PlaylistModel: ObservableObject {
         tracks.reduce(0) { $0 + $1.duration }
     }
     
-    public var formattedTotalDuration: String {
-        let total = Int(totalDuration)
+    public var selectedDuration: TimeInterval {
+        if selectedIndices.isEmpty {
+            if let cur = currentTrack {
+                return cur.duration
+            }
+            return 0
+        }
+        return selectedIndices.reduce(0) { sum, idx in
+            if idx >= 0 && idx < tracks.count {
+                return sum + tracks[idx].duration
+            }
+            return sum
+        }
+    }
+    
+    public static func formatTime(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds)
         let hours = total / 3600
         let mins = (total % 3600) / 60
         let secs = total % 60
@@ -59,6 +88,16 @@ public class PlaylistModel: ObservableObject {
         } else {
             return String(format: "%d:%02d", mins, secs)
         }
+    }
+    
+    public var formattedTotalDuration: String {
+        PlaylistModel.formatTime(totalDuration)
+    }
+    
+    public var runningTimeMessage: String {
+        let selStr = PlaylistModel.formatTime(selectedDuration)
+        let totalStr = PlaylistModel.formatTime(totalDuration)
+        return "\(selStr)/\(totalStr)"
     }
     
     // MARK: - Mutating Methods

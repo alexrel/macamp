@@ -29,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let tracks = PlaylistIO.loadPlaylist(from: url)
                 PlayerCoordinator.shared.playlist.add(tracks: tracks)
             } else {
-                let track = TrackItem(url: url, title: url.deletingPathExtension().lastPathComponent)
+                let track = TrackItem.create(from: url)
                 PlayerCoordinator.shared.playlist.add(track: track)
             }
         }

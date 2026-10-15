@@ -4,7 +4,7 @@ public enum PlaylistIO {
     
     /// Parses an M3U or PLS file from a URL.
     public static func loadPlaylist(from url: URL) -> [TrackItem] {
-        guard let content = try? String(contentsOf: url, encoding: .utf8) ?? String(contentsOf: url, encoding: .isoLatin1) else {
+        guard let content = (try? String(contentsOf: url, encoding: .utf8)) ?? (try? String(contentsOf: url, encoding: .isoLatin1)) else {
             return []
         }
         

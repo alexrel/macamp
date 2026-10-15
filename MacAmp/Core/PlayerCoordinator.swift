@@ -55,9 +55,12 @@ public class PlayerCoordinator: NSObject {
         eqWindow.contentView = eqView
         
         // 3. Playlist Window (docked directly below EQ: y = originY - 2 * height)
-        let plRect = NSRect(x: originX, y: originY - (2 * AppConstants.Window.height), width: AppConstants.Window.width, height: AppConstants.Window.height)
+        let plW = CGFloat(persistence.state.playlistWindowSize.first ?? Double(AppConstants.Window.width))
+        let plH = CGFloat(persistence.state.playlistWindowSize.last ?? Double(AppConstants.Window.height))
+        let plRect = NSRect(x: originX, y: originY - (2 * AppConstants.Window.height) - (plH - AppConstants.Window.height), width: plW, height: plH)
         plWindow = WinampWindow(windowID: .playlist, contentRect: plRect)
         plView = PlaylistWindowView(playlist: playlist)
+        plView.frame = NSRect(x: 0, y: 0, width: plW, height: plH)
         plView.autoresizesSubviews = false
         plWindow.contentView = plView
         
@@ -73,6 +76,7 @@ public class PlayerCoordinator: NSObject {
         audioEngine.onTimeUpdate = { [weak self] currentSec in
             guard let self else { return }
             self.mainView.timeDisplay.currentTime = currentSec
+            self.plView.currentTime = currentSec
             if let meta = self.audioEngine.currentMetadata, meta.duration > 0 {
                 self.mainView.seekSlider.value = currentSec / meta.duration
             }
@@ -308,12 +312,12 @@ public class PlayerCoordinator: NSObject {
                         if let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil) {
                             for case let fileURL as URL in enumerator {
                                 if audioExtensions.contains(fileURL.pathExtension.lowercased()) {
-                                    tracksToAdd.append(TrackItem(url: fileURL, title: fileURL.deletingPathExtension().lastPathComponent))
+                                    tracksToAdd.append(TrackItem.create(from: fileURL))
                                 }
                             }
                         }
                     } else if audioExtensions.contains(ext) {
-                        tracksToAdd.append(TrackItem(url: url, title: url.deletingPathExtension().lastPathComponent))
+                        tracksToAdd.append(TrackItem.create(from: url))
                     }
                 }
             }
