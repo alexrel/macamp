@@ -23,12 +23,16 @@ open class WinampControlView: NSView {
         super.init(frame: frameRect)
         self.wantsLayer = true
         self.layerContentsRedrawPolicy = .onSetNeedsDisplay
+        self.layer?.magnificationFilter = .nearest
+        self.layer?.minificationFilter = .nearest
     }
     
     public required init?(coder: NSCoder) {
         super.init(coder: coder)
         self.wantsLayer = true
         self.layerContentsRedrawPolicy = .onSetNeedsDisplay
+        self.layer?.magnificationFilter = .nearest
+        self.layer?.minificationFilter = .nearest
     }
     
     open override func rightMouseDown(with event: NSEvent) {

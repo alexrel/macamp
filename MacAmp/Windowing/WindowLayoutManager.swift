@@ -8,6 +8,13 @@ public class WindowLayoutManager: NSObject {
     private let snapThreshold: CGFloat = AppConstants.Window.snapDistance
     private let adjacencyTolerance: CGFloat = 2.0
     
+    private var effectiveSnapThreshold: CGFloat {
+        snapThreshold * currentScale
+    }
+    private var effectiveAdjacencyTolerance: CGFloat {
+        adjacencyTolerance * currentScale
+    }
+    
     public private(set) var windows: [WindowID: NSWindow] = [:]
     private var adjacencies: [WindowID: Set<WindowID>] = [:]
     
@@ -64,7 +71,7 @@ public class WindowLayoutManager: NSObject {
             
             // Snap against screen visible frame
             if let screen = win.screen {
-                let screenSnap = calculateScreenSnap(target: win.frame, screenFrame: screen.visibleFrame, threshold: snapThreshold)
+                let screenSnap = calculateScreenSnap(target: win.frame, screenFrame: screen.visibleFrame, threshold: effectiveSnapThreshold)
                 let dist = hypot(screenSnap.x, screenSnap.y)
                 if dist > 0 && dist < minDistance {
                     minDistance = dist
@@ -74,7 +81,7 @@ public class WindowLayoutManager: NSObject {
             
             // Snap against other (non-group) windows
             for (otherId, otherWin) in windows where !groupIDs.contains(otherId) {
-                let snap = calculateWindowSnap(target: win.frame, other: otherWin.frame, threshold: snapThreshold)
+                let snap = calculateWindowSnap(target: win.frame, other: otherWin.frame, threshold: effectiveSnapThreshold)
                 let dist = hypot(snap.x, snap.y)
                 if dist > 0 && dist < minDistance {
                     minDistance = dist
@@ -111,7 +118,7 @@ public class WindowLayoutManager: NSObject {
                 let idB = allIDs[j]
                 guard let frameA = windows[idA]?.frame, let frameB = windows[idB]?.frame else { continue }
                 
-                if areFramesAdjacent(frameA, frameB, tolerance: adjacencyTolerance) {
+                if areFramesAdjacent(frameA, frameB, tolerance: effectiveAdjacencyTolerance) {
                     adjacencies[idA]?.insert(idB)
                     adjacencies[idB]?.insert(idA)
                 }
@@ -200,5 +207,81 @@ public class WindowLayoutManager: NSObject {
         }
         
         return snap
+    }
+    
+    // MARK: - Window Scaling (1x / 2x)
+    public func setScale(_ newScale: CGFloat) {
+        guard newScale != currentScale else { return }
+        let oldScale = currentScale
+        currentScale = newScale
+        
+        guard let mainWin = windows[.main] else { return }
+        let anchorX = mainWin.frame.minX
+        let anchorY = mainWin.frame.maxY
+        
+        for (_, win) in windows {
+            let deltaX = (win.frame.minX - anchorX) / oldScale
+            let deltaY = (anchorY - win.frame.maxY) / oldScale
+            let unscaledW = win.frame.width / oldScale
+            let unscaledH = win.frame.height / oldScale
+            
+            let newW = unscaledW * newScale
+            let newH = unscaledH * newScale
+            let newMinX = anchorX + (deltaX * newScale)
+            let newMaxY = anchorY - (deltaY * newScale)
+            let newMinY = newMaxY - newH
+            
+            win.setFrame(NSRect(x: newMinX, y: newMinY, width: newW, height: newH), display: true, animate: false)
+            
+            if let content = win.contentView {
+                let factor = content.bounds.width / unscaledW
+                if abs(factor - 1.0) > 0.001 {
+                    content.scaleUnitSquare(to: NSSize(width: factor, height: factor))
+                }
+                content.needsDisplay = true
+            }
+        }
+        
+        clampToScreen()
+        updateAdjacencies()
+    }
+    
+    public func clampToScreen() {
+        guard let mainWin = windows[.main], let screen = mainWin.screen ?? NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        
+        var minX = CGFloat.infinity
+        var maxX = -CGFloat.infinity
+        var minY = CGFloat.infinity
+        var maxY = -CGFloat.infinity
+        
+        for (_, win) in windows {
+            minX = min(minX, win.frame.minX)
+            maxX = max(maxX, win.frame.maxX)
+            minY = min(minY, win.frame.minY)
+            maxY = max(maxY, win.frame.maxY)
+        }
+        
+        var shiftX: CGFloat = 0
+        var shiftY: CGFloat = 0
+        
+        if maxY > visible.maxY {
+            shiftY = visible.maxY - maxY
+        }
+        if minY + shiftY < visible.minY {
+            shiftY = visible.minY - minY
+        }
+        if minX < visible.minX {
+            shiftX = visible.minX - minX
+        } else if maxX > visible.maxX {
+            shiftX = visible.maxX - maxX
+        }
+        
+        if shiftX != 0 || shiftY != 0 {
+            for (_, win) in windows {
+                let origin = win.frame.origin
+                win.setFrameOrigin(NSPoint(x: origin.x + shiftX, y: origin.y + shiftY))
+            }
+        }
     }
 }

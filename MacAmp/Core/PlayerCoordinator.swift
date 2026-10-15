@@ -713,7 +713,17 @@ public class PlayerCoordinator: NSObject {
         frame.origin.y += diff
         frame.size.height = newH * scale
         mainWindow.setFrame(frame, display: true, animate: false)
+        
+        if let content = mainWindow.contentView {
+            let factor = content.bounds.width / AppConstants.Window.width
+            if abs(factor - 1.0) > 0.001 {
+                content.scaleUnitSquare(to: NSSize(width: factor, height: factor))
+            }
+            content.needsDisplay = true
+        }
+        
         persistence.state.isMainWindowShade = newShade
+        persistence.saveSession()
     }
     
     public func toggleEqShade() {
@@ -728,7 +738,17 @@ public class PlayerCoordinator: NSObject {
         frame.origin.y += diff
         frame.size.height = newH * scale
         eqWindow.setFrame(frame, display: true, animate: false)
+        
+        if let content = eqWindow.contentView {
+            let factor = content.bounds.width / AppConstants.Window.width
+            if abs(factor - 1.0) > 0.001 {
+                content.scaleUnitSquare(to: NSSize(width: factor, height: factor))
+            }
+            content.needsDisplay = true
+        }
+        
         persistence.state.isEqWindowShade = newShade
+        persistence.saveSession()
     }
     
     public func togglePlShade() {
@@ -743,25 +763,25 @@ public class PlayerCoordinator: NSObject {
         frame.origin.y += diff
         frame.size.height = newH * scale
         plWindow.setFrame(frame, display: true, animate: false)
+        
+        if let content = plWindow.contentView {
+            let factor = content.bounds.width / AppConstants.Window.width
+            if abs(factor - 1.0) > 0.001 {
+                content.scaleUnitSquare(to: NSSize(width: factor, height: factor))
+            }
+            content.needsDisplay = true
+        }
+        
         persistence.state.isPlaylistShade = newShade
+        persistence.saveSession()
     }
     
     // MARK: - Double Size Toggle (1x / 2x)
     public func toggleDoubleSize() {
-        let current = windowManager.currentScale
-        let newScale: CGFloat = (current == 1.0) ? 2.0 : 1.0
-        windowManager.currentScale = newScale
-        
-        for (_, win) in windowManager.windows {
-            var frame = win.frame
-            let oldW = frame.width / current
-            let oldH = frame.height / current
-            frame.size.width = oldW * newScale
-            frame.size.height = oldH * newScale
-            win.setFrame(frame, display: true, animate: false)
-        }
-        
+        let newScale: CGFloat = (windowManager.currentScale == 1.0) ? 2.0 : 1.0
+        windowManager.setScale(newScale)
         persistence.state.scaleFactor = (newScale == 2.0) ? .x2 : .x1
+        persistence.saveSession()
     }
     
     // MARK: - State Restoration
@@ -804,7 +824,7 @@ public class PlayerCoordinator: NSObject {
         
         // Scale
         if s.scaleFactor == .x2 {
-            toggleDoubleSize()
+            windowManager.setScale(2.0)
         }
         
         // Skin restoration
