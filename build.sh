@@ -58,7 +58,11 @@ build_debug() {
                build | grep -E '\*\*\s*BUILD|error:|warning:' || true
     
     if [ -d "$DEBUG_APP" ]; then
-        log_ok "Debug build succeeded: $DEBUG_APP"
+        mkdir -p "$BUILD_DIR"
+        rm -rf "$BUILD_DIR/$APP_NAME.app"
+        cp -R "$DEBUG_APP" "$BUILD_DIR/"
+        ln -sf "$BUILD_DIR/$APP_NAME.app" "./$APP_NAME.app"
+        log_ok "Debug build succeeded: $BUILD_DIR/$APP_NAME.app (and ./$APP_NAME.app)"
     else
         log_err "Debug build failed"
         exit 1
@@ -73,7 +77,11 @@ build_release() {
                build | grep -E '\*\*\s*BUILD|error:|warning:' || true
     
     if [ -d "$RELEASE_APP" ]; then
-        log_ok "Release build succeeded: $RELEASE_APP"
+        mkdir -p "$BUILD_DIR"
+        rm -rf "$BUILD_DIR/$APP_NAME.app"
+        cp -R "$RELEASE_APP" "$BUILD_DIR/"
+        ln -sf "$BUILD_DIR/$APP_NAME.app" "./$APP_NAME.app"
+        log_ok "Release build succeeded: $BUILD_DIR/$APP_NAME.app (and ./$APP_NAME.app)"
     else
         log_err "Release build failed"
         exit 1
