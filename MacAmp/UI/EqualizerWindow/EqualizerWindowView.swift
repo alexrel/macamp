@@ -189,24 +189,24 @@ public class EqualizerWindowView: WinampControlView {
         if isShadeMode {
             let slice = isKey ? SpriteCatalog.eqShadeBgSelected : SpriteCatalog.eqShadeBg
             if let img = SkinManager.shared.image(for: slice) {
-                context.draw(img, in: bounds)
+                context.drawSkinImage(img, in: bounds)
             }
         } else {
             // 1. Draw EQ background
             if let bgImg = SkinManager.shared.image(for: SpriteCatalog.eqWindowBg) {
-                context.draw(bgImg, in: bounds)
+                context.drawSkinImage(bgImg, in: bounds)
             }
             
             // 2. Draw TitleBar
             let titleSlice = isKey ? SpriteCatalog.eqTitleBarSelected : SpriteCatalog.eqTitleBar
             if let titleImg = SkinManager.shared.image(for: titleSlice) {
-                context.draw(titleImg, in: NSRect(x: 0, y: 0, width: AppConstants.Window.width, height: AppConstants.Window.shadeHeight))
+                context.drawSkinImage(titleImg, in: NSRect(x: 0, y: 0, width: AppConstants.Window.width, height: AppConstants.Window.shadeHeight))
             }
             
             // 3. Draw EQ Graph Box at x: 86, y: 17, w: 113, h: 19
             let graphRect = NSRect(x: 86, y: 17, width: 113, height: 19)
             if let graphBg = SkinManager.shared.image(for: SpriteCatalog.eqGraphBg) {
-                context.draw(graphBg, in: graphRect)
+                context.drawSkinImage(graphBg, in: graphRect)
             }
             
             // Draw EQ spline curve across the 10 bands

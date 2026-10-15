@@ -246,7 +246,7 @@ public class PlaylistWindowView: WinampControlView {
         if isShadeMode {
             // Shade background
             if let img = SkinManager.shared.image(for: SpriteCatalog.mainShadeBg) {
-                context.draw(img, in: bounds)
+                context.drawSkinImage(img, in: bounds)
             }
             return
         }
@@ -259,35 +259,53 @@ public class PlaylistWindowView: WinampControlView {
         let rightSlice = isKey ? SpriteCatalog.plTopRightSel : SpriteCatalog.plTopRight
         
         if let leftImg = SkinManager.shared.image(for: leftSlice) {
-            context.draw(leftImg, in: NSRect(x: 0, y: 0, width: 25, height: topH))
+            context.drawSkinImage(leftImg, in: NSRect(x: 0, y: 0, width: 25, height: topH))
         }
         if let titleImg = SkinManager.shared.image(for: titleSlice) {
-            context.draw(titleImg, in: NSRect(x: 25, y: 0, width: 100, height: topH))
+            context.drawSkinImage(titleImg, in: NSRect(x: 25, y: 0, width: 100, height: topH))
         }
         if let tileImg = SkinManager.shared.image(for: tileSlice) {
             let tileWidth = bounds.width - 150
             if tileWidth > 0 {
-                context.draw(tileImg, in: NSRect(x: 125, y: 0, width: tileWidth, height: topH))
+                context.drawSkinImage(tileImg, in: NSRect(x: 125, y: 0, width: tileWidth, height: topH))
             }
         }
         if let rightImg = SkinManager.shared.image(for: rightSlice) {
-            context.draw(rightImg, in: NSRect(x: bounds.width - 25, y: 0, width: 25, height: topH))
+            context.drawSkinImage(rightImg, in: NSRect(x: bounds.width - 25, y: 0, width: 25, height: topH))
         }
         
         // 2. Draw Bottom Bar (height: 38)
         let botH: CGFloat = 38
         let botY = bounds.height - botH
         if let bLeft = SkinManager.shared.image(for: SpriteCatalog.plBottomLeft) {
-            context.draw(bLeft, in: NSRect(x: 0, y: botY, width: 125, height: botH))
+            context.drawSkinImage(bLeft, in: NSRect(x: 0, y: botY, width: 125, height: botH))
         }
         if let bTile = SkinManager.shared.image(for: SpriteCatalog.plBottomTile) {
             let fillW = bounds.width - 275
             if fillW > 0 {
-                context.draw(bTile, in: NSRect(x: 125, y: botY, width: fillW, height: botH))
+                context.drawSkinImage(bTile, in: NSRect(x: 125, y: botY, width: fillW, height: botH))
             }
         }
         if let bRight = SkinManager.shared.image(for: SpriteCatalog.plBottomRight) {
-            context.draw(bRight, in: NSRect(x: bounds.width - 150, y: botY, width: 150, height: botH))
+            context.drawSkinImage(bRight, in: NSRect(x: bounds.width - 150, y: botY, width: 150, height: botH))
+        }
+        
+        // 2b. Draw Left and Right Side Borders
+        if let lTile = SkinManager.shared.image(for: SpriteCatalog.plLeftTile) {
+            var y = topH
+            while y < botY {
+                let h = min(29.0, botY - y)
+                context.drawSkinImage(lTile, in: NSRect(x: 0, y: y, width: 12, height: h))
+                y += h
+            }
+        }
+        if let rTile = SkinManager.shared.image(for: SpriteCatalog.plRightTile) {
+            var y = topH
+            while y < botY {
+                let h = min(29.0, botY - y)
+                context.drawSkinImage(rTile, in: NSRect(x: bounds.width - 20, y: y, width: 20, height: h))
+                y += h
+            }
         }
         
         // 3. Draw Track List Area

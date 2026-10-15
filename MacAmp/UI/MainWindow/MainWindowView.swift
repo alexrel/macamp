@@ -97,8 +97,13 @@ public class MainWindowView: WinampControlView {
         addSubview(doubleSizeButton)
         
         // 3. Time, Visualizer, Marquee
+        timeDisplay.frame = NSRect(x: 39, y: 26, width: 59, height: 13)
         addSubview(timeDisplay)
+        
+        visualizer.frame = NSRect(x: 24, y: 43, width: CGFloat(AppConstants.Visualizer.width), height: CGFloat(AppConstants.Visualizer.height))
         addSubview(visualizer)
+        
+        marquee.frame = NSRect(x: 112, y: 27, width: 152, height: 6)
         addSubview(marquee)
         
         // 4. Sliders
@@ -284,23 +289,23 @@ public class MainWindowView: WinampControlView {
         if isShadeMode {
             let slice = isKey ? SpriteCatalog.mainShadeBgSelected : SpriteCatalog.mainShadeBg
             if let img = SkinManager.shared.image(for: slice) {
-                context.draw(img, in: bounds)
+                context.drawSkinImage(img, in: bounds)
             }
         } else {
             // 1. Draw main background
             if let bgImg = SkinManager.shared.image(for: SpriteCatalog.mainWindowBackground) {
-                context.draw(bgImg, in: bounds)
+                context.drawSkinImage(bgImg, in: bounds)
             }
             
             // 2. Draw titlebar
             let titleSlice = isKey ? SpriteCatalog.titleBarSelected : SpriteCatalog.titleBarNormal
             if let titleImg = SkinManager.shared.image(for: titleSlice) {
-                context.draw(titleImg, in: NSRect(x: 0, y: 0, width: AppConstants.Window.width, height: AppConstants.Window.shadeHeight))
+                context.drawSkinImage(titleImg, in: NSRect(x: 0, y: 0, width: AppConstants.Window.width, height: AppConstants.Window.shadeHeight))
             }
             
             // 3. Draw ClutterBar background (x: 10, y: 22)
             if let clutterImg = SkinManager.shared.image(for: SpriteCatalog.clutterBarBg) {
-                context.draw(clutterImg, in: NSRect(x: 10, y: 22, width: 8, height: 43))
+                context.drawSkinImage(clutterImg, in: NSRect(x: 10, y: 22, width: 8, height: 43))
             }
             
             // 4. Draw Bitrate & Samplerate (KBPS at x: 111, y: 43; KHZ at x: 156, y: 43)
@@ -312,10 +317,10 @@ public class MainWindowView: WinampControlView {
                 let stereoSlice = (meta.audioMode == .stereo) ? SpriteCatalog.stereoOn : SpriteCatalog.stereoOff
                 let monoSlice = (meta.audioMode == .mono) ? SpriteCatalog.monoOn : SpriteCatalog.monoOff
                 if let stereoImg = SkinManager.shared.image(for: stereoSlice) {
-                    context.draw(stereoImg, in: NSRect(x: 239, y: 41, width: 29, height: 12))
+                    context.drawSkinImage(stereoImg, in: NSRect(x: 239, y: 41, width: 29, height: 12))
                 }
                 if let monoImg = SkinManager.shared.image(for: monoSlice) {
-                    context.draw(monoImg, in: NSRect(x: 212, y: 41, width: 27, height: 12))
+                    context.drawSkinImage(monoImg, in: NSRect(x: 212, y: 41, width: 27, height: 12))
                 }
             }
             
@@ -327,7 +332,7 @@ public class MainWindowView: WinampControlView {
             case .stopped: statusSlice = SpriteCatalog.indicatorStopped
             }
             if let indImg = SkinManager.shared.image(for: statusSlice) {
-                context.draw(indImg, in: NSRect(x: 26, y: 28, width: 9, height: 9))
+                context.drawSkinImage(indImg, in: NSRect(x: 26, y: 28, width: 9, height: 9))
             }
         }
     }

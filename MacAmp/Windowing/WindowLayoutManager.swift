@@ -152,26 +152,33 @@ public class WindowLayoutManager: NSObject {
     private func calculateWindowSnap(target: NSRect, other: NSRect, threshold: CGFloat) -> CGPoint {
         var snap = CGPoint.zero
         
+        let verticalOverlap = (target.maxY >= other.minY - threshold) && (target.minY <= other.maxY + threshold)
+        let horizontalOverlap = (target.maxX >= other.minX - threshold) && (target.minX <= other.maxX + threshold)
+        
         // Horizontal snapping
-        if abs(target.minX - other.maxX) <= threshold {
-            snap.x = other.maxX - target.minX
-        } else if abs(target.maxX - other.minX) <= threshold {
-            snap.x = other.minX - target.maxX
-        } else if abs(target.minX - other.minX) <= threshold {
-            snap.x = other.minX - target.minX
-        } else if abs(target.maxX - other.maxX) <= threshold {
-            snap.x = other.maxX - target.maxX
+        if verticalOverlap {
+            if abs(target.minX - other.maxX) <= threshold {
+                snap.x = other.maxX - target.minX
+            } else if abs(target.maxX - other.minX) <= threshold {
+                snap.x = other.minX - target.maxX
+            } else if abs(target.minX - other.minX) <= threshold {
+                snap.x = other.minX - target.minX
+            } else if abs(target.maxX - other.maxX) <= threshold {
+                snap.x = other.maxX - target.maxX
+            }
         }
         
         // Vertical snapping
-        if abs(target.minY - other.maxY) <= threshold {
-            snap.y = other.maxY - target.minY
-        } else if abs(target.maxY - other.minY) <= threshold {
-            snap.y = other.minY - target.maxY
-        } else if abs(target.minY - other.minY) <= threshold {
-            snap.y = other.minY - target.minY
-        } else if abs(target.maxY - other.maxY) <= threshold {
-            snap.y = other.maxY - target.maxY
+        if horizontalOverlap {
+            if abs(target.minY - other.maxY) <= threshold {
+                snap.y = other.maxY - target.minY
+            } else if abs(target.maxY - other.minY) <= threshold {
+                snap.y = other.minY - target.maxY
+            } else if abs(target.minY - other.minY) <= threshold {
+                snap.y = other.minY - target.minY
+            } else if abs(target.maxY - other.maxY) <= threshold {
+                snap.y = other.maxY - target.maxY
+            }
         }
         
         return snap

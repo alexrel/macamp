@@ -37,8 +37,8 @@ public class PlayerCoordinator: NSObject {
     // MARK: - Window Setup
     private func setupWindows() {
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 100, y: 100, width: 1200, height: 800)
-        let originX = screenFrame.minX + 80
-        let originY = screenFrame.maxY - 200
+        let originX = screenFrame.minX + max(50, (screenFrame.width - AppConstants.Window.width) / 2)
+        let originY = screenFrame.maxY - 150
         
         // 1. Main Window
         let mainRect = NSRect(x: originX, y: originY, width: AppConstants.Window.width, height: AppConstants.Window.height)

@@ -2,6 +2,19 @@ import Foundation
 import CoreGraphics
 import AppKit
 
+// MARK: - CGContext Skin Image Drawing Extension
+extension CGContext {
+    /// Draws a CGImage right-side-up in an isFlipped AppKit NSView.
+    @inlinable
+    public func drawSkinImage(_ image: CGImage, in rect: CGRect) {
+        saveGState()
+        translateBy(x: rect.minX, y: rect.maxY)
+        scaleBy(x: 1.0, y: -1.0)
+        draw(image, in: CGRect(x: 0, y: 0, width: rect.width, height: rect.height))
+        restoreGState()
+    }
+}
+
 // MARK: - Winamp Base Control View
 open class WinampControlView: NSView {
     open override var isFlipped: Bool { true }
@@ -54,7 +67,7 @@ public class SkinButton: WinampControlView {
         
         let slice = isPressed ? pressedSlice : normalSlice
         if let image = SkinManager.shared.image(for: slice) {
-            context.draw(image, in: bounds)
+            context.drawSkinImage(image, in: bounds)
         }
     }
     
@@ -141,7 +154,7 @@ public class SkinToggle: WinampControlView {
         }
         
         if let image = SkinManager.shared.image(for: slice) {
-            context.draw(image, in: bounds)
+            context.drawSkinImage(image, in: bounds)
         }
     }
     

@@ -88,10 +88,10 @@ public class SkinSlider: WinampControlView {
             let frameIndex = Int(round(normalizedValue * 27.0))
             let slice = frameProvider(frameIndex)
             if let bgImg = SkinManager.shared.image(for: slice) {
-                context.draw(bgImg, in: bounds)
+                context.drawSkinImage(bgImg, in: bounds)
             }
         } else if let bgSlice = backgroundSlice, let bgImg = SkinManager.shared.image(for: bgSlice) {
-            context.draw(bgImg, in: bounds)
+            context.drawSkinImage(bgImg, in: bounds)
         }
         
         // 2. Draw thumb
@@ -114,7 +114,7 @@ public class SkinSlider: WinampControlView {
         }
         
         if let thumbImg = SkinManager.shared.image(for: thumbSlice) {
-            context.draw(thumbImg, in: thumbRect)
+            context.drawSkinImage(thumbImg, in: thumbRect)
         }
     }
     

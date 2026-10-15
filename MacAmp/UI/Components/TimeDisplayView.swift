@@ -77,28 +77,28 @@ public class TimeDisplayView: WinampControlView {
         // Minus sign at x: 0, y: 6
         if isNegative {
             if let minusImg = SkinManager.shared.image(for: SpriteCatalog.minusSign) {
-                context.draw(minusImg, in: NSRect(x: 0, y: 6, width: 5, height: 1))
+                context.drawSkinImage(minusImg, in: NSRect(x: 0, y: 6, width: 5, height: 1))
             }
         }
         
         // Digit 1 (Minute tens) at x: 9
         if let d1Img = SkinManager.shared.image(for: SpriteCatalog.digit(m1)) {
-            context.draw(d1Img, in: NSRect(x: 9, y: 0, width: 9, height: 13))
+            context.drawSkinImage(d1Img, in: NSRect(x: 9, y: 0, width: 9, height: 13))
         }
         
         // Digit 2 (Minute units) at x: 21
         if let d2Img = SkinManager.shared.image(for: SpriteCatalog.digit(m2)) {
-            context.draw(d2Img, in: NSRect(x: 21, y: 0, width: 9, height: 13))
+            context.drawSkinImage(d2Img, in: NSRect(x: 21, y: 0, width: 9, height: 13))
         }
         
         // Digit 3 (Second tens) at x: 39
         if let d3Img = SkinManager.shared.image(for: SpriteCatalog.digit(s1)) {
-            context.draw(d3Img, in: NSRect(x: 39, y: 0, width: 9, height: 13))
+            context.drawSkinImage(d3Img, in: NSRect(x: 39, y: 0, width: 9, height: 13))
         }
         
         // Digit 4 (Second units) at x: 51
         if let d4Img = SkinManager.shared.image(for: SpriteCatalog.digit(s2)) {
-            context.draw(d4Img, in: NSRect(x: 51, y: 0, width: 9, height: 13))
+            context.drawSkinImage(d4Img, in: NSRect(x: 51, y: 0, width: 9, height: 13))
         }
     }
     

@@ -74,7 +74,7 @@ public struct BitmapFont {
             
             if let glyph = textSheet.cropping(to: srcRect) {
                 let destRect = CGRect(x: currentX, y: origin.y, width: charWidth, height: charHeight)
-                context.draw(glyph, in: destRect)
+                context.drawSkinImage(glyph, in: destRect)
             }
             
             currentX += charWidth

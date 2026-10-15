@@ -4,6 +4,7 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         PlayerCoordinator.shared.start()
+        NSApp.activate(ignoringOtherApps: true)
     }
     
     func applicationWillTerminate(_ notification: Notification) {
