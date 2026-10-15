@@ -115,6 +115,14 @@ public class VisualizerView: WinampControlView {
         }
     }
     
+    public override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+    
+    public override func mouseDown(with event: NSEvent) {
+        // Intercept mouseDown to prevent dragging MainWindowView
+    }
+    
     public override func mouseUp(with event: NSEvent) {
         let localPoint = convert(event.locationInWindow, from: nil)
         if bounds.contains(localPoint) {

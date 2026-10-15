@@ -38,6 +38,10 @@ open class WinampControlView: NSView {
     open override func rightMouseDown(with event: NSEvent) {
         PlayerCoordinator.shared.showMainContextMenu(at: NSEvent.mouseLocation)
     }
+    
+    open override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
 }
 
 // MARK: - SkinButton
@@ -54,6 +58,10 @@ public class SkinButton: WinampControlView {
         }
     }
     
+    public var isShadeButton: Bool = false {
+        didSet { needsDisplay = true }
+    }
+    
     public init(normal: SpriteSlice, pressed: SpriteSlice, action: (() -> Void)? = nil) {
         self.normalSlice = normal
         self.pressedSlice = pressed
@@ -68,6 +76,15 @@ public class SkinButton: WinampControlView {
     public override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
+        
+        if isShadeButton {
+            // In shade mode, icons are pre-drawn in TITLEBAR.BMP background.
+            if isPressed {
+                context.setFillColor(NSColor(white: 1.0, alpha: 0.3).cgColor)
+                context.fill(bounds)
+            }
+            return
+        }
         
         let slice = isPressed ? pressedSlice : normalSlice
         if let image = SkinManager.shared.image(for: slice) {
@@ -101,6 +118,73 @@ public class SkinButton: WinampControlView {
                 }
             default:
                 break
+            }
+        }
+    }
+}
+
+// MARK: - ClutterButton (O, A, I, D, V)
+public class ClutterButton: WinampControlView {
+    public var activeSlice: SpriteSlice
+    public var isSelected: Bool = false {
+        didSet {
+            if oldValue != isSelected {
+                needsDisplay = true
+            }
+        }
+    }
+    public var action: (() -> Void)?
+    
+    public private(set) var isPressed = false {
+        didSet {
+            if oldValue != isPressed {
+                needsDisplay = true
+            }
+        }
+    }
+    
+    public init(activeSlice: SpriteSlice, action: (() -> Void)? = nil) {
+        self.activeSlice = activeSlice
+        self.action = action
+        super.init(frame: NSRect(x: 0, y: 0, width: activeSlice.rect.width, height: activeSlice.rect.height))
+    }
+    
+    public required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    public override func draw(_ dirtyRect: NSRect) {
+        if isSelected || isPressed {
+            guard let context = NSGraphicsContext.current?.cgContext else { return }
+            context.interpolationQuality = .none
+            if let img = SkinManager.shared.image(for: activeSlice) {
+                context.drawSkinImage(img, in: bounds)
+            }
+        }
+    }
+    
+    public override func mouseDown(with event: NSEvent) {
+        isPressed = true
+        trackMouse(with: event)
+    }
+    
+    private func trackMouse(with initialEvent: NSEvent) {
+        guard let window = self.window else { return }
+        var keepTracking = true
+        while keepTracking {
+            guard let nextEvent = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) else { continue }
+            let localPoint = convert(nextEvent.locationInWindow, from: nil)
+            let isInside = bounds.contains(localPoint)
+            switch nextEvent.type {
+            case .leftMouseDragged:
+                self.isPressed = isInside
+            case .leftMouseUp:
+                keepTracking = false
+                self.isPressed = false
+                if isInside {
+                    action?()
+                }
+            default: break
             }
         }
     }

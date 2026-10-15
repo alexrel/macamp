@@ -69,6 +69,14 @@ public class TimeDisplayView: WinampControlView {
         let minutes = displaySeconds / 60
         let seconds = displaySeconds % 60
         
+        // In shade mode (height <= 8), draw mini text font
+        if bounds.height <= 8 {
+            let prefix = isNegative ? "-" : " "
+            let timeStr = String(format: "%@%02d:%02d", prefix, minutes, seconds)
+            BitmapFont.draw(string: timeStr, in: context, at: CGPoint(x: 1, y: 0))
+            return
+        }
+        
         let m1 = (minutes / 10) % 10
         let m2 = minutes % 10
         let s1 = (seconds / 10) % 10
@@ -102,10 +110,10 @@ public class TimeDisplayView: WinampControlView {
         }
     }
     
+    public override func mouseDown(with event: NSEvent) {
+        onToggleMode?()
+    }
+    
     public override func mouseUp(with event: NSEvent) {
-        let localPoint = convert(event.locationInWindow, from: nil)
-        if bounds.contains(localPoint) {
-            onToggleMode?()
-        }
     }
 }

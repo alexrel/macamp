@@ -44,18 +44,21 @@ public class PlayerCoordinator: NSObject {
         let mainRect = NSRect(x: originX, y: originY, width: AppConstants.Window.width, height: AppConstants.Window.height)
         mainWindow = WinampWindow(windowID: .main, contentRect: mainRect)
         mainView = MainWindowView()
+        mainView.autoresizesSubviews = false
         mainWindow.contentView = mainView
         
         // 2. Equalizer Window (docked directly below Main: y = originY - height)
         let eqRect = NSRect(x: originX, y: originY - AppConstants.Window.height, width: AppConstants.Window.width, height: AppConstants.Window.height)
         eqWindow = WinampWindow(windowID: .equalizer, contentRect: eqRect)
         eqView = EqualizerWindowView()
+        eqView.autoresizesSubviews = false
         eqWindow.contentView = eqView
         
         // 3. Playlist Window (docked directly below EQ: y = originY - 2 * height)
         let plRect = NSRect(x: originX, y: originY - (2 * AppConstants.Window.height), width: AppConstants.Window.width, height: AppConstants.Window.height)
         plWindow = WinampWindow(windowID: .playlist, contentRect: plRect)
         plView = PlaylistWindowView(playlist: playlist)
+        plView.autoresizesSubviews = false
         plWindow.contentView = plView
         
         // Show windows
@@ -706,21 +709,7 @@ public class PlayerCoordinator: NSObject {
         mainView.isShadeMode = newShade
         
         let newH: CGFloat = newShade ? AppConstants.Window.shadeHeight : AppConstants.Window.height
-        let scale = windowManager.currentScale
-        
-        var frame = mainWindow.frame
-        let diff = (frame.height - (newH * scale))
-        frame.origin.y += diff
-        frame.size.height = newH * scale
-        mainWindow.setFrame(frame, display: true, animate: false)
-        
-        if let content = mainWindow.contentView {
-            let factor = content.bounds.width / AppConstants.Window.width
-            if abs(factor - 1.0) > 0.001 {
-                content.scaleUnitSquare(to: NSSize(width: factor, height: factor))
-            }
-            content.needsDisplay = true
-        }
+        windowManager.handleWindowHeightChange(id: .main, newHeightUnscaled: newH)
         
         persistence.state.isMainWindowShade = newShade
         persistence.saveSession()
@@ -731,21 +720,7 @@ public class PlayerCoordinator: NSObject {
         eqView.isShadeMode = newShade
         
         let newH: CGFloat = newShade ? AppConstants.Window.shadeHeight : AppConstants.Window.height
-        let scale = windowManager.currentScale
-        
-        var frame = eqWindow.frame
-        let diff = (frame.height - (newH * scale))
-        frame.origin.y += diff
-        frame.size.height = newH * scale
-        eqWindow.setFrame(frame, display: true, animate: false)
-        
-        if let content = eqWindow.contentView {
-            let factor = content.bounds.width / AppConstants.Window.width
-            if abs(factor - 1.0) > 0.001 {
-                content.scaleUnitSquare(to: NSSize(width: factor, height: factor))
-            }
-            content.needsDisplay = true
-        }
+        windowManager.handleWindowHeightChange(id: .equalizer, newHeightUnscaled: newH)
         
         persistence.state.isEqWindowShade = newShade
         persistence.saveSession()
@@ -756,21 +731,7 @@ public class PlayerCoordinator: NSObject {
         plView.isShadeMode = newShade
         
         let newH: CGFloat = newShade ? AppConstants.Window.shadeHeight : AppConstants.Window.height
-        let scale = windowManager.currentScale
-        
-        var frame = plWindow.frame
-        let diff = (frame.height - (newH * scale))
-        frame.origin.y += diff
-        frame.size.height = newH * scale
-        plWindow.setFrame(frame, display: true, animate: false)
-        
-        if let content = plWindow.contentView {
-            let factor = content.bounds.width / AppConstants.Window.width
-            if abs(factor - 1.0) > 0.001 {
-                content.scaleUnitSquare(to: NSSize(width: factor, height: factor))
-            }
-            content.needsDisplay = true
-        }
+        windowManager.handleWindowHeightChange(id: .playlist, newHeightUnscaled: newH)
         
         persistence.state.isPlaylistShade = newShade
         persistence.saveSession()
@@ -780,6 +741,7 @@ public class PlayerCoordinator: NSObject {
     public func toggleDoubleSize() {
         let newScale: CGFloat = (windowManager.currentScale == 1.0) ? 2.0 : 1.0
         windowManager.setScale(newScale)
+        mainView.doubleSizeButton.isSelected = (newScale == 2.0)
         persistence.state.scaleFactor = (newScale == 2.0) ? .x2 : .x1
         persistence.saveSession()
     }
@@ -825,6 +787,20 @@ public class PlayerCoordinator: NSObject {
         // Scale
         if s.scaleFactor == .x2 {
             windowManager.setScale(2.0)
+            mainView.doubleSizeButton.isSelected = true
+        } else {
+            mainView.doubleSizeButton.isSelected = false
+        }
+        
+        // Shade restoration
+        if s.isMainWindowShade {
+            toggleMainShade()
+        }
+        if s.isEqWindowShade {
+            toggleEqShade()
+        }
+        if s.isPlaylistShade {
+            togglePlShade()
         }
         
         // Skin restoration

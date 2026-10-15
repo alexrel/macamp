@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		AA66A61DF043AA5F7F89A4D4 /* MacAmpApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA69FDE20A9A6E5FEABD7AC7 /* MacAmpApp.swift */; };
 		AA9DAD216D7E3F566897F67A /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB520C6C4119B5F82B65A00 /* MainWindowView.swift */; };
+		AAF0E2D4D2A02A51FE841B73 /* CubicSpline.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA77248ED3C6F45BCAA3EF2D /* CubicSpline.swift */; };
 		AA9E25734126AF5A37B18D2E /* EqualizerWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA07E09BCD7F8C56F79D3C6E /* EqualizerWindowView.swift */; };
 		AA49E4E81FD4135DED9F929D /* PlaylistWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9737F793D3DB5719AD50C1 /* PlaylistWindowView.swift */; };
 		AAF6727000D6465C6A84B5E8 /* BitmapFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAEF4BFC172B765F4E890B62 /* BitmapFont.swift */; };
@@ -33,6 +34,7 @@
 		AA7915404346F35EF3A845E4 /* WinampWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAE9F927208E8E5D3EA7E7A3 /* WinampWindow.swift */; };
 		AA18E74F7E8CB5528B921B69 /* WindowLayoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA93E0F3DA84105657AB1CCA /* WindowLayoutManager.swift */; };
 		AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */ = {isa = PBXBuildFile; fileRef = AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */; };
+		AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */ = {isa = PBXBuildFile; fileRef = AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */; };
 		BDC069482B887D910009C001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDC069472B887D910009C001 /* Assets.xcassets */; };
 		BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDC0694A2B887D910009C001 /* Preview Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -40,6 +42,7 @@
 /* Begin PBXFileReference section */
 		AA69FDE20A9A6E5FEABD7AC7 /* MacAmpApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacAmpApp.swift"; sourceTree = "<group>"; };
 		AAB520C6C4119B5F82B65A00 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MainWindowView.swift"; sourceTree = "<group>"; };
+		AA77248ED3C6F45BCAA3EF2D /* CubicSpline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CubicSpline.swift"; sourceTree = "<group>"; };
 		AA07E09BCD7F8C56F79D3C6E /* EqualizerWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EqualizerWindowView.swift"; sourceTree = "<group>"; };
 		AA9737F793D3DB5719AD50C1 /* PlaylistWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistWindowView.swift"; sourceTree = "<group>"; };
 		AAEF4BFC172B765F4E890B62 /* BitmapFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BitmapFont.swift"; sourceTree = "<group>"; };
@@ -63,6 +66,7 @@
 		AA962E83A0FAE25570805F4F /* FFTAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FFTAnalyzer.swift"; sourceTree = "<group>"; };
 		AAE9F927208E8E5D3EA7E7A3 /* WinampWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WinampWindow.swift"; sourceTree = "<group>"; };
 		AA93E0F3DA84105657AB1CCA /* WindowLayoutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WindowLayoutManager.swift"; sourceTree = "<group>"; };
+		AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */ = {isa = PBXFileReference; lastKnownFileType = file; path = "base-2.91.wsz"; sourceTree = "<group>"; };
 		AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */ = {isa = PBXFileReference; lastKnownFileType = file; path = "base-2.91.wsz"; sourceTree = "<group>"; };
 		BDC069402B887D8B0009C001 /* MacAmp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacAmp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BDC069472B887D910009C001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -216,6 +220,7 @@
 		AA8E6383F24E2E566891AD27 /* EqualizerWindow */ = {
 			isa = PBXGroup;
 			children = (
+				AA77248ED3C6F45BCAA3EF2D /* CubicSpline.swift */,
 				AA07E09BCD7F8C56F79D3C6E /* EqualizerWindowView.swift */,
 			);
 			path = "EqualizerWindow";
@@ -288,6 +293,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */,
+				AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */,
 				BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */,
 				BDC069482B887D910009C001 /* Assets.xcassets in Resources */,
 			);
@@ -302,6 +308,7 @@
 			files = (
 				AA66A61DF043AA5F7F89A4D4 /* MacAmpApp.swift in Sources */,
 				AA9DAD216D7E3F566897F67A /* MainWindowView.swift in Sources */,
+				AAF0E2D4D2A02A51FE841B73 /* CubicSpline.swift in Sources */,
 				AA9E25734126AF5A37B18D2E /* EqualizerWindowView.swift in Sources */,
 				AA49E4E81FD4135DED9F929D /* PlaylistWindowView.swift in Sources */,
 				AAF6727000D6465C6A84B5E8 /* BitmapFont.swift in Sources */,

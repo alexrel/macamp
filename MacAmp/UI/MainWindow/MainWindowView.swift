@@ -33,8 +33,8 @@ public class MainWindowView: WinampControlView {
     public private(set) var closeButton: SkinButton!
     
     // ClutterBar D Button (Double Size toggle)
-    public private(set) var doubleSizeButton: SkinButton!
-    public private(set) var clutterOptionsButton: SkinButton!
+    public private(set) var doubleSizeButton: ClutterButton!
+    public private(set) var clutterOptionsButton: ClutterButton!
     
     public var isShadeMode: Bool = false {
         didSet {
@@ -84,16 +84,17 @@ public class MainWindowView: WinampControlView {
         addSubview(closeButton)
         
         // 2. ClutterBar Buttons
-        clutterOptionsButton = SkinButton(normal: SpriteCatalog.clutterOActive, pressed: SpriteCatalog.clutterOActive) { [weak self] in
+        clutterOptionsButton = ClutterButton(activeSlice: SpriteCatalog.clutterOActive) { [weak self] in
             self?.onOpenOptions?()
         }
         clutterOptionsButton.frame = NSRect(x: 10, y: 25, width: 8, height: 8)
         addSubview(clutterOptionsButton)
         
-        doubleSizeButton = SkinButton(normal: SpriteCatalog.clutterDActive, pressed: SpriteCatalog.clutterDActive) { [weak self] in
+        doubleSizeButton = ClutterButton(activeSlice: SpriteCatalog.clutterDActive) { [weak self] in
             self?.onToggleDoubleSize?()
         }
         doubleSizeButton.frame = NSRect(x: 10, y: 47, width: 8, height: 8)
+        doubleSizeButton.isSelected = (WindowLayoutManager.shared.currentScale == 2.0)
         addSubview(doubleSizeButton)
         
         // 3. Time, Visualizer, Marquee
@@ -234,7 +235,6 @@ public class MainWindowView: WinampControlView {
             // Hide main body controls
             volumeSlider.isHidden = true
             balanceSlider.isHidden = true
-            seekSlider.isHidden = true
             eqToggle.isHidden = true
             plToggle.isHidden = true
             shuffleToggle.isHidden = true
@@ -243,22 +243,38 @@ public class MainWindowView: WinampControlView {
             clutterOptionsButton.isHidden = true
             doubleSizeButton.isHidden = true
             
+            // Switch shade button to unshade sprite
+            shadeButton.normalSlice = SpriteCatalog.mainShadeButtonSelected
+            shadeButton.pressedSlice = SpriteCatalog.mainShadeButtonSelectedDepressed
+            
             // Move visualizer to shade header (x: 79, y: 5)
             visualizer.frame = NSRect(x: 79, y: 5, width: CGFloat(AppConstants.Visualizer.width), height: 8)
             timeDisplay.frame = NSRect(x: 127, y: 4, width: 35, height: 6)
             
-            // Reposition mini transport buttons (top: 2, left: 169..215)
-            prevButton.frame = NSRect(x: 169, y: 2, width: 7, height: 10)
-            playButton.frame = NSRect(x: 176, y: 2, width: 10, height: 10)
-            pauseButton.frame = NSRect(x: 186, y: 2, width: 9, height: 10)
-            stopButton.frame = NSRect(x: 195, y: 2, width: 9, height: 10)
-            nextButton.frame = NSRect(x: 204, y: 2, width: 10, height: 10)
-            ejectButton.frame = NSRect(x: 215, y: 2, width: 10, height: 10)
+            // Position mini seek bar
+            seekSlider.isHidden = false
+            seekSlider.frame = NSRect(x: 226, y: 4, width: 17, height: 7)
+            seekSlider.backgroundSlice = SpriteCatalog.mainShadePosBg
+            seekSlider.thumbNormal = SpriteCatalog.mainShadePosThumb
+            seekSlider.thumbPressed = SpriteCatalog.mainShadePosThumb
+            
+            // Reposition mini transport buttons (top: 2, left: 169..215) and set transparent background
+            let transportButtons: [(SkinButton, NSRect)] = [
+                (prevButton, NSRect(x: 169, y: 2, width: 7, height: 10)),
+                (playButton, NSRect(x: 176, y: 2, width: 10, height: 10)),
+                (pauseButton, NSRect(x: 186, y: 2, width: 9, height: 10)),
+                (stopButton, NSRect(x: 195, y: 2, width: 9, height: 10)),
+                (nextButton, NSRect(x: 204, y: 2, width: 10, height: 10)),
+                (ejectButton, NSRect(x: 215, y: 2, width: 10, height: 10))
+            ]
+            for (btn, frame) in transportButtons {
+                btn.frame = frame
+                btn.isShadeButton = true
+            }
         } else {
             // Restore full layout
             volumeSlider.isHidden = false
             balanceSlider.isHidden = false
-            seekSlider.isHidden = false
             eqToggle.isHidden = false
             plToggle.isHidden = false
             shuffleToggle.isHidden = false
@@ -267,15 +283,32 @@ public class MainWindowView: WinampControlView {
             clutterOptionsButton.isHidden = false
             doubleSizeButton.isHidden = false
             
+            // Switch shade button back to normal shade sprite
+            shadeButton.normalSlice = SpriteCatalog.shadeNormal
+            shadeButton.pressedSlice = SpriteCatalog.shadePressed
+            
+            // Restore full seek bar
+            seekSlider.isHidden = false
+            seekSlider.frame = NSRect(x: 16, y: 72, width: 248, height: 10)
+            seekSlider.backgroundSlice = SpriteCatalog.posBarBg
+            seekSlider.thumbNormal = SpriteCatalog.posBarThumb
+            seekSlider.thumbPressed = SpriteCatalog.posBarThumbPressed
+            
             visualizer.frame = NSRect(x: 24, y: 43, width: CGFloat(AppConstants.Visualizer.width), height: CGFloat(AppConstants.Visualizer.height))
             timeDisplay.frame = NSRect(x: 39, y: 26, width: 59, height: 13)
             
-            prevButton.frame = NSRect(x: 16, y: 88, width: 23, height: 18)
-            playButton.frame = NSRect(x: 39, y: 88, width: 23, height: 18)
-            pauseButton.frame = NSRect(x: 62, y: 88, width: 23, height: 18)
-            stopButton.frame = NSRect(x: 85, y: 88, width: 23, height: 18)
-            nextButton.frame = NSRect(x: 108, y: 88, width: 22, height: 18)
-            ejectButton.frame = NSRect(x: 136, y: 89, width: 22, height: 16)
+            let normalTransport: [(SkinButton, NSRect)] = [
+                (prevButton, NSRect(x: 16, y: 88, width: 23, height: 18)),
+                (playButton, NSRect(x: 39, y: 88, width: 23, height: 18)),
+                (pauseButton, NSRect(x: 62, y: 88, width: 23, height: 18)),
+                (stopButton, NSRect(x: 85, y: 88, width: 23, height: 18)),
+                (nextButton, NSRect(x: 108, y: 88, width: 22, height: 18)),
+                (ejectButton, NSRect(x: 136, y: 89, width: 22, height: 16))
+            ]
+            for (btn, frame) in normalTransport {
+                btn.frame = frame
+                btn.isShadeButton = false
+            }
         }
     }
     

@@ -11,6 +11,29 @@ public class EqualizerWindowView: WinampControlView {
     public private(set) var autoToggle: SkinToggle!
     public private(set) var presetsButton: SkinButton!
     
+    // 19 gradient line colors for EQ graph (y=0 +12dB to y=18 -12dB)
+    public static let eqLineColors: [NSColor] = [
+        NSColor(srgbRed: 211/255.0, green: 34/255.0, blue: 27/255.0, alpha: 1.0),   // y=0:  +12dB (red)
+        NSColor(srgbRed: 239/255.0, green: 82/255.0, blue: 33/255.0, alpha: 1.0),   // y=1
+        NSColor(srgbRed: 239/255.0, green: 123/255.0, blue: 33/255.0, alpha: 1.0),  // y=2
+        NSColor(srgbRed: 224/255.0, green: 146/255.0, blue: 40/255.0, alpha: 1.0),  // y=3
+        NSColor(srgbRed: 224/255.0, green: 146/255.0, blue: 40/255.0, alpha: 1.0),  // y=4
+        NSColor(srgbRed: 224/255.0, green: 146/255.0, blue: 40/255.0, alpha: 1.0),  // y=5
+        NSColor(srgbRed: 224/255.0, green: 178/255.0, blue: 40/255.0, alpha: 1.0),  // y=6
+        NSColor(srgbRed: 239/255.0, green: 220/255.0, blue: 49/255.0, alpha: 1.0),  // y=7:  0dB (yellow/gold)
+        NSColor(srgbRed: 239/255.0, green: 220/255.0, blue: 49/255.0, alpha: 1.0),  // y=8:  0dB
+        NSColor(srgbRed: 239/255.0, green: 220/255.0, blue: 49/255.0, alpha: 1.0),  // y=9:  0dB
+        NSColor(srgbRed: 210/255.0, green: 235/255.0, blue: 53/255.0, alpha: 1.0),  // y=10
+        NSColor(srgbRed: 210/255.0, green: 235/255.0, blue: 53/255.0, alpha: 1.0),  // y=11
+        NSColor(srgbRed: 164/255.0, green: 226/255.0, blue: 56/255.0, alpha: 1.0),  // y=12: -3dB (yellow-green)
+        NSColor(srgbRed: 164/255.0, green: 226/255.0, blue: 56/255.0, alpha: 1.0),  // y=13
+        NSColor(srgbRed: 137/255.0, green: 226/255.0, blue: 48/255.0, alpha: 1.0),  // y=14
+        NSColor(srgbRed: 113/255.0, green: 205/255.0, blue: 52/255.0, alpha: 1.0),  // y=15
+        NSColor(srgbRed: 90/255.0, green: 176/255.0, blue: 44/255.0, alpha: 1.0),   // y=16
+        NSColor(srgbRed: 42/255.0, green: 154/255.0, blue: 22/255.0, alpha: 1.0),   // y=17: -12dB (dark green)
+        NSColor(srgbRed: 42/255.0, green: 154/255.0, blue: 22/255.0, alpha: 1.0)    // y=18: -12dB
+    ]
+    
     // Sliders
     public private(set) var preampSlider: SkinSlider!
     public private(set) var bandSliders: [SkinSlider] = []
@@ -55,8 +78,9 @@ public class EqualizerWindowView: WinampControlView {
             onNormal: SpriteCatalog.eqOnButtonOn,
             onPressed: SpriteCatalog.eqOnButtonOnPressed,
             isOn: true
-        ) { isOn in
+        ) { [weak self] isOn in
             AudioEngine.shared.setEqEnabled(isOn)
+            self?.needsDisplay = true
         }
         onToggle.frame = NSRect(x: 14, y: 18, width: 26, height: 12)
         addSubview(onToggle)
@@ -87,6 +111,7 @@ public class EqualizerWindowView: WinampControlView {
             initialValue: 0.0,
             snapCenter: true,
             snapThreshold: 0.08,
+            bgFrameProvider: { SpriteCatalog.eqSliderBg(frame: $0) },
             thumbNormal: SpriteCatalog.eqSliderThumbNormal,
             thumbPressed: SpriteCatalog.eqSliderThumbPressed
         ) { [weak self] val in
@@ -106,6 +131,7 @@ public class EqualizerWindowView: WinampControlView {
                 initialValue: 0.0,
                 snapCenter: true,
                 snapThreshold: 0.08,
+                bgFrameProvider: { SpriteCatalog.eqSliderBg(frame: $0) },
                 thumbNormal: SpriteCatalog.eqSliderThumbNormal,
                 thumbPressed: SpriteCatalog.eqSliderThumbPressed
             ) { [weak self] val in
@@ -220,29 +246,38 @@ public class EqualizerWindowView: WinampControlView {
         context.saveGState()
         context.clip(to: graphRect)
         
-        // Green curve color
-        context.setStrokeColor(NSColor(srgbRed: 0.0, green: 1.0, blue: 0.0, alpha: 0.9).cgColor)
-        context.setLineWidth(1.0)
-        
-        let midY = graphRect.midY
-        let maxDev = (graphRect.height / 2.0) - 2.0
-        
-        var points: [CGPoint] = []
-        for (i, slider) in bandSliders.enumerated() {
-            let x = graphRect.minX + 5.0 + (CGFloat(i) * (graphRect.width - 10.0) / 9.0)
-            let norm = CGFloat(slider.normalizedValue) // 0..1 (0.5 is 0dB)
-            let y = midY - ((norm - 0.5) * 2.0 * maxDev)
-            points.append(CGPoint(x: x, y: y))
+        // 1. Draw Preamp Line across the graph (113x1)
+        // preamp value: -12dB ... +12dB. 0dB is centered at y = 9.
+        let preampNorm = preampSlider.normalizedValue // 0.0 (-12dB) ... 1.0 (+12dB)
+        let preampY = Int(round((1.0 - preampNorm) * 18.0)) // 0 (top, +12dB) ... 18 (bottom, -12dB)
+        if let preampImg = SkinManager.shared.image(for: SpriteCatalog.eqPreampLine) {
+            context.drawSkinImage(preampImg, in: NSRect(x: graphRect.minX, y: graphRect.minY + CGFloat(preampY), width: graphRect.width, height: 1))
         }
         
-        if points.count > 1 {
-            let path = CGMutablePath()
-            path.move(to: points[0])
-            for i in 1..<points.count {
-                path.addLine(to: points[i])
-            }
-            context.addPath(path)
-            context.strokePath()
+        // 2. Draw 10-band cubic spline curve
+        // Knots: x = i * 12 (0, 12, 24, ..., 108), y = (1.0 - norm) * 18.0
+        let xs: [Double] = (0..<10).map { Double($0 * 12) }
+        let ys: [Double] = bandSliders.map { (1.0 - $0.normalizedValue) * 18.0 }
+        
+        let allYs = CubicSpline.compute(xs: xs, ys: ys)
+        
+        let paddingLeft = graphRect.minX + 2.0
+        let maxX = min(Int(xs.last ?? 108), allYs.count - 1)
+        
+        var lastY = ys.first ?? 9.0
+        for x in 0...maxX {
+            let curY = max(0.0, min(18.0, allYs[x]))
+            let yTop = min(curY, lastY)
+            let height = 1.0 + abs(lastY - curY)
+            
+            // Map height to line color
+            let colorIdx = max(0, min(18, Int(round(curY))))
+            let strokeColor = (colorIdx < EqualizerWindowView.eqLineColors.count) ? EqualizerWindowView.eqLineColors[colorIdx] : NSColor(srgbRed: 0.94, green: 0.86, blue: 0.19, alpha: 1.0)
+            
+            context.setFillColor(strokeColor.cgColor)
+            context.fill(CGRect(x: paddingLeft + CGFloat(x), y: graphRect.minY + CGFloat(yTop), width: 1.0, height: CGFloat(height)))
+            
+            lastY = curY
         }
         
         context.restoreGState()

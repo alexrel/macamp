@@ -209,6 +209,65 @@ public class WindowLayoutManager: NSObject {
         return snap
     }
     
+    // MARK: - Shade Mode Height Change & Docked Windows Shift
+    public func findWindowsBelow(id: WindowID) -> Set<WindowID> {
+        guard windows[id] != nil else { return [] }
+        var result = Set<WindowID>()
+        var queue: [WindowID] = [id]
+        
+        while !queue.isEmpty {
+            let currentId = queue.removeFirst()
+            guard let currentWin = windows[currentId] else { continue }
+            let currentFrame = currentWin.frame
+            
+            for (otherId, otherWin) in windows where otherId != currentId && !result.contains(otherId) && otherId != id {
+                let otherFrame = otherWin.frame
+                let isDirectlyBelow = abs(currentFrame.minY - otherFrame.maxY) <= effectiveAdjacencyTolerance
+                let horizontalOverlap = currentFrame.maxX > otherFrame.minX && currentFrame.minX < otherFrame.maxX
+                if isDirectlyBelow && horizontalOverlap {
+                    result.insert(otherId)
+                    queue.append(otherId)
+                }
+            }
+        }
+        return result
+    }
+    
+    public func handleWindowHeightChange(id: WindowID, newHeightUnscaled: CGFloat) {
+        guard let win = windows[id] else { return }
+        let scale = currentScale
+        let newH = newHeightUnscaled * scale
+        let oldFrame = win.frame
+        let diff = oldFrame.height - newH
+        guard abs(diff) > 0.001 else { return }
+        
+        // Find windows docked below BEFORE changing frame
+        let belowWindows = findWindowsBelow(id: id)
+        
+        // Update target window frame
+        var newTargetFrame = oldFrame
+        newTargetFrame.origin.y += diff
+        newTargetFrame.size.height = newH
+        win.setFrame(newTargetFrame, display: true, animate: false)
+        
+        if let content = win.contentView {
+            let unscaledW = win.frame.width / scale
+            content.bounds = NSRect(x: 0, y: 0, width: unscaledW, height: newHeightUnscaled)
+            content.needsDisplay = true
+        }
+        
+        // Move all attached windows below by diff so they remain docked with 0 gap
+        for belowId in belowWindows {
+            guard let belowWin = windows[belowId] else { continue }
+            var belowFrame = belowWin.frame
+            belowFrame.origin.y += diff
+            belowWin.setFrame(belowFrame, display: true, animate: false)
+        }
+        
+        clampToScreen()
+        updateAdjacencies()
+    }
+    
     // MARK: - Window Scaling (1x / 2x)
     public func setScale(_ newScale: CGFloat) {
         guard newScale != currentScale else { return }
@@ -234,10 +293,7 @@ public class WindowLayoutManager: NSObject {
             win.setFrame(NSRect(x: newMinX, y: newMinY, width: newW, height: newH), display: true, animate: false)
             
             if let content = win.contentView {
-                let factor = content.bounds.width / unscaledW
-                if abs(factor - 1.0) > 0.001 {
-                    content.scaleUnitSquare(to: NSSize(width: factor, height: factor))
-                }
+                content.bounds = NSRect(x: 0, y: 0, width: unscaledW, height: unscaledH)
                 content.needsDisplay = true
             }
         }
