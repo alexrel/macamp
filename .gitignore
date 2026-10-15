@@ -1,0 +1,60 @@
+# Xcode
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+DerivedData/
+*.xcarchive
+*.dmg
+
+# Build
+/build/
+*.app
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+
+# Agents
+.claude
+.agent
+.codex
+AGENTS.md
+.ai-factory
+.ai-factory.json
+.mcp.json   
+
+# CocoaPods
+Pods/
+
+# Carthage
+Carthage/Build/
+
+# Swift Package Manager
+.build/
+Package.resolved
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Artifacts
+webamp-master/
+ClassicSkins/
+docs/
+skin/
+stuff/
