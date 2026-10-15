@@ -1,254 +1,198 @@
 #!/bin/bash
-
-#./build.sh app — archive+export only, no DMG
-#./build.sh dmg — DMG only from already built build/Release/MacAmp.app
-#./build.sh all (default) — app + dmg
+# ==============================================================================
+# MacAmp Build & Run Script
+# ==============================================================================
+# Usage:
+#   ./build.sh              # Fast Debug build (default)
+#   ./build.sh run          # Build Debug and launch MacAmp.app
+#   ./build.sh release      # Build Release configuration
+#   ./build.sh run-release  # Build Release and launch MacAmp.app
+#   ./build.sh clean        # Clean build artifacts (DerivedData & build)
+#   ./build.sh dmg          # Build Release and generate DMG installer
+#   ./build.sh help         # Show help and available options
+# ==============================================================================
 
 set -euo pipefail
 
 APP_NAME="MacAmp"
 SCHEME="MacAmp"
-VERSION="1.0"
+VERSION="2.91"
 
 BUILD_DIR="build"
 DERIVED_DATA="DerivedData"
-ARCHIVE_PATH="$BUILD_DIR/$APP_NAME.xcarchive"
-EXPORT_DIR="$BUILD_DIR/Release"
-EXPORT_OPTIONS="$BUILD_DIR/ExportOptions.plist"
-DMG_PATH="$BUILD_DIR/${APP_NAME}-Installer-v${VERSION}.dmg"
+DEBUG_APP="$DERIVED_DATA/Build/Products/Debug/$APP_NAME.app"
+RELEASE_APP="$DERIVED_DATA/Build/Products/Release/$APP_NAME.app"
+DMG_PATH="$BUILD_DIR/${APP_NAME}-v${VERSION}.dmg"
 
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
 
-MODE="${1:-all}" # all | app | dmg
-APP_PATH_ARG="${2:-}" # optional override: path to .app for dmg mode
+log_info()  { echo -e "${CYAN}ℹ️  $1${NC}"; }
+log_step()  { echo -e "${YELLOW}⚡ $1...${NC}"; }
+log_ok()    { echo -e "${GREEN}✅ $1${NC}"; }
+log_err()   { echo -e "${RED}❌ $1${NC}" >&2; }
 
-log() { echo -e "$1"; }
-
-find_xcode_container() {
-  local xcode_args=()
-  if [ -f "$APP_NAME.xcworkspace/contents.xcworkspacedata" ]; then
-    xcode_args+=( -workspace "$APP_NAME.xcworkspace" )
-  elif [ -f "$APP_NAME.xcodeproj/project.pbxproj" ]; then
-    xcode_args+=( -project "$APP_NAME.xcodeproj" )
-  else
-    log "${RED}❌ .xcodeproj or .xcworkspace not found${NC}"
-    exit 1
-  fi
-  echo "${xcode_args[@]}"
+print_banner() {
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}${CYAN}   MacAmp 2.91 macOS — Build Tool${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 }
 
-build_app() {
-  log "${YELLOW}🧹 Cleaning...${NC}"
-  rm -rf "$BUILD_DIR/" "$DERIVED_DATA/"
-  mkdir -p "$BUILD_DIR"
-  log "${GREEN}✅ Cleaned${NC}\n"
-
-  log "${YELLOW}🔍 Finding Xcode project...${NC}"
-  # shellcheck disable=SC2207
-  local XCODE_ARGS=($(find_xcode_container))
-  log "${GREEN}✅ Found: ${XCODE_ARGS[*]}${NC}\n"
-
-  log "${YELLOW}📦 Creating Archive...${NC}"
-  xcodebuild archive \
-    "${XCODE_ARGS[@]}" \
-    -scheme "$SCHEME" \
-    -configuration Release \
-    -archivePath "$ARCHIVE_PATH" \
-    -derivedDataPath "$DERIVED_DATA" \
-    -quiet
-
-  [ -d "$ARCHIVE_PATH" ] || { log "${RED}❌ Archive not created${NC}"; exit 1; }
-  log "${GREEN}✅ Archive created${NC}\n"
-
-  log "${YELLOW}📤 Exporting application...${NC}"
-  cat > "$EXPORT_OPTIONS" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>method</key>
-  <string>mac-application</string>
-  <key>stripSwiftSymbols</key>
-  <true/>
-</dict>
-</plist>
-EOF
-
-  xcodebuild -exportArchive \
-    -archivePath "$ARCHIVE_PATH" \
-    -exportPath "$EXPORT_DIR" \
-    -exportOptionsPlist "$EXPORT_OPTIONS" \
-    -quiet
-
-  [ -d "$EXPORT_DIR/$APP_NAME.app" ] || { log "${RED}❌ Export failed${NC}"; exit 1; }
-  log "${GREEN}✅ Application exported: $EXPORT_DIR/$APP_NAME.app${NC}\n"
+clean_artifacts() {
+    log_step "Cleaning build artifacts"
+    rm -rf "$DERIVED_DATA" "$BUILD_DIR"
+    log_ok "Build artifacts cleaned"
 }
 
-detach_dmg_if_attached() {
-  local dmg="$1"
-  [ -f "$dmg" ] || return 0
+build_debug() {
+    log_step "Building Debug configuration"
+    xcodebuild -scheme "$SCHEME" \
+               -configuration Debug \
+               -derivedDataPath "$DERIVED_DATA" \
+               build | grep -E '\*\*\s*BUILD|error:|warning:' || true
+    
+    if [ -d "$DEBUG_APP" ]; then
+        log_ok "Debug build succeeded: $DEBUG_APP"
+    else
+        log_err "Debug build failed"
+        exit 1
+    fi
+}
 
-  local dev=""
-  dev="$(hdiutil info | awk -v p="$dmg" '$0 ~ p {found=1} found && $1 ~ /^\/dev\/disk/ {print $1; exit}')"
-  if [ -n "${dev:-}" ]; then
-    log "${YELLOW}📎 DMG mounted ($dev) — detaching...${NC}"
-    hdiutil detach -force "$dev" || true
-    log "${GREEN}✅ Detached${NC}\n"
-  fi
+build_release() {
+    log_step "Building Release configuration"
+    xcodebuild -scheme "$SCHEME" \
+               -configuration Release \
+               -derivedDataPath "$DERIVED_DATA" \
+               build | grep -E '\*\*\s*BUILD|error:|warning:' || true
+    
+    if [ -d "$RELEASE_APP" ]; then
+        log_ok "Release build succeeded: $RELEASE_APP"
+    else
+        log_err "Release build failed"
+        exit 1
+    fi
+}
+
+run_app() {
+    local target_app="$1"
+    if [ ! -d "$target_app" ]; then
+        log_err "Application bundle not found at $target_app"
+        exit 1
+    fi
+    
+    log_step "Closing any existing MacAmp instance"
+    pkill -x "$APP_NAME" 2>/dev/null || true
+    sleep 0.3
+    
+    log_step "Launching $target_app"
+    open "$target_app"
+    log_ok "MacAmp launched successfully!"
 }
 
 build_dmg() {
-  local app_path="${1:-$EXPORT_DIR/$APP_NAME.app}"
-  [ -d "$app_path" ] || { log "${RED}❌ .app not found: $app_path${NC}"; exit 1; }
-
-  # Detach any previously mounted volumes with this name
-  for existing_dev in $(hdiutil info | grep -i "$APP_NAME" | awk '{print $1}'); do
-    hdiutil detach -force "$existing_dev" 2>/dev/null || true
-  done
-
-  detach_dmg_if_attached "$DMG_PATH"
-
-  log "${YELLOW}💿 Creating DMG...${NC}"
-  mkdir -p "$BUILD_DIR"
-
-  local temp_dir staging dmg_temp mount_dir
-  temp_dir="$(mktemp -d)"
-  staging="$temp_dir/dmg"
-  mkdir -p "$staging"
-
-  cp -R "$app_path" "$staging/"
-  ln -s /Applications "$staging/Applications"
-
-  dmg_temp="$temp_dir/MacAmp-temp.dmg"
-  rm -f "$DMG_PATH"
-  rm -f "$dmg_temp"  # Clean up any leftover temp DMG
-
-  hdiutil create -volname "$APP_NAME" \
-    -srcfolder "$staging" \
-    -ov -format UDRW \
-    "$dmg_temp" >/dev/null
-
-  mount_dir="/Volumes/${APP_NAME}-dmg-$$"
-  # Clean up mount point if it exists
-  [ -d "$mount_dir" ] && hdiutil detach -force "$mount_dir" 2>/dev/null || true
-
-  hdiutil attach "$dmg_temp" -mountpoint "$mount_dir" -nobrowse >/dev/null
-
-  # Wait for volume to actually appear (and Finder to see it)
-  for i in {1..20}; do
-    if [ -d "$mount_dir" ] && ls "$mount_dir" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 0.5
-  done
-
-  # Finder styling (with retries for stable GUI application)
-STYLED=false
-for i in 1 2 3 4 5; do
-  if osascript << EOF >/dev/null 2>&1
-tell application "Finder"
-  delay 1
-  tell disk "$APP_NAME"
-    open
-    set current view of container window to icon view
-    set toolbar visible of container window to false
-    set statusbar visible of container window to false
-    set bounds of container window to {400, 100, 900, 450}
-    set viewOptions to the icon view options of container window
-    set arrangement of viewOptions to not arranged
-    set icon size of viewOptions to 72
-    set position of item "$APP_NAME.app" of container window to {150, 140}
-    set position of item "Applications" of container window to {350, 140}
-    close
-    open
-    update without registering applications
-    delay 1
-  end tell
-end tell
-EOF
-  then
-    STYLED=true
-    break
-  fi
-  sleep 1
-done
-
-  if [ "$STYLED" = false ]; then
-    echo "⚠️ Finder styling failed after retries (no GUI or disk not visible). DMG will be default view."
-  fi
-
-  osascript -e "tell application \"Finder\" to close (every window whose name is \"$APP_NAME\")" >/dev/null 2>&1 || true
-  sync
-
-  # Detach with retries
-  for i in 1 2 3; do
-    if hdiutil detach "$mount_dir" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 1
-  done
-  # Just in case
-  if mount | grep -q "$mount_dir"; then
-    diskutil unmount force "$mount_dir" >/dev/null 2>&1 || true
-    sleep 1
-  fi
-
-  hdiutil convert "$dmg_temp" \
-    -format UDZO \
-    -imagekey zlib-level=9 \
-    -o "$DMG_PATH" >/dev/null
-
-  rm -rf "$temp_dir"
-
-  log "${GREEN}✅ DMG created: $DMG_PATH${NC}\n"
+    build_release
+    
+    log_step "Creating DMG package"
+    mkdir -p "$BUILD_DIR"
+    
+    # Detach any existing mounts
+    for dev in $(hdiutil info | grep -i "$APP_NAME" | awk '{print $1}'); do
+        hdiutil detach -force "$dev" 2>/dev/null || true
+    done
+    
+    local temp_dir staging dmg_temp mount_dir
+    temp_dir="$(mktemp -d)"
+    staging="$temp_dir/dmg"
+    mkdir -p "$staging"
+    
+    cp -R "$RELEASE_APP" "$staging/"
+    ln -s /Applications "$staging/Applications"
+    
+    dmg_temp="$temp_dir/${APP_NAME}-temp.dmg"
+    rm -f "$DMG_PATH" "$dmg_temp"
+    
+    hdiutil create -volname "$APP_NAME" \
+                   -srcfolder "$staging" \
+                   -ov -format UDRW \
+                   "$dmg_temp" >/dev/null
+    
+    mount_dir="/Volumes/${APP_NAME}-dmg-$$"
+    [ -d "$mount_dir" ] && hdiutil detach -force "$mount_dir" 2>/dev/null || true
+    
+    hdiutil attach "$dmg_temp" -mountpoint "$mount_dir" -nobrowse >/dev/null
+    
+    # Detach and convert to compressed UDZO
+    sync
+    hdiutil detach "$mount_dir" >/dev/null 2>&1 || diskutil unmount force "$mount_dir" >/dev/null 2>&1 || true
+    
+    hdiutil convert "$dmg_temp" \
+                   -format UDZO \
+                   -imagekey zlib-level=9 \
+                   -o "$DMG_PATH" >/dev/null
+    
+    rm -rf "$temp_dir"
+    log_ok "DMG package created: $DMG_PATH"
 }
 
-log "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-log "${BLUE}🚀 Build $APP_NAME (mode: $MODE)${NC}"
-log "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+show_help() {
+    print_banner
+    echo "Usage: ./build.sh [COMMAND]"
+    echo ""
+    echo "Commands:"
+    echo "  (none) / build   Fast incremental Debug build (default)"
+    echo "  run              Build Debug and launch MacAmp"
+    echo "  release          Build optimized Release configuration"
+    echo "  run-release      Build Release and launch MacAmp"
+    echo "  clean            Remove DerivedData and build directories"
+    echo "  dmg              Build Release and create distributable DMG"
+    echo "  help             Show this help message"
+    echo ""
+}
 
-case "$MODE" in
-  all)
-    build_app
-    build_dmg
-    ;;
-  app)
-    build_app
-    ;;
-  dmg)
-    if [ -n "$APP_PATH_ARG" ]; then
-      build_dmg "$APP_PATH_ARG"
-    else
-      build_dmg
-    fi
-    ;;
-  add)
-    if [ -z "${2:-}" ]; then
-      echo "Error: File path is required."
-      exit 1
-    fi
-    python3 scripts/add_to_project.py "$2" "MacAmp.xcodeproj/project.pbxproj"
-    ;;
-  *)
-    echo "Usage:"
-    echo "  ./build.sh            # all"
-    echo "  ./build.sh all"
-    echo "  ./build.sh app"
-    echo "  ./build.sh add [path/to/file.swift]"
-    echo "  ./build.sh dmg [path/to/MacAmp.app]"
-    exit 1
-    ;;
+# Main Command Dispatch
+COMMAND="${1:-build}"
+
+case "$COMMAND" in
+    build|debug|"")
+        print_banner
+        build_debug
+        ;;
+    run)
+        print_banner
+        build_debug
+        run_app "$DEBUG_APP"
+        ;;
+    release)
+        print_banner
+        build_release
+        ;;
+    run-release)
+        print_banner
+        build_release
+        run_app "$RELEASE_APP"
+        ;;
+    clean)
+        print_banner
+        clean_artifacts
+        ;;
+    dmg)
+        print_banner
+        build_dmg
+        ;;
+    help|-h|--help)
+        show_help
+        ;;
+    *)
+        log_err "Unknown command: '$COMMAND'"
+        echo ""
+        show_help
+        exit 1
+        ;;
 esac
-
-log "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-log "${GREEN}✅ Done${NC}"
-log "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-echo "📁 Artifacts:"
-echo "  • App: $EXPORT_DIR/$APP_NAME.app"
-if [ -f "$DMG_PATH" ]; then
-  echo "  • DMG: $DMG_PATH"
-fi
