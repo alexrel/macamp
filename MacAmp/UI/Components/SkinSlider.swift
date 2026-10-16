@@ -79,6 +79,14 @@ public class SkinSlider: WinampControlView {
         return (value - minValue) / (maxValue - minValue)
     }
     
+    public var isThumbHidden: Bool = false {
+        didSet {
+            if oldValue != isThumbHidden {
+                needsDisplay = true
+            }
+        }
+    }
+    
     public override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
@@ -95,30 +103,35 @@ public class SkinSlider: WinampControlView {
         }
         
         // 2. Draw thumb
-        let thumbSlice = isDragging ? thumbPressed : thumbNormal
-        let thumbW = thumbSlice.rect.width
-        let thumbH = thumbSlice.rect.height
-        
-        var thumbRect: NSRect
-        if orientation == .horizontal {
-            let travelDistance = bounds.width - thumbW
-            let thumbX = CGFloat(normalizedValue) * travelDistance
-            let thumbY = (bounds.height - thumbH) / 2.0
-            thumbRect = NSRect(x: round(thumbX), y: round(thumbY), width: thumbW, height: thumbH)
-        } else {
-            // Inverted for vertical slider (top is max value, bottom is min value)
-            let travelDistance = bounds.height - thumbH
-            let thumbY = (1.0 - CGFloat(normalizedValue)) * travelDistance
-            let thumbX = (bounds.width - thumbW) / 2.0
-            thumbRect = NSRect(x: round(thumbX), y: round(thumbY), width: thumbW, height: thumbH)
-        }
-        
-        if let thumbImg = SkinManager.shared.image(for: thumbSlice) {
-            context.drawSkinImage(thumbImg, in: thumbRect)
+        if !isThumbHidden {
+            let thumbSlice = isDragging ? thumbPressed : thumbNormal
+            let thumbW = thumbSlice.rect.width
+            let thumbH = thumbSlice.rect.height
+            
+            var thumbRect: NSRect
+            if orientation == .horizontal {
+                let travelDistance = bounds.width - thumbW
+                let thumbX = CGFloat(normalizedValue) * travelDistance
+                let thumbY = (bounds.height - thumbH) / 2.0
+                thumbRect = NSRect(x: round(thumbX), y: round(thumbY), width: thumbW, height: thumbH)
+            } else {
+                // Inverted for vertical slider (top is max value, bottom is min value)
+                // Travel distance is 51px (bounds.height 63 - 1 - 11 = 51)
+                // At 0 dB (normalizedValue 0.5), thumbY = 25, centering thumb line at row 30 (dash is at row 68 in EQMAIN.BMP)
+                let travelDistance = bounds.height - 1.0 - thumbH
+                let thumbY = floor((1.0 - CGFloat(normalizedValue)) * travelDistance)
+                let thumbX: CGFloat = 1.0
+                thumbRect = NSRect(x: thumbX, y: thumbY, width: thumbW, height: thumbH)
+            }
+            
+            if let thumbImg = SkinManager.shared.image(for: thumbSlice) {
+                context.drawSkinImage(thumbImg, in: thumbRect)
+            }
         }
     }
     
     public override func mouseDown(with event: NSEvent) {
+        guard !isThumbHidden else { return }
         isDragging = true
         updateValue(with: event)
         trackMouse(with: event)
@@ -135,7 +148,7 @@ public class SkinSlider: WinampControlView {
             let clickX = localPoint.x - (thumbSlice.rect.width / 2.0)
             norm = Double(clickX / travel)
         } else {
-            let travel = bounds.height - thumbSlice.rect.height
+            let travel = bounds.height - 1.0 - thumbSlice.rect.height
             guard travel > 0 else { return }
             let clickY = localPoint.y - (thumbSlice.rect.height / 2.0)
             norm = 1.0 - Double(clickY / travel)

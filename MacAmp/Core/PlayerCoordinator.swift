@@ -73,6 +73,16 @@ public class PlayerCoordinator: NSObject {
     // MARK: - Bindings & Events
     private func setupBindings() {
         // 1. Audio Engine Callbacks
+        audioEngine.onStatusUpdate = { [weak self] status in
+            guard let self else { return }
+            self.mainView.timeDisplay.status = status
+            self.mainView.seekSlider.isThumbHidden = (status == .stopped)
+            if status == .stopped {
+                self.mainView.seekSlider.value = 0.0
+            }
+            self.mainView.needsDisplay = true
+        }
+        
         audioEngine.onTimeUpdate = { [weak self] currentSec in
             guard let self else { return }
             self.mainView.timeDisplay.currentTime = currentSec
@@ -682,6 +692,8 @@ public class PlayerCoordinator: NSObject {
     @objc public func handleStop() {
         audioEngine.stop()
         mainView.timeDisplay.status = .stopped
+        mainView.seekSlider.isThumbHidden = true
+        mainView.seekSlider.value = 0.0
         mainView.needsDisplay = true
     }
     

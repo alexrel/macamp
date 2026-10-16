@@ -38,10 +38,17 @@ public class AudioEngine {
     private var sampleRate: Double = 44100
     private var startFrameOffset: AVAudioFramePosition = 0
     
-    public private(set) var status: PlayerStatus = .stopped
+    public private(set) var status: PlayerStatus = .stopped {
+        didSet {
+            if oldValue != status {
+                onStatusUpdate?(status)
+            }
+        }
+    }
     public private(set) var currentMetadata: TrackMetadata?
     
     // Callbacks
+    public var onStatusUpdate: ((PlayerStatus) -> Void)?
     public var onTimeUpdate: ((TimeInterval) -> Void)?
     public var onPlaybackFinished: (() -> Void)?
     public var onSpectralDataUpdate: (([Float]) -> Void)?
@@ -59,7 +66,6 @@ public class AudioEngine {
         engine.attach(playerNode)
         engine.attach(eqNode)
         
-        let format = engine.mainMixerNode.outputFormat(forBus: 0)
         engine.connect(playerNode, to: eqNode, format: nil)
         engine.connect(eqNode, to: engine.mainMixerNode, format: nil)
         

@@ -152,6 +152,7 @@ public class MainWindowView: WinampControlView {
                 AudioEngine.shared.seek(to: val * meta.duration)
             }
         }
+        seekSlider.isThumbHidden = (AudioEngine.shared.status == .stopped)
         addSubview(seekSlider)
         
         // 5. Window Toggles (EQ, PL)

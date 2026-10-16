@@ -45,44 +45,58 @@ public class PlaylistWindowView: WinampControlView {
     }
     
     private func setupControls() {
-        // 1. TitleBar buttons (Close at right: 2, Shade at right: 12)
-        closeButton = SkinButton(normal: SpriteCatalog.plCloseNormal, pressed: SpriteCatalog.plCloseNormal) { [weak self] in
+        // 1. TitleBar buttons (Close at right: 11, Shade at right: 20)
+        // Background plTopRight already draws the unpressed icons; SkinButton only draws when pressed.
+        closeButton = SkinButton(normal: nil, pressed: SpriteCatalog.plClosePressed) { [weak self] in
             self?.onClose?()
         }
         addSubview(closeButton)
         
-        shadeButton = SkinButton(normal: SpriteCatalog.plShadeNormal, pressed: SpriteCatalog.plShadeNormal) { [weak self] in
+        shadeButton = SkinButton(normal: nil, pressed: SpriteCatalog.plShadePressed) { [weak self] in
             self?.onToggleShade?()
         }
         addSubview(shadeButton)
         
         // 2. Bottom Toolbar Buttons
-        addButton = SkinButton(normal: SpriteCatalog.plAddFile, pressed: SpriteCatalog.plAddFile) { [weak self] in
+        // plBottomLeft and plBottomRight background already draw [+ ADD], [- REM], [SEL], [MISC], [LIST OPTS].
+        // SkinButtons are transparent click targets showing their authentic pressed sprite on mouseDown.
+        addButton = SkinButton(normal: nil, pressed: SpriteCatalog.plAddPressed) { [weak self] in
             self?.showAddMenu()
         }
         addSubview(addButton)
         
-        remButton = SkinButton(normal: SpriteCatalog.plRemoveSel, pressed: SpriteCatalog.plRemoveSel) { [weak self] in
+        remButton = SkinButton(normal: nil, pressed: SpriteCatalog.plRemovePressed) { [weak self] in
             self?.showRemMenu()
         }
         addSubview(remButton)
         
-        selButton = SkinButton(normal: SpriteCatalog.plSelectAll, pressed: SpriteCatalog.plSelectAll) { [weak self] in
+        selButton = SkinButton(normal: nil, pressed: SpriteCatalog.plSelectPressed) { [weak self] in
             self?.showSelMenu()
         }
         addSubview(selButton)
         
-        miscButton = SkinButton(normal: SpriteCatalog.plMiscOptions, pressed: SpriteCatalog.plMiscOptions) { [weak self] in
+        miscButton = SkinButton(normal: nil, pressed: SpriteCatalog.plMiscPressed) { [weak self] in
             self?.showMiscMenu()
         }
         addSubview(miscButton)
         
-        listButton = SkinButton(normal: SpriteCatalog.plLoadList, pressed: SpriteCatalog.plLoadList) { [weak self] in
+        listButton = SkinButton(normal: nil, pressed: SpriteCatalog.plListPressed) { [weak self] in
             self?.showListMenu()
         }
         addSubview(listButton)
         
         layoutButtons()
+    }
+    
+    public override func layout() {
+        super.layout()
+        layoutButtons()
+    }
+    
+    public override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        layoutButtons()
+        needsDisplay = true
     }
     
     public override func resizeSubviews(withOldSize oldSize: NSSize) {
@@ -92,14 +106,14 @@ public class PlaylistWindowView: WinampControlView {
     
     private func layoutButtons() {
         closeButton.frame = NSRect(x: bounds.width - 11, y: 3, width: 9, height: 9)
-        shadeButton.frame = NSRect(x: bounds.width - 21, y: 3, width: 9, height: 9)
+        shadeButton.frame = NSRect(x: bounds.width - 20, y: 3, width: 9, height: 9)
         
-        let bottomY = bounds.height - 30
-        addButton.frame = NSRect(x: 14, y: bottomY, width: 22, height: 18)
-        remButton.frame = NSRect(x: 43, y: bottomY, width: 22, height: 18)
-        selButton.frame = NSRect(x: 72, y: bottomY, width: 22, height: 18)
-        miscButton.frame = NSRect(x: 101, y: bottomY, width: 22, height: 18)
-        listButton.frame = NSRect(x: bounds.width - 44, y: bottomY, width: 22, height: 18)
+        let bottomY = bounds.height - 38
+        addButton.frame = NSRect(x: 14, y: bottomY + 8, width: 22, height: 18)
+        remButton.frame = NSRect(x: 43, y: bottomY + 8, width: 22, height: 18)
+        selButton.frame = NSRect(x: 72, y: bottomY + 8, width: 22, height: 18)
+        miscButton.frame = NSRect(x: 101, y: bottomY + 8, width: 22, height: 18)
+        listButton.frame = NSRect(x: bounds.width - 44, y: bottomY + 8, width: 22, height: 18)
     }
     
     private func updateLayoutForShadeMode() {
@@ -250,37 +264,73 @@ public class PlaylistWindowView: WinampControlView {
         
         let isKey = window?.isKeyWindow ?? true
         
-        let topH: CGFloat = isShadeMode ? 14 : 20
+        if isShadeMode {
+            // Draw Shade Mode Bar (height: 14)
+            let rightSlice = isKey ? SpriteCatalog.plShadeRightSel : SpriteCatalog.plShadeRight
+            if let leftImg = SkinManager.shared.image(for: SpriteCatalog.plShadeLeft) {
+                context.drawSkinImage(leftImg, in: NSRect(x: 0, y: 0, width: 25, height: 14))
+            }
+            if let midImg = SkinManager.shared.image(for: SpriteCatalog.plShadeMiddle) {
+                var x: CGFloat = 25.0
+                let endX = bounds.width - 50.0
+                while x < endX {
+                    let w = min(25.0, endX - x)
+                    context.drawSkinImage(midImg, in: NSRect(x: x, y: 0, width: w, height: 14))
+                    x += 25.0
+                }
+            }
+            if let rightImg = SkinManager.shared.image(for: rightSlice) {
+                context.drawSkinImage(rightImg, in: NSRect(x: bounds.width - 50, y: 0, width: 50, height: 14))
+            }
+            // Draw shade total time display at right
+            let timeStr = playlist.formattedTotalDuration
+            BitmapFont.draw(string: timeStr, in: context, at: CGPoint(x: bounds.width - 48, y: 4))
+            return
+        }
+        
+        let topH: CGFloat = 20
         let leftSlice = isKey ? SpriteCatalog.plTopLeftSel : SpriteCatalog.plTopLeft
         let titleSlice = isKey ? SpriteCatalog.plTopTitleSel : SpriteCatalog.plTopTitle
         let tileSlice = isKey ? SpriteCatalog.plTopTileSel : SpriteCatalog.plTopTile
         let rightSlice = isKey ? SpriteCatalog.plTopRightSel : SpriteCatalog.plTopRight
         
-        // 1. Draw Top Bar (height: 14 in shade, 20 in normal)
+        // 1. Draw Top Bar (height: 20 in normal mode)
+        // Authentic Winamp geometry: Left corner (25px), Centered Title (100px), Right corner (25px)
+        let titleW: CGFloat = 100.0
+        let leftW: CGFloat = 25.0
+        let rightW: CGFloat = 25.0
+        let titleX = round((bounds.width - titleW) / 2.0)
+        
+        // Left piece (0 .. 25)
         if let leftImg = SkinManager.shared.image(for: leftSlice) {
-            context.drawSkinImage(leftImg, in: NSRect(x: 0, y: 0, width: 25, height: topH))
+            context.drawSkinImage(leftImg, in: NSRect(x: 0, y: 0, width: leftW, height: topH))
         }
-        if let titleImg = SkinManager.shared.image(for: titleSlice) {
-            context.drawSkinImage(titleImg, in: NSRect(x: 25, y: 0, width: 100, height: topH))
-        }
+        // Left filler tile (25 .. titleX)
         if let tileImg = SkinManager.shared.image(for: tileSlice) {
-            var x: CGFloat = 125
-            let endX = bounds.width - 25
+            var x: CGFloat = leftW
+            while x < titleX {
+                let w = min(25.0, titleX - x)
+                context.drawSkinImage(tileImg, in: NSRect(x: x, y: 0, width: w, height: topH))
+                x += 25.0
+            }
+        }
+        // Centered title (titleX .. titleX + 100)
+        if let titleImg = SkinManager.shared.image(for: titleSlice) {
+            context.drawSkinImage(titleImg, in: NSRect(x: titleX, y: 0, width: titleW, height: topH))
+        }
+        // Right filler tile (titleX + 100 .. bounds.width - 25)
+        if let tileImg = SkinManager.shared.image(for: tileSlice) {
+            var x: CGFloat = titleX + titleW
+            let endX = bounds.width - rightW
             while x < endX {
                 let w = min(25.0, endX - x)
                 context.drawSkinImage(tileImg, in: NSRect(x: x, y: 0, width: w, height: topH))
                 x += 25.0
             }
         }
+        // Right piece (bounds.width - 25 .. bounds.width)
         if let rightImg = SkinManager.shared.image(for: rightSlice) {
-            context.drawSkinImage(rightImg, in: NSRect(x: bounds.width - 25, y: 0, width: 25, height: topH))
-        }
-        
-        if isShadeMode {
-            // Draw shade total time display at right
-            let timeStr = playlist.formattedTotalDuration
-            BitmapFont.draw(string: timeStr, in: context, at: CGPoint(x: bounds.width - 70, y: 4))
-            return
+            context.drawSkinImage(rightImg, in: NSRect(x: bounds.width - rightW, y: 0, width: rightW, height: topH))
         }
         
         // 2. Draw Bottom Bar (height: 38)
@@ -533,6 +583,7 @@ public class PlaylistWindowView: WinampControlView {
                 if newFrame != win.frame {
                     win.setFrame(newFrame, display: true, animate: false)
                     self.frame = NSRect(x: 0, y: 0, width: newWidth, height: newHeight)
+                    self.layoutButtons()
                     self.needsDisplay = true
                 }
                 

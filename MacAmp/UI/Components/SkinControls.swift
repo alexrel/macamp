@@ -46,8 +46,8 @@ open class WinampControlView: NSView {
 
 // MARK: - SkinButton
 public class SkinButton: WinampControlView {
-    public var normalSlice: SpriteSlice
-    public var pressedSlice: SpriteSlice
+    public var normalSlice: SpriteSlice?
+    public var pressedSlice: SpriteSlice?
     public var action: (() -> Void)?
     
     public private(set) var isPressed = false {
@@ -62,11 +62,13 @@ public class SkinButton: WinampControlView {
         didSet { needsDisplay = true }
     }
     
-    public init(normal: SpriteSlice, pressed: SpriteSlice, action: (() -> Void)? = nil) {
+    public init(normal: SpriteSlice? = nil, pressed: SpriteSlice? = nil, action: (() -> Void)? = nil) {
         self.normalSlice = normal
         self.pressedSlice = pressed
         self.action = action
-        super.init(frame: NSRect(x: 0, y: 0, width: normal.rect.width, height: normal.rect.height))
+        let w = normal?.rect.width ?? pressed?.rect.width ?? 0
+        let h = normal?.rect.height ?? pressed?.rect.height ?? 0
+        super.init(frame: NSRect(x: 0, y: 0, width: w, height: h))
     }
     
     public required init?(coder: NSCoder) {
@@ -86,8 +88,8 @@ public class SkinButton: WinampControlView {
             return
         }
         
-        let slice = isPressed ? pressedSlice : normalSlice
-        if let image = SkinManager.shared.image(for: slice) {
+        let slice = isPressed ? (pressedSlice ?? normalSlice) : normalSlice
+        if let s = slice, let image = SkinManager.shared.image(for: s) {
             context.drawSkinImage(image, in: bounds)
         }
     }
