@@ -25,8 +25,23 @@ public class PlaylistWindowView: WinampControlView {
     public var isShadeMode: Bool = false {
         didSet {
             updateLayoutForShadeMode()
+            layoutButtons()
+            clampScrollOffset()
             needsDisplay = true
+            for sub in subviews {
+                sub.needsDisplay = true
+            }
         }
+    }
+    
+    private func clampScrollOffset() {
+        let topH: CGFloat = 20
+        let botH: CGFloat = 38
+        let rowH = AppConstants.Playlist.trackRowHeight
+        let availableH = max(0, bounds.height - topH - botH)
+        let visibleRows = max(1, Int(availableH / rowH))
+        let maxScroll = max(0, playlist.tracks.count - visibleRows)
+        scrollOffset = max(0, min(scrollOffset, maxScroll))
     }
     
     public var onToggleShade: (() -> Void)?
@@ -282,9 +297,29 @@ public class PlaylistWindowView: WinampControlView {
             if let rightImg = SkinManager.shared.image(for: rightSlice) {
                 context.drawSkinImage(rightImg, in: NSRect(x: bounds.width - 50, y: 0, width: 50, height: 14))
             }
-            // Draw shade total time display at right
-            let timeStr = playlist.formattedTotalDuration
-            BitmapFont.draw(string: timeStr, in: context, at: CGPoint(x: bounds.width - 48, y: 4))
+            
+            // Draw shade track title and duration
+            if let track = playlist.currentTrack {
+                let trackIdx = (playlist.currentIndex ?? 0) + 1
+                let durStr = track.formattedDuration
+                let durWidth = CGFloat(durStr.count) * BitmapFont.charWidth
+                let rightMargin = bounds.width - 55.0
+                let durX = max(5.0, rightMargin - durWidth)
+                
+                let maxTitleWidth = max(0, durX - 10.0 - 5.0)
+                let maxChars = Int(maxTitleWidth / BitmapFont.charWidth)
+                let rawTitle = "\(trackIdx). \(track.artist) - \(track.title)"
+                let titleStr = (rawTitle.count > maxChars) ? (String(rawTitle.prefix(max(0, maxChars - 1))) + "…") : rawTitle
+                
+                BitmapFont.draw(string: titleStr, in: context, at: CGPoint(x: 5, y: 4))
+                BitmapFont.draw(string: durStr, in: context, at: CGPoint(x: durX, y: 4))
+            } else {
+                let noFile = "[No file]"
+                BitmapFont.draw(string: noFile, in: context, at: CGPoint(x: 5, y: 4))
+                let totalStr = playlist.formattedTotalDuration
+                let totalX = bounds.width - 55.0 - CGFloat(totalStr.count) * BitmapFont.charWidth
+                BitmapFont.draw(string: totalStr, in: context, at: CGPoint(x: max(5.0, totalX), y: 4))
+            }
             return
         }
         
@@ -371,7 +406,9 @@ public class PlaylistWindowView: WinampControlView {
         }
         
         // 3. Draw Track List Area
-        let listRect = NSRect(x: 12, y: topH, width: bounds.width - 32, height: bounds.height - topH - botH)
+        let listHeight = bounds.height - topH - botH
+        guard listHeight > 0 else { return }
+        let listRect = NSRect(x: 12, y: topH, width: bounds.width - 32, height: listHeight)
         let style = SkinManager.shared.currentSkin?.playlistStyle ?? PlaylistStyle()
         
         // Background
@@ -380,7 +417,7 @@ public class PlaylistWindowView: WinampControlView {
         
         // Draw track rows (13px each)
         let rowH = AppConstants.Playlist.trackRowHeight
-        let visibleRows = Int(listRect.height / rowH)
+        let visibleRows = max(1, Int(listRect.height / rowH))
         let font = NSFont(name: style.fontName, size: 9) ?? NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
         
         let paragraphStyle = NSMutableParagraphStyle()
@@ -433,8 +470,8 @@ public class PlaylistWindowView: WinampControlView {
         
         // 4. Draw Scrollbar Handle
         let trackHeight = listRect.height
-        if playlist.tracks.count > visibleRows {
-            let maxScroll = playlist.tracks.count - visibleRows
+        if trackHeight > 0 && playlist.tracks.count > visibleRows {
+            let maxScroll = max(1, playlist.tracks.count - visibleRows)
             let ratio = CGFloat(scrollOffset) / CGFloat(maxScroll)
             let thumbY = topH + ratio * max(0, trackHeight - 18)
             let thumbSlice = isDraggingScrollThumb ? SpriteCatalog.plScrollHandleSelected : SpriteCatalog.plScrollHandle

@@ -40,6 +40,9 @@ public class MainWindowView: WinampControlView {
         didSet {
             updateLayoutForShadeMode()
             needsDisplay = true
+            for sub in subviews {
+                sub.needsDisplay = true
+            }
         }
     }
     

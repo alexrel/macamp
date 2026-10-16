@@ -37,6 +37,8 @@ public class AudioEngine {
     private var fileDuration: TimeInterval = 0
     private var sampleRate: Double = 44100
     private var startFrameOffset: AVAudioFramePosition = 0
+    private var currentTrackTime: TimeInterval = 0
+    private var playbackGeneration: Int = 0
     
     public private(set) var status: PlayerStatus = .stopped {
         didSet {
@@ -112,6 +114,7 @@ public class AudioEngine {
         self.sampleRate = file.processingFormat.sampleRate
         self.fileDuration = Double(file.length) / sampleRate
         self.startFrameOffset = 0
+        self.currentTrackTime = 0
         
         // Extract metadata (ID3 / AVAsset)
         let asset = AVURLAsset(url: url)
@@ -153,21 +156,27 @@ public class AudioEngine {
     public func play() {
         guard let file = audioFile else { return }
         
-        if status == .paused {
-            playerNode.play()
-            status = .playing
-            startTimer()
-            return
-        }
+        playbackGeneration += 1
+        let gen = playbackGeneration
         
         playerNode.stop()
         if !engine.isRunning {
             try? engine.start()
         }
         
-        playerNode.scheduleFile(file, at: nil) { [weak self] in
+        let startFrame = AVAudioFramePosition(max(0, min(currentTrackTime, fileDuration)) * sampleRate)
+        let frameCount = AVAudioFrameCount(max(0, file.length - startFrame))
+        guard frameCount > 0 else {
+            handlePlaybackCompletion()
+            return
+        }
+        
+        startFrameOffset = startFrame
+        
+        playerNode.scheduleSegment(file, startingFrame: startFrame, frameCount: frameCount, at: nil) { [weak self] in
             DispatchQueue.main.async {
-                self?.handlePlaybackCompletion()
+                guard let self = self, self.playbackGeneration == gen else { return }
+                self.handlePlaybackCompletion()
             }
         }
         
@@ -178,10 +187,13 @@ public class AudioEngine {
     
     public func pause() {
         guard status == .playing else { return }
-        playerNode.pause()
+        currentTrackTime = currentTime
+        playbackGeneration += 1
+        playerNode.stop()
         status = .paused
         playbackTimer?.invalidate()
         playbackTimer = nil
+        onTimeUpdate?(currentTrackTime)
     }
     
     public func togglePause() {
@@ -193,9 +205,16 @@ public class AudioEngine {
     }
     
     public var currentTime: TimeInterval {
+        if status == .paused {
+            return currentTrackTime
+        }
+        guard status == .playing else { return 0 }
         guard let nodeTime = playerNode.lastRenderTime,
-              let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return 0 }
-        return Double(startFrameOffset + playerTime.sampleTime) / sampleRate
+              let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else {
+            return currentTrackTime
+        }
+        let calculated = Double(startFrameOffset + playerTime.sampleTime) / sampleRate
+        return max(0, min(calculated, fileDuration))
     }
     
     public var volume: Double {
@@ -203,37 +222,45 @@ public class AudioEngine {
     }
     
     public func stop() {
+        playbackGeneration += 1
         playerNode.stop()
         status = .stopped
         playbackTimer?.invalidate()
         playbackTimer = nil
         startFrameOffset = 0
+        currentTrackTime = 0
         onTimeUpdate?(0)
     }
     
     public func seek(to time: TimeInterval) {
         guard let file = audioFile else { return }
-        let targetFrame = AVAudioFramePosition(max(0, min(time, fileDuration)) * sampleRate)
-        let frameCount = AVAudioFrameCount(max(0, file.length - targetFrame))
-        guard frameCount > 0 else { return }
+        let clampedTime = max(0, min(time, fileDuration))
+        currentTrackTime = clampedTime
         
-        let wasPlaying = (status == .playing)
+        playbackGeneration += 1
+        let gen = playbackGeneration
         playerNode.stop()
+        
+        let targetFrame = AVAudioFramePosition(clampedTime * sampleRate)
+        let frameCount = AVAudioFrameCount(max(0, file.length - targetFrame))
         startFrameOffset = targetFrame
         
-        playerNode.scheduleSegment(file, startingFrame: targetFrame, frameCount: frameCount, at: nil) { [weak self] in
-            DispatchQueue.main.async {
-                self?.handlePlaybackCompletion()
+        if status == .playing {
+            if frameCount > 0 {
+                playerNode.scheduleSegment(file, startingFrame: targetFrame, frameCount: frameCount, at: nil) { [weak self] in
+                    DispatchQueue.main.async {
+                        guard let self = self, self.playbackGeneration == gen else { return }
+                        self.handlePlaybackCompletion()
+                    }
+                }
+                playerNode.play()
+                startTimer()
+            } else {
+                handlePlaybackCompletion()
             }
         }
         
-        if wasPlaying {
-            playerNode.play()
-            status = .playing
-            startTimer()
-        }
-        
-        onTimeUpdate?(time)
+        onTimeUpdate?(clampedTime)
     }
     
     private func handlePlaybackCompletion() {
@@ -245,14 +272,12 @@ public class AudioEngine {
     
     private func startTimer() {
         playbackTimer?.invalidate()
-        playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self else { return }
+        playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
             guard self.status == .playing else { return }
-            guard let nodeTime = self.playerNode.lastRenderTime,
-                  let playerTime = self.playerNode.playerTime(forNodeTime: nodeTime) else { return }
-            
-            let currentSec = Double(self.startFrameOffset + playerTime.sampleTime) / self.sampleRate
-            self.onTimeUpdate?(max(0, min(currentSec, self.fileDuration)))
+            let cur = self.currentTime
+            self.currentTrackTime = cur
+            self.onTimeUpdate?(cur)
         }
     }
     

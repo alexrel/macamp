@@ -104,7 +104,17 @@ public class SkinSlider: WinampControlView {
         
         // 2. Draw thumb
         if !isThumbHidden {
-            let thumbSlice = isDragging ? thumbPressed : thumbNormal
+            var thumbSlice = isDragging ? thumbPressed : thumbNormal
+            if backgroundSlice?.name == "MAIN_SHADE_POS_BG" {
+                if normalizedValue <= 0.33 {
+                    thumbSlice = SpriteCatalog.mainShadePosThumbLeft
+                } else if normalizedValue >= 0.66 {
+                    thumbSlice = SpriteCatalog.mainShadePosThumbRight
+                } else {
+                    thumbSlice = SpriteCatalog.mainShadePosThumb
+                }
+            }
+            
             let thumbW = thumbSlice.rect.width
             let thumbH = thumbSlice.rect.height
             

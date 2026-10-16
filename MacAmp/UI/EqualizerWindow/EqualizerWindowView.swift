@@ -37,11 +37,16 @@ public class EqualizerWindowView: WinampControlView {
     // Sliders
     public private(set) var preampSlider: SkinSlider!
     public private(set) var bandSliders: [SkinSlider] = []
+    public private(set) var eqShadeVolumeSlider: SkinSlider!
+    public private(set) var eqShadeBalanceSlider: SkinSlider!
     
     public var isShadeMode: Bool = false {
         didSet {
             updateLayoutForShadeMode()
             needsDisplay = true
+            for sub in subviews {
+                sub.needsDisplay = true
+            }
         }
     }
     
@@ -141,6 +146,41 @@ public class EqualizerWindowView: WinampControlView {
             bandSliders.append(slider)
             addSubview(slider)
         }
+        
+        // 6. EQ Shade Sliders (Volume at x: 61, y: 4, w: 97, h: 7; Balance at x: 164, y: 4, w: 42, h: 7)
+        eqShadeVolumeSlider = SkinSlider(
+            frame: NSRect(x: 61, y: 4, width: 97, height: 7),
+            orientation: .horizontal,
+            minValue: 0.0,
+            maxValue: 1.0,
+            initialValue: AppConstants.Audio.defaultVolume,
+            thumbNormal: SpriteCatalog.eqShadeVolThumb,
+            thumbPressed: SpriteCatalog.eqShadeVolThumb
+        ) { val in
+            AudioEngine.shared.setVolume(val)
+            PlayerCoordinator.shared.mainView.volumeSlider.value = val
+            PlayerCoordinator.shared.persistence.state.volume = val
+        }
+        eqShadeVolumeSlider.isHidden = true
+        addSubview(eqShadeVolumeSlider)
+        
+        eqShadeBalanceSlider = SkinSlider(
+            frame: NSRect(x: 164, y: 4, width: 42, height: 7),
+            orientation: .horizontal,
+            minValue: -1.0,
+            maxValue: 1.0,
+            initialValue: AppConstants.Audio.defaultBalance,
+            snapCenter: true,
+            snapThreshold: 0.1,
+            thumbNormal: SpriteCatalog.eqShadeBalThumb,
+            thumbPressed: SpriteCatalog.eqShadeBalThumb
+        ) { val in
+            AudioEngine.shared.setBalance(val)
+            PlayerCoordinator.shared.mainView.balanceSlider.value = val
+            PlayerCoordinator.shared.persistence.state.balance = val
+        }
+        eqShadeBalanceSlider.isHidden = true
+        addSubview(eqShadeBalanceSlider)
     }
     
     private func updateLayoutForShadeMode() {
@@ -151,6 +191,13 @@ public class EqualizerWindowView: WinampControlView {
         preampSlider.isHidden = !isFull
         for s in bandSliders {
             s.isHidden = !isFull
+        }
+        
+        eqShadeVolumeSlider.isHidden = isFull
+        eqShadeBalanceSlider.isHidden = isFull
+        if !isFull {
+            eqShadeVolumeSlider.value = AudioEngine.shared.volume
+            eqShadeBalanceSlider.value = PlayerCoordinator.shared.mainView.balanceSlider.value
         }
     }
     

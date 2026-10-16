@@ -252,8 +252,14 @@ public class WindowLayoutManager: NSObject {
         
         if let content = win.contentView {
             let unscaledW = (id == .playlist) ? win.frame.width : (win.frame.width / scale)
+            content.frame = NSRect(x: 0, y: 0, width: win.frame.width, height: newH)
             content.bounds = NSRect(x: 0, y: 0, width: unscaledW, height: newHeightUnscaled)
+            content.needsLayout = true
+            content.layoutSubtreeIfNeeded()
             content.needsDisplay = true
+            for sub in content.subviews {
+                sub.needsDisplay = true
+            }
         }
         
         // Move all attached windows below by diff so they remain docked with 0 gap

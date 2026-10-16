@@ -128,6 +128,21 @@ public class PlayerCoordinator: NSObject {
             self?.persistence.state.isRepeat = isRepeat
         }
         
+        // Volume and Balance sliders sync
+        mainView.volumeSlider.onValueChanged = { [weak self] val in
+            guard let self = self else { return }
+            self.audioEngine.setVolume(val)
+            self.eqView.eqShadeVolumeSlider?.value = val
+            self.persistence.state.volume = val
+        }
+        
+        mainView.balanceSlider.onValueChanged = { [weak self] val in
+            guard let self = self else { return }
+            self.audioEngine.setBalance(val)
+            self.eqView.eqShadeBalanceSlider?.value = val
+            self.persistence.state.balance = val
+        }
+        
         // Window Toggles
         mainView.eqToggle.onChanged = { [weak self] isVisible in
             guard let self else { return }
@@ -722,10 +737,14 @@ public class PlayerCoordinator: NSObject {
     // MARK: - Shade Mode Toggles
     public func toggleMainShade() {
         let newShade = !mainView.isShadeMode
-        mainView.isShadeMode = newShade
-        
         let newH: CGFloat = newShade ? AppConstants.Window.shadeHeight : AppConstants.Window.height
         windowManager.handleWindowHeightChange(id: .main, newHeightUnscaled: newH)
+        mainView.isShadeMode = newShade
+        
+        mainView.needsLayout = true
+        mainView.layoutSubtreeIfNeeded()
+        mainView.needsDisplay = true
+        mainView.subviews.forEach { $0.needsDisplay = true }
         
         persistence.state.isMainWindowShade = newShade
         persistence.saveSession()
@@ -733,10 +752,14 @@ public class PlayerCoordinator: NSObject {
     
     public func toggleEqShade() {
         let newShade = !eqView.isShadeMode
-        eqView.isShadeMode = newShade
-        
         let newH: CGFloat = newShade ? AppConstants.Window.shadeHeight : AppConstants.Window.height
         windowManager.handleWindowHeightChange(id: .equalizer, newHeightUnscaled: newH)
+        eqView.isShadeMode = newShade
+        
+        eqView.needsLayout = true
+        eqView.layoutSubtreeIfNeeded()
+        eqView.needsDisplay = true
+        eqView.subviews.forEach { $0.needsDisplay = true }
         
         persistence.state.isEqWindowShade = newShade
         persistence.saveSession()
@@ -744,10 +767,14 @@ public class PlayerCoordinator: NSObject {
     
     public func togglePlShade() {
         let newShade = !plView.isShadeMode
-        plView.isShadeMode = newShade
-        
         let newH: CGFloat = newShade ? AppConstants.Window.shadeHeight : AppConstants.Window.height
         windowManager.handleWindowHeightChange(id: .playlist, newHeightUnscaled: newH)
+        plView.isShadeMode = newShade
+        
+        plView.needsLayout = true
+        plView.layoutSubtreeIfNeeded()
+        plView.needsDisplay = true
+        plView.subviews.forEach { $0.needsDisplay = true }
         
         persistence.state.isPlaylistShade = newShade
         persistence.saveSession()
@@ -769,8 +796,10 @@ public class PlayerCoordinator: NSObject {
         // Volume & Balance
         audioEngine.setVolume(s.volume)
         mainView.volumeSlider.value = s.volume
+        eqView.eqShadeVolumeSlider.value = s.volume
         audioEngine.setBalance(s.balance)
         mainView.balanceSlider.value = s.balance
+        eqView.eqShadeBalanceSlider.value = s.balance
         
         // EQ
         audioEngine.setEqEnabled(s.isEqEnabled)
