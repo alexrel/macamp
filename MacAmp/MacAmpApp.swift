@@ -56,11 +56,35 @@ struct MacAmpApp: App {
             EmptyView()
         }
         .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Preferences...") {
+                    PlayerCoordinator.shared.showPreferencesWindow()
+                }
+                .keyboardShortcut(",", modifiers: [.command])
+            }
+            
             CommandMenu("Track") {
                 Button("Track Info (Alt+3)") {
                     PlayerCoordinator.shared.showTrackInfoWindow()
                 }
                 .keyboardShortcut("3", modifiers: [.option])
+            }
+            
+            CommandMenu("Options") {
+                Button("Preferences (Ctrl+P)") {
+                    PlayerCoordinator.shared.showPreferencesWindow()
+                }
+                .keyboardShortcut("p", modifiers: [.control])
+                
+                Button("Double Size (Ctrl+D)") {
+                    PlayerCoordinator.shared.toggleDoubleSize()
+                }
+                .keyboardShortcut("d", modifiers: [.control])
+                
+                Button("Skins...") {
+                    PlayerCoordinator.shared.openSkinChooser()
+                }
+                .keyboardShortcut("s", modifiers: [.option])
             }
         }
     }

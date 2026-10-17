@@ -12,6 +12,8 @@
 		AAF0E2D4D2A02A51FE841B73 /* CubicSpline.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA77248ED3C6F45BCAA3EF2D /* CubicSpline.swift */; };
 		AA9E25734126AF5A37B18D2E /* EqualizerWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA07E09BCD7F8C56F79D3C6E /* EqualizerWindowView.swift */; };
 		AA49E4E81FD4135DED9F929D /* PlaylistWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9737F793D3DB5719AD50C1 /* PlaylistWindowView.swift */; };
+		AAEADC209F82245C4EADCEE1 /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA35A17E7BAD2C525ABBF0EC /* PreferencesView.swift */; };
+		AA26D33C9ADF29582D85CF6B /* PreferencesWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2F256CF1E109555A98DDE5 /* PreferencesWindow.swift */; };
 		AAF6727000D6465C6A84B5E8 /* BitmapFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAEF4BFC172B765F4E890B62 /* BitmapFont.swift */; };
 		AA41E66BEF4A5353AA8FCA5B /* MarqueeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA27210BBEE3B85358BFFB1F /* MarqueeView.swift */; };
 		AA71F78E8FBA415F60994BF2 /* SkinControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA81E2BFE2D6C25B6AAF7175 /* SkinControls.swift */; };
@@ -48,6 +50,8 @@
 		AA77248ED3C6F45BCAA3EF2D /* CubicSpline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CubicSpline.swift"; sourceTree = "<group>"; };
 		AA07E09BCD7F8C56F79D3C6E /* EqualizerWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EqualizerWindowView.swift"; sourceTree = "<group>"; };
 		AA9737F793D3DB5719AD50C1 /* PlaylistWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistWindowView.swift"; sourceTree = "<group>"; };
+		AA35A17E7BAD2C525ABBF0EC /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PreferencesView.swift"; sourceTree = "<group>"; };
+		AA2F256CF1E109555A98DDE5 /* PreferencesWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PreferencesWindow.swift"; sourceTree = "<group>"; };
 		AAEF4BFC172B765F4E890B62 /* BitmapFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BitmapFont.swift"; sourceTree = "<group>"; };
 		AA27210BBEE3B85358BFFB1F /* MarqueeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MarqueeView.swift"; sourceTree = "<group>"; };
 		AA81E2BFE2D6C25B6AAF7175 /* SkinControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SkinControls.swift"; sourceTree = "<group>"; };
@@ -201,6 +205,7 @@
 				AA8E6383F24E2E566891AD27 /* EqualizerWindow */,
 				AAFE7533CA811B50FD843D34 /* PlaylistWindow */,
 				AA023492EC1591531E865198 /* TrackInfoWindow */,
+				AAC5B9AEC723D558508C4560 /* PreferencesWindow */,
 			);
 			path = "UI";
 			sourceTree = "<group>";
@@ -250,6 +255,15 @@
 				AA28B146C996605B23A779D9 /* TrackInfoWindow.swift */,
 			);
 			path = "TrackInfoWindow";
+			sourceTree = "<group>";
+		};
+		AAC5B9AEC723D558508C4560 /* PreferencesWindow */ = {
+			isa = PBXGroup;
+			children = (
+				AA35A17E7BAD2C525ABBF0EC /* PreferencesView.swift */,
+				AA2F256CF1E109555A98DDE5 /* PreferencesWindow.swift */,
+			);
+			path = "PreferencesWindow";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -314,6 +328,7 @@
 
 
 
+
 				BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */,
 				BDC069482B887D910009C001 /* Assets.xcassets in Resources */,
 			);
@@ -331,6 +346,8 @@
 				AAF0E2D4D2A02A51FE841B73 /* CubicSpline.swift in Sources */,
 				AA9E25734126AF5A37B18D2E /* EqualizerWindowView.swift in Sources */,
 				AA49E4E81FD4135DED9F929D /* PlaylistWindowView.swift in Sources */,
+				AAEADC209F82245C4EADCEE1 /* PreferencesView.swift in Sources */,
+				AA26D33C9ADF29582D85CF6B /* PreferencesWindow.swift in Sources */,
 				AAF6727000D6465C6A84B5E8 /* BitmapFont.swift in Sources */,
 				AA41E66BEF4A5353AA8FCA5B /* MarqueeView.swift in Sources */,
 				AA71F78E8FBA415F60994BF2 /* SkinControls.swift in Sources */,

@@ -303,6 +303,13 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             .store(in: &cancellables)
     }
     
+    public func refreshAllViews() {
+        mainView?.setNeedsDisplayRecursively()
+        eqView?.setNeedsDisplayRecursively()
+        plView?.setNeedsDisplayRecursively()
+        updateWindowMasks()
+    }
+    
     // MARK: - Synchronized Blinking for Pause Mode
     private var blinkTimer: Timer?
     private var isBlinkVisible: Bool = true
@@ -435,6 +442,11 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         TrackInfoWindow.show(trackIndex: targetIndex)
     }
     
+    /// Opens the Winamp Preferences (Ctrl+P / Cmd+,) dialog.
+    public func showPreferencesWindow(category: PreferencesCategory = .titles) {
+        PreferencesWindow.show(category: category)
+    }
+    
     // MARK: - Drag & Drop Handling
     public func handleDroppedFiles(_ paths: [String]) {
         var tracksToAdd: [TrackItem] = []
@@ -544,6 +556,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         // 2. Modifier keys
         if flags.contains(.command) || flags.contains(.control) {
             switch chars {
+            case "p", ",":
+                showPreferencesWindow()
+                return true
             case "d":
                 toggleDoubleSize()
                 return true
@@ -1020,6 +1035,15 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     }
     
     // MARK: - Double Size Toggle (1x / 2x)
+    public func setScale(_ factor: ScaleFactor) {
+        let newScale: CGFloat = (factor == .x2) ? 2.0 : 1.0
+        windowManager.setScale(newScale)
+        mainView?.doubleSizeButton.isSelected = (newScale == 2.0)
+        persistence.state.scaleFactor = factor
+        persistence.saveSession()
+        updateWindowMasks()
+    }
+    
     public func toggleDoubleSize() {
         let newScale: CGFloat = (windowManager.currentScale == 1.0) ? 2.0 : 1.0
         windowManager.setScale(newScale)

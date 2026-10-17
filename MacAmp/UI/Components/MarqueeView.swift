@@ -68,8 +68,26 @@ public class MarqueeView: WinampControlView {
         }
     }
     
+    private func currentTextWidth() -> CGFloat {
+        let state = PersistenceManager.shared.state
+        if state.marqueeFontMode == .desktop {
+            let font = NSFont(name: state.desktopFontFamily, size: CGFloat(state.desktopFontSize))
+                ?? NSFont.monospacedSystemFont(ofSize: CGFloat(state.desktopFontSize), weight: .regular)
+            let attrs: [NSAttributedString.Key: Any] = [.font: font]
+            return NSString(string: currentDisplayText).size(withAttributes: attrs).width
+        } else {
+            return CGFloat(currentDisplayText.count) * AppConstants.Font.charWidth
+        }
+    }
+    
     private func tick() {
-        let totalTextWidth = CGFloat(currentDisplayText.count) * AppConstants.Font.charWidth
+        guard PersistenceManager.shared.state.isMarqueeScrollEnabled else {
+            scrollOffset = 0
+            needsDisplay = true
+            return
+        }
+        
+        let totalTextWidth = currentTextWidth()
         guard totalTextWidth > bounds.width else {
             scrollOffset = 0
             needsDisplay = true
@@ -83,7 +101,7 @@ public class MarqueeView: WinampControlView {
         
         scrollOffset += 2.0 // Classic Winamp 2px step
         
-        if scrollOffset > totalTextWidth + 20.0 {
+        if scrollOffset > totalTextWidth + 24.0 {
             scrollOffset = 0.0
             pauseTicksRemaining = Int(AppConstants.Marquee.pauseDuration / AppConstants.Marquee.scrollInterval)
         }
@@ -102,14 +120,42 @@ public class MarqueeView: WinampControlView {
         // In Winamp/Webamp, the marquee always covers the background graphics/text on MAIN.BMP.
         BitmapFont.drawSpaceBackground(in: context, width: bounds.width, height: bounds.height)
         
-        // 2. Draw primary text
-        BitmapFont.draw(string: currentDisplayText, in: context, at: CGPoint(x: -scrollOffset, y: 0))
+        let state = PersistenceManager.shared.state
+        let totalTextWidth = currentTextWidth()
         
-        // 3. If scrolling, loop text
-        let totalTextWidth = CGFloat(currentDisplayText.count) * AppConstants.Font.charWidth
-        if scrollOffset > 0 {
-            let loopedX = totalTextWidth + 20.0 - scrollOffset
-            BitmapFont.draw(string: currentDisplayText, in: context, at: CGPoint(x: loopedX, y: 0))
+        if state.marqueeFontMode == .desktop {
+            let font = NSFont(name: state.desktopFontFamily, size: CGFloat(state.desktopFontSize))
+                ?? NSFont.monospacedSystemFont(ofSize: CGFloat(state.desktopFontSize), weight: .medium)
+            
+            // Text color from current skin playlist style, or classic fluorescent green
+            let textColor = SkinManager.shared.currentSkin?.playlistStyle.normalColor
+                ?? NSColor(red: 0.0, green: 0.9, blue: 0.0, alpha: 1.0)
+            
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: textColor
+            ]
+            let str = NSString(string: currentDisplayText)
+            let textSize = str.size(withAttributes: attrs)
+            let yPos = max(0, (bounds.height - textSize.height) / 2)
+            
+            // Draw primary desktop text
+            str.draw(at: CGPoint(x: -scrollOffset, y: yPos), withAttributes: attrs)
+            
+            // If scrolling, draw trailing looped copy
+            if scrollOffset > 0 {
+                let loopedX = totalTextWidth + 24.0 - scrollOffset
+                str.draw(at: CGPoint(x: loopedX, y: yPos), withAttributes: attrs)
+            }
+        } else {
+            // 2. Draw primary text using authentic BitmapFont
+            BitmapFont.draw(string: currentDisplayText, in: context, at: CGPoint(x: -scrollOffset, y: 0))
+            
+            // 3. If scrolling, loop text
+            if scrollOffset > 0 {
+                let loopedX = totalTextWidth + 20.0 - scrollOffset
+                BitmapFont.draw(string: currentDisplayText, in: context, at: CGPoint(x: loopedX, y: 0))
+            }
         }
     }
     

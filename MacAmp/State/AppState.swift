@@ -30,7 +30,28 @@ public struct AppState: Codable {
     public var lastPlayedTrackTime: Double = 0.0
     public var activeSkinPath: String? = nil
     
+    // Preferences - Titles & Display
+    public var marqueeFontMode: MarqueeFontMode = .bitmap
+    public var desktopFontFamily: String = "Monaco"
+    public var desktopFontSize: Double = 9.0
+    public var showTrackNumberInTitle: Bool = true
+    public var isMarqueeScrollEnabled: Bool = true
+    
+    // Preferences - Playlist
+    public var playlistZeroPadding: Bool = false
+    public var playlistShowExtensions: Bool = false
+    public var authenticShuffle: Bool = true
+    
+    // Preferences - Audio
+    public var audioFadeOutDurationMs: Double = 200.0
+    public var autoGenreEQ: Bool = false
+    
     public init() {}
+}
+
+public enum MarqueeFontMode: String, Codable, CaseIterable {
+    case bitmap = "bitmap"
+    case desktop = "desktop"
 }
 
 public class PersistenceManager {
