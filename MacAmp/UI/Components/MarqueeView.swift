@@ -55,7 +55,7 @@ public class MarqueeView: WinampControlView {
         }
     }
     
-    private func resetScroll() {
+    public func resetScroll() {
         scrollOffset = 0.0
         isPausedAtStart = true
         pauseTicksRemaining = Int(AppConstants.Marquee.pauseDuration / AppConstants.Marquee.scrollInterval)

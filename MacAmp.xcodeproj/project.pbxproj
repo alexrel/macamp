@@ -46,6 +46,7 @@
 		AA00DEAB8724A25242A42B3C /* AudioMetadataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADF92433DF4605233A653D6 /* AudioMetadataService.swift */; };
 		AA1DD7DC105F775895AD4CD4 /* EqualizerPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA05E180143679538AA8E2C1 /* EqualizerPresets.swift */; };
 		AA3C615651677658C9AE8BC3 /* FFTAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA962E83A0FAE25570805F4F /* FFTAnalyzer.swift */; };
+		AABF54D3F594B758539B8D0C /* ICYStreamSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA68B6DF33DD1F5006AFF6A9 /* ICYStreamSession.swift */; };
 		AA7B0832325E915DC9956E69 /* MainMenuManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADC616BDF0E715B60B9A10B /* MainMenuManager.swift */; };
 		AA836AC777451C59AB95C33A /* StatusBarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA4A12DEC63F8C5A2597ACE9 /* StatusBarManager.swift */; };
 		AA7915404346F35EF3A845E4 /* WinampWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAE9F927208E8E5D3EA7E7A3 /* WinampWindow.swift */; };
@@ -95,6 +96,7 @@
 		AADF92433DF4605233A653D6 /* AudioMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioMetadataService.swift"; sourceTree = "<group>"; };
 		AA05E180143679538AA8E2C1 /* EqualizerPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EqualizerPresets.swift"; sourceTree = "<group>"; };
 		AA962E83A0FAE25570805F4F /* FFTAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FFTAnalyzer.swift"; sourceTree = "<group>"; };
+		AA68B6DF33DD1F5006AFF6A9 /* ICYStreamSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ICYStreamSession.swift"; sourceTree = "<group>"; };
 		AADC616BDF0E715B60B9A10B /* MainMenuManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MainMenuManager.swift"; sourceTree = "<group>"; };
 		AA4A12DEC63F8C5A2597ACE9 /* StatusBarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatusBarManager.swift"; sourceTree = "<group>"; };
 		AAE9F927208E8E5D3EA7E7A3 /* WinampWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WinampWindow.swift"; sourceTree = "<group>"; };
@@ -190,6 +192,7 @@
 				AADF92433DF4605233A653D6 /* AudioMetadataService.swift */,
 				AA05E180143679538AA8E2C1 /* EqualizerPresets.swift */,
 				AA962E83A0FAE25570805F4F /* FFTAnalyzer.swift */,
+				AA68B6DF33DD1F5006AFF6A9 /* ICYStreamSession.swift */,
 			);
 			path = "Audio";
 			sourceTree = "<group>";
@@ -400,6 +403,7 @@
 
 
 
+
 				BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */,
 				BDC069482B887D910009C001 /* Assets.xcassets in Resources */,
 			);
@@ -451,6 +455,7 @@
 				AA00DEAB8724A25242A42B3C /* AudioMetadataService.swift in Sources */,
 				AA1DD7DC105F775895AD4CD4 /* EqualizerPresets.swift in Sources */,
 				AA3C615651677658C9AE8BC3 /* FFTAnalyzer.swift in Sources */,
+				AABF54D3F594B758539B8D0C /* ICYStreamSession.swift in Sources */,
 				AA7B0832325E915DC9956E69 /* MainMenuManager.swift in Sources */,
 				AA836AC777451C59AB95C33A /* StatusBarManager.swift in Sources */,
 				AA7915404346F35EF3A845E4 /* WinampWindow.swift in Sources */,

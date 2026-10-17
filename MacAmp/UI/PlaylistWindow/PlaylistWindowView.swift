@@ -644,7 +644,7 @@ public class PlaylistWindowView: WinampControlView {
                 let ext = url.pathExtension.lowercased()
                 if ext == "m3u" || ext == "pls" || ext == "m3u8" {
                     Task {
-                        let tracks = PlaylistIO.loadPlaylist(from: url)
+                        let tracks = await PlaylistIO.loadPlaylistAsync(from: url)
                         await MainActor.run { [weak self] in
                             guard let self = self else { return }
                             if !tracks.isEmpty {

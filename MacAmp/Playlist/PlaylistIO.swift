@@ -37,9 +37,11 @@ public enum PlaylistIO {
                     nextTitle = String(parts[1]).trimmingCharacters(in: .whitespaces)
                 }
             } else if !line.hasPrefix("#") {
-                // File path
+                // File path or URL
                 let trackURL: URL
-                if line.hasPrefix("/") || line.contains("://") {
+                if line.contains("://") {
+                    trackURL = URL(string: line) ?? URL(fileURLWithPath: line)
+                } else if line.hasPrefix("/") {
                     trackURL = URL(fileURLWithPath: line)
                 } else {
                     trackURL = baseURL.appendingPathComponent(line)
@@ -85,13 +87,40 @@ public enum PlaylistIO {
         
         for idx in files.keys.sorted() {
             guard let path = files[idx] else { continue }
-            let trackURL = path.hasPrefix("/") ? URL(fileURLWithPath: path) : baseURL.appendingPathComponent(path)
+            let trackURL: URL
+            if path.contains("://") {
+                trackURL = URL(string: path) ?? URL(fileURLWithPath: path)
+            } else if path.hasPrefix("/") {
+                trackURL = URL(fileURLWithPath: path)
+            } else {
+                trackURL = baseURL.appendingPathComponent(path)
+            }
             let title = titles[idx] ?? trackURL.deletingPathExtension().lastPathComponent
             let dur = lengths[idx] ?? 0
             items.append(TrackItem.create(from: trackURL, titleFallback: title, durationFallback: dur))
         }
         
         return items
+    }
+    
+    /// Asynchronously loads and parses a remote or local playlist
+    public static func loadPlaylistAsync(from url: URL) async -> [TrackItem] {
+        if url.isFileURL {
+            return loadPlaylist(from: url)
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        request.setValue("WinampMPEG/2.91", forHTTPHeaderField: "User-Agent")
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
+            return []
+        }
+        let ext = url.pathExtension.lowercased()
+        if ext == "pls" || content.lowercased().contains("[playlist]") {
+            return parsePLS(content: content, baseURL: url.deletingLastPathComponent())
+        } else {
+            return parseM3U(content: content, baseURL: url.deletingLastPathComponent())
+        }
     }
     
     // MARK: - Save M3U

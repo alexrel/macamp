@@ -56,6 +56,13 @@ public class AudioEngine {
     public var onPlaybackFinished: (() -> Void)?
     public var onSpectralDataUpdate: (([Float]) -> Void)?
     public var onWaveformDataUpdate: (([Float]) -> Void)?
+    public var onMetadataUpdate: ((_ artist: String, _ title: String, _ bitrate: Int?, _ sampleRate: Int?) -> Void)?
+    
+    // Streaming state
+    private var streamPlayer: AVPlayer?
+    private var icySession: ICYStreamSession?
+    public var isStreaming: Bool { streamPlayer != nil }
+    private var streamElapsed: TimeInterval = 0
     
     // Progress tracking timer
     private var playbackTimer: Timer?
@@ -122,13 +129,68 @@ public class AudioEngine {
             currentSecurityScopedURL = url
         }
         
-        let localURL: URL
+        // Remote Audio / SHOUTcast / Icecast stream handling
         if !url.isFileURL {
-            localURL = try await downloadRemoteAudio(from: url)
-        } else {
-            localURL = url
+            playerNode.stop()
+            audioFile = nil
+            streamPlayer?.pause()
+            streamPlayer = nil
+            icySession?.stop()
+            icySession = nil
+            
+            // Resolve direct stream endpoint if URL is a .pls or .m3u
+            let streamURL = await ICYStreamSession.resolveStreamURL(from: url)
+            
+            let playerItem = AVPlayerItem(url: streamURL)
+            let player = AVPlayer(playerItem: playerItem)
+            player.volume = Float(engine.mainMixerNode.outputVolume)
+            self.streamPlayer = player
+            
+            let session = ICYStreamSession(url: streamURL)
+            self.icySession = session
+            self.streamElapsed = 0
+            self.fileDuration = 0
+            self.currentTrackTime = 0
+            
+            session.onMetadataUpdate = { [weak self] artist, title, bitrate, sampleRate in
+                guard let self = self else { return }
+                self.updateCurrentMetadata(title: title, artist: artist, bitrate: bitrate, sampleRate: sampleRate)
+                self.onMetadataUpdate?(artist, title, bitrate, sampleRate)
+            }
+            
+            session.onSpectralData = { [weak self] spectrum in
+                guard let self = self, self.status == .playing else { return }
+                self.onSpectralDataUpdate?(spectrum)
+            }
+            
+            session.onWaveformData = { [weak self] waveform in
+                guard let self = self, self.status == .playing else { return }
+                self.onWaveformDataUpdate?(waveform)
+            }
+            
+            session.start()
+            
+            let fallbackTitle = streamURL.lastPathComponent.isEmpty ? (streamURL.host ?? "Internet Radio") : streamURL.lastPathComponent
+            let meta = TrackMetadata(
+                url: url,
+                title: fallbackTitle,
+                artist: "Internet Stream",
+                duration: 0,
+                bitrate: 128,
+                sampleRate: 44,
+                audioMode: .stereo
+            )
+            self.currentMetadata = meta
+            return meta
         }
         
+        // Local audio file
+        streamPlayer?.pause()
+        streamPlayer = nil
+        icySession?.stop()
+        icySession = nil
+        
+        let localURL = url
         let file = try AVAudioFile(forReading: localURL)
         self.audioFile = file
         self.sampleRate = file.processingFormat.sampleRate
@@ -168,40 +230,28 @@ public class AudioEngine {
         return meta
     }
     
-    public func updateCurrentMetadata(title: String, artist: String) {
+    public func updateCurrentMetadata(title: String, artist: String, bitrate: Int? = nil, sampleRate: Int? = nil) {
         guard let old = currentMetadata else { return }
         currentMetadata = TrackMetadata(
             url: old.url,
             title: title,
             artist: artist,
             duration: old.duration,
-            bitrate: old.bitrate,
-            sampleRate: old.sampleRate,
+            bitrate: bitrate ?? old.bitrate,
+            sampleRate: sampleRate ?? old.sampleRate,
             audioMode: old.audioMode
         )
     }
     
-    private func downloadRemoteAudio(from url: URL) async throws -> URL {
-        let (tempURL, response) = try await URLSession.shared.download(from: url)
-        let cacheDir = FileManager.default.temporaryDirectory.appendingPathComponent("MacAmp_RemoteCache")
-        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        
-        var ext = url.pathExtension
-        if ext.isEmpty, let suggested = response.suggestedFilename, !URL(fileURLWithPath: suggested).pathExtension.isEmpty {
-            ext = URL(fileURLWithPath: suggested).pathExtension
-        }
-        if ext.isEmpty {
-            ext = "mp3"
-        }
-        
-        let targetURL = cacheDir.appendingPathComponent("\(UUID().uuidString).\(ext)")
-        try? FileManager.default.removeItem(at: targetURL)
-        try FileManager.default.moveItem(at: tempURL, to: targetURL)
-        return targetURL
-    }
-    
     // MARK: - Playback Control
     public func play() {
+        if isStreaming, let sp = streamPlayer {
+            sp.play()
+            status = .playing
+            startStreamTimer()
+            return
+        }
+        
         guard let file = audioFile else { return }
         
         // If resuming from pause, seamlessly unpause playerNode and timer
@@ -247,6 +297,15 @@ public class AudioEngine {
     
     public func pause() {
         guard status == .playing else { return }
+        if isStreaming, let sp = streamPlayer {
+            sp.pause()
+            status = .paused
+            playbackTimer?.invalidate()
+            playbackTimer = nil
+            onTimeUpdate?(streamElapsed)
+            return
+        }
+        
         currentTrackTime = currentTime
         playbackGeneration += 1
         playerNode.pause()
@@ -265,6 +324,9 @@ public class AudioEngine {
     }
     
     public var currentTime: TimeInterval {
+        if isStreaming {
+            return streamElapsed
+        }
         if status == .paused {
             return currentTrackTime
         }
@@ -283,6 +345,19 @@ public class AudioEngine {
     
     public func stop() {
         playbackGeneration += 1
+        if isStreaming {
+            streamPlayer?.pause()
+            streamPlayer = nil
+            icySession?.stop()
+            icySession = nil
+            streamElapsed = 0
+            status = .stopped
+            playbackTimer?.invalidate()
+            playbackTimer = nil
+            onTimeUpdate?(0)
+            return
+        }
+        
         playerNode.stop()
         status = .stopped
         playbackTimer?.invalidate()
@@ -293,6 +368,7 @@ public class AudioEngine {
     }
     
     public func seek(to time: TimeInterval) {
+        guard !isStreaming else { return }
         guard let file = audioFile else { return }
         let clampedTime = max(0, min(time, fileDuration))
         currentTrackTime = clampedTime
@@ -345,9 +421,21 @@ public class AudioEngine {
         }
     }
     
+    private func startStreamTimer() {
+        playbackTimer?.invalidate()
+        playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            guard self.status == .playing else { return }
+            self.streamElapsed += 0.25
+            self.onTimeUpdate?(self.streamElapsed)
+        }
+    }
+    
     // MARK: - Volume / Balance
     public func setVolume(_ volume: Double) {
-        engine.mainMixerNode.outputVolume = Float(max(0.0, min(1.0, volume)))
+        let v = Float(max(0.0, min(1.0, volume)))
+        engine.mainMixerNode.outputVolume = v
+        streamPlayer?.volume = v
     }
     
     public func setBalance(_ balance: Double) {

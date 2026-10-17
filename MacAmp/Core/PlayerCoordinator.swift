@@ -164,6 +164,21 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             self?.mainView.visualizer.waveformPoints = wave
         }
         
+        audioEngine.onMetadataUpdate = { [weak self] artist, title, bitrate, sampleRate in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.mainView.marquee.text = "\(artist) - \(title)"
+                self.mainView.marquee.resetScroll()
+                if let current = self.audioEngine.currentMetadata {
+                    self.playlist.updateTrack(url: current.url, duration: 0, artist: artist, title: title)
+                    self.plView.needsDisplay = true
+                }
+                self.mainView.needsDisplay = true
+                MediaKeyController.shared.updateNowPlayingInfo()
+                StatusBarManager.shared.updateStatus()
+            }
+        }
+        
         audioEngine.onPlaybackFinished = { [weak self] in
             self?.playNext()
         }
@@ -365,6 +380,11 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     
     // MARK: - Playback Handling
     public func loadAndPlay(track: TrackItem) {
+        if !track.url.isFileURL {
+            mainView.marquee.text = "[Connecting...] \(track.title)"
+            mainView.marquee.resetScroll()
+            mainView.needsDisplay = true
+        }
         Task {
             do {
                 let meta = try await audioEngine.load(url: track.url)
@@ -374,6 +394,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                     }
                     self.playlist.updateTrack(url: track.url, duration: meta.duration, artist: meta.artist, title: meta.title)
                     self.mainView.marquee.text = "\(meta.artist) - \(meta.title)"
+                    self.mainView.marquee.resetScroll()
                     self.mainView.timeDisplay.totalDuration = meta.duration
                     self.mainView.timeDisplay.status = .playing
                     self.audioEngine.play()
@@ -384,6 +405,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                 }
             } catch {
                 print("Failed to load track \(track.url): \(error)")
+                await MainActor.run {
+                    self.mainView.marquee.showTemporaryMessage("Stream Error")
+                }
             }
         }
     }
