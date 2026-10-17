@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		AA66A61DF043AA5F7F89A4D4 /* MacAmpApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA69FDE20A9A6E5FEABD7AC7 /* MacAmpApp.swift */; };
 		AA9DAD216D7E3F566897F67A /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB520C6C4119B5F82B65A00 /* MainWindowView.swift */; };
+		AA195EB9DE640C5112A89966 /* RetroVisualizerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABE9A70ACCC9353179DCC5D /* RetroVisualizerView.swift */; };
+		AA41F9DD7C55435BD6A690A7 /* RetroVisualizerWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAE1F0C29EF5855E6B39317 /* RetroVisualizerWindow.swift */; };
 		AAF0E2D4D2A02A51FE841B73 /* CubicSpline.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA77248ED3C6F45BCAA3EF2D /* CubicSpline.swift */; };
 		AA9E25734126AF5A37B18D2E /* EqualizerWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA07E09BCD7F8C56F79D3C6E /* EqualizerWindowView.swift */; };
 		AA548D40C755415066B7D00C /* MinibrowserWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3D502CC2C97950B1B16852 /* MinibrowserWindowView.swift */; };
@@ -60,6 +62,8 @@
 /* Begin PBXFileReference section */
 		AA69FDE20A9A6E5FEABD7AC7 /* MacAmpApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacAmpApp.swift"; sourceTree = "<group>"; };
 		AAB520C6C4119B5F82B65A00 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MainWindowView.swift"; sourceTree = "<group>"; };
+		AABE9A70ACCC9353179DCC5D /* RetroVisualizerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RetroVisualizerView.swift"; sourceTree = "<group>"; };
+		AAAE1F0C29EF5855E6B39317 /* RetroVisualizerWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RetroVisualizerWindow.swift"; sourceTree = "<group>"; };
 		AA77248ED3C6F45BCAA3EF2D /* CubicSpline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CubicSpline.swift"; sourceTree = "<group>"; };
 		AA07E09BCD7F8C56F79D3C6E /* EqualizerWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EqualizerWindowView.swift"; sourceTree = "<group>"; };
 		AA3D502CC2C97950B1B16852 /* MinibrowserWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MinibrowserWindowView.swift"; sourceTree = "<group>"; };
@@ -241,6 +245,7 @@
 				AA71EE3158899557768DE66E /* JumpToFileWindow */,
 				AAED4AF757E13754C480F9DF /* JumpToTimeWindow */,
 				AA77F606E65CBD5DE2893F52 /* MinibrowserWindow */,
+				AA78FCFF83CE2E5F7DADFE8C /* VisualizerStudio */,
 			);
 			path = "UI";
 			sourceTree = "<group>";
@@ -337,6 +342,15 @@
 			path = "MinibrowserWindow";
 			sourceTree = "<group>";
 		};
+		AA78FCFF83CE2E5F7DADFE8C /* VisualizerStudio */ = {
+			isa = PBXGroup;
+			children = (
+				AABE9A70ACCC9353179DCC5D /* RetroVisualizerView.swift */,
+				AAAE1F0C29EF5855E6B39317 /* RetroVisualizerWindow.swift */,
+			);
+			path = "VisualizerStudio";
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -408,6 +422,7 @@
 
 
 
+
 				BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */,
 				BDC069482B887D910009C001 /* Assets.xcassets in Resources */,
 			);
@@ -422,6 +437,8 @@
 			files = (
 				AA66A61DF043AA5F7F89A4D4 /* MacAmpApp.swift in Sources */,
 				AA9DAD216D7E3F566897F67A /* MainWindowView.swift in Sources */,
+				AA195EB9DE640C5112A89966 /* RetroVisualizerView.swift in Sources */,
+				AA41F9DD7C55435BD6A690A7 /* RetroVisualizerWindow.swift in Sources */,
 				AAF0E2D4D2A02A51FE841B73 /* CubicSpline.swift in Sources */,
 				AA9E25734126AF5A37B18D2E /* EqualizerWindowView.swift in Sources */,
 				AA548D40C755415066B7D00C /* MinibrowserWindowView.swift in Sources */,

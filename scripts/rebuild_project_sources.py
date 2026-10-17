@@ -101,6 +101,7 @@ if m:
     g_ui_jumpto_file_id = generate_id("GROUP_UI_JumpToFile")
     g_ui_jumpto_time_id = generate_id("GROUP_UI_JumpToTime")
     g_ui_mb_id = generate_id("GROUP_UI_Minibrowser")
+    g_ui_vis_id = generate_id("GROUP_UI_VisualizerStudio")
     
     # Children arrays
     core_children = [f"{generate_id('FILE_' + rel)} /* {file} */" for file, rel, _ in swift_files if rel.startswith("Core/")]
@@ -120,6 +121,7 @@ if m:
     ui_jumpto_file_children = [f"{generate_id('FILE_' + rel)} /* {file} */" for file, rel, _ in swift_files if rel.startswith("UI/JumpToFileWindow/")]
     ui_jumpto_time_children = [f"{generate_id('FILE_' + rel)} /* {file} */" for file, rel, _ in swift_files if rel.startswith("UI/JumpToTimeWindow/")]
     ui_mb_children = [f"{generate_id('FILE_' + rel)} /* {file} */" for file, rel, _ in swift_files if rel.startswith("UI/MinibrowserWindow/")]
+    ui_vis_children = [f"{generate_id('FILE_' + rel)} /* {file} */" for file, rel, _ in swift_files if rel.startswith("UI/VisualizerStudio/")]
     
     ui_children = [
         f"{g_ui_comp_id} /* Components */",
@@ -132,6 +134,7 @@ if m:
         f"{g_ui_jumpto_file_id} /* JumpToFileWindow */",
         f"{g_ui_jumpto_time_id} /* JumpToTimeWindow */",
         f"{g_ui_mb_id} /* MinibrowserWindow */",
+        f"{g_ui_vis_id} /* VisualizerStudio */",
     ]
     
     macamp_app_file_id = f"{generate_id('FILE_MacAmpApp.swift')} /* MacAmpApp.swift */"
@@ -197,6 +200,7 @@ if m:
 {make_group(g_ui_jumpto_file_id, "JumpToFileWindow", "JumpToFileWindow", ui_jumpto_file_children)}
 {make_group(g_ui_jumpto_time_id, "JumpToTimeWindow", "JumpToTimeWindow", ui_jumpto_time_children)}
 {make_group(g_ui_mb_id, "MinibrowserWindow", "MinibrowserWindow", ui_mb_children)}
+{make_group(g_ui_vis_id, "VisualizerStudio", "VisualizerStudio", ui_vis_children)}
 /* End PBXGroup section */"""
     
     pbx = pbx[:m.start()] + new_groups + pbx[m.end():]

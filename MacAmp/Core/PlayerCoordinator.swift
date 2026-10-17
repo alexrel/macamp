@@ -26,6 +26,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     public var mbWindow: WinampWindow!
     public var mbView: MinibrowserWindowView!
     
+    public var visualizerStudioWindow: RetroVisualizerWindow?
+    
     private var cancellables = Set<AnyCancellable>()
     public var isDeminiaturizing: Bool = false
     
@@ -158,10 +160,12 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         
         audioEngine.onSpectralDataUpdate = { [weak self] bins in
             self?.mainView.visualizer.spectrumAmplitudes = bins
+            self?.visualizerStudioWindow?.updateSpectrum(bins)
         }
         
         audioEngine.onWaveformDataUpdate = { [weak self] wave in
             self?.mainView.visualizer.waveformPoints = wave
+            self?.visualizerStudioWindow?.updateWaveform(wave)
         }
         
         audioEngine.onMetadataUpdate = { [weak self] artist, title, bitrate, sampleRate in
@@ -625,6 +629,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             case "j":
                 showJumpToTimeWindow()
                 return true
+            case "k":
+                toggleVisualizerStudio()
+                return true
             case "o", "l":
                 openFileDialog()
                 return true
@@ -733,6 +740,24 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         }
         windowManager.updateAdjacencies()
         persistence.saveSession()
+    }
+    
+    @objc public func handleToggleVisualizerStudio() {
+        toggleVisualizerStudio()
+    }
+    
+    /// Opens or closes the Fullscreen Retro Visualizer Studio window (Ctrl+Shift+K)
+    public func toggleVisualizerStudio() {
+        if visualizerStudioWindow == nil {
+            visualizerStudioWindow = RetroVisualizerWindow()
+        }
+        guard let win = visualizerStudioWindow else { return }
+        
+        if win.isVisible {
+            win.orderOut(nil)
+        } else {
+            win.makeKeyAndOrderFront(nil)
+        }
     }
     
     /// Brings all currently visible MacAmp windows to the front in proper z-order (Playlist -> Equalizer -> Minibrowser -> MainWindow)

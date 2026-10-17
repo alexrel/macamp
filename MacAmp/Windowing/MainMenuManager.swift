@@ -222,6 +222,11 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         winMenu.addItem(mbItem)
         self.mbToggleItem = mbItem
         
+        let visStudioItem = NSMenuItem(title: "Retro Visualizer Studio", action: #selector(PlayerCoordinator.handleToggleVisualizerStudio), keyEquivalent: "k")
+        visStudioItem.keyEquivalentModifierMask = [.control, .shift]
+        visStudioItem.target = coord
+        winMenu.addItem(visStudioItem)
+        
         winMenu.addItem(NSMenuItem.separator())
         
         let minItem = NSMenuItem(title: "Minimize All", action: #selector(PlayerCoordinator.handleMinimizeAll), keyEquivalent: "m")
