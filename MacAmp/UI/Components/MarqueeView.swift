@@ -98,10 +98,14 @@ public class MarqueeView: WinampControlView {
         // Clip to marquee bounds
         context.clip(to: bounds)
         
-        // Draw primary text
+        // 1. Fill entire marquee background with authentic space glyphs from TEXT.BMP.
+        // In Winamp/Webamp, the marquee always covers the background graphics/text on MAIN.BMP.
+        BitmapFont.drawSpaceBackground(in: context, width: bounds.width, height: bounds.height)
+        
+        // 2. Draw primary text
         BitmapFont.draw(string: currentDisplayText, in: context, at: CGPoint(x: -scrollOffset, y: 0))
         
-        // If scrolling, loop text
+        // 3. If scrolling, loop text
         let totalTextWidth = CGFloat(currentDisplayText.count) * AppConstants.Font.charWidth
         if scrollOffset > 0 {
             let loopedX = totalTextWidth + 20.0 - scrollOffset

@@ -84,6 +84,15 @@ public class SkinManager: ObservableObject {
                     let bmp2 = url.appendingPathComponent("main.bmp")
                     if fm.fileExists(atPath: bmp1.path) || fm.fileExists(atPath: bmp2.path) {
                         result.append(url)
+                    } else if let subfiles = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
+                        let hasNestedMain = subfiles.contains { sub in
+                            let s1 = sub.appendingPathComponent("MAIN.BMP")
+                            let s2 = sub.appendingPathComponent("main.bmp")
+                            return fm.fileExists(atPath: s1.path) || fm.fileExists(atPath: s2.path)
+                        }
+                        if hasNestedMain {
+                            result.append(url)
+                        }
                     }
                 }
             }

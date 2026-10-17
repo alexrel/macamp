@@ -15,17 +15,18 @@ public class SkinLoader {
             return nil
         }
         
-        let skinDir: URL
+        let rootDir: URL
         if isDir.boolValue {
-            skinDir = url
+            rootDir = url
         } else {
             // Unpack archive to cache directory
             guard let unpackedDir = unpackArchive(at: url) else {
                 return nil
             }
-            skinDir = unpackedDir
+            rootDir = unpackedDir
         }
         
+        let skinDir = resolveSkinDirectory(from: rootDir)
         let skinName = url.deletingPathExtension().lastPathComponent
         let skin = Skin(name: skinName)
         
@@ -37,6 +38,49 @@ public class SkinLoader {
         return skin
     }
     
+    /// Resolves the actual folder containing the skin assets.
+    /// Handles archives where assets were packed inside a subdirectory (e.g. intec/Main.bmp).
+    private func resolveSkinDirectory(from dir: URL) -> URL {
+        let fm = FileManager.default
+        let keySheets = Set(["MAIN", "TITLEBAR", "PLEDIT", "EQMAIN"])
+        
+        // 1. Direct check in dir
+        if let directFiles = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
+            let hasDirectSheet = directFiles.contains {
+                let stem = $0.deletingPathExtension().lastPathComponent.uppercased()
+                let ext = $0.pathExtension.uppercased()
+                return keySheets.contains(stem) && (ext == "BMP" || ext == "PNG")
+            }
+            if hasDirectSheet {
+                return dir
+            }
+        }
+        
+        // 2. Search subdirectories for MAIN.BMP first
+        if let enumerator = fm.enumerator(at: dir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+            for case let fileURL as URL in enumerator {
+                let stem = fileURL.deletingPathExtension().lastPathComponent.uppercased()
+                let ext = fileURL.pathExtension.uppercased()
+                if stem == "MAIN" && (ext == "BMP" || ext == "PNG") {
+                    return fileURL.deletingLastPathComponent()
+                }
+            }
+        }
+        
+        // 3. Fallback: Search subdirectories for any keySheet
+        if let enumerator = fm.enumerator(at: dir, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+            for case let fileURL as URL in enumerator {
+                let stem = fileURL.deletingPathExtension().lastPathComponent.uppercased()
+                let ext = fileURL.pathExtension.uppercased()
+                if keySheets.contains(stem) && (ext == "BMP" || ext == "PNG") {
+                    return fileURL.deletingLastPathComponent()
+                }
+            }
+        }
+        
+        return dir
+    }
+    
     // MARK: - Archive Extraction
     private func unpackArchive(at url: URL) -> URL? {
         let fileManager = FileManager.default
@@ -46,19 +90,44 @@ public class SkinLoader {
         try? fileManager.removeItem(at: destDir)
         try? fileManager.createDirectory(at: destDir, withIntermediateDirectories: true)
         
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        process.arguments = ["-x", "-k", url.path, destDir.path]
+        // 1. Try /usr/bin/unzip first (handles DOS/Windows ZIP read-only folder attributes properly)
+        let unzip = Process()
+        unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+        unzip.arguments = ["-q", "-o", url.path, "-d", destDir.path]
+        
+        if (try? unzip.run()) != nil {
+            unzip.waitUntilExit()
+            if unzip.terminationStatus == 0 {
+                ensureReadablePermissions(at: destDir)
+                return destDir
+            }
+        }
+        
+        // 2. Fallback to /usr/bin/ditto
+        let ditto = Process()
+        ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        ditto.arguments = ["-x", "-k", url.path, destDir.path]
         
         do {
-            try process.run()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return nil }
+            try ditto.run()
+            ditto.waitUntilExit()
+            guard ditto.terminationStatus == 0 else { return nil }
+            ensureReadablePermissions(at: destDir)
             return destDir
         } catch {
             print("Failed to extract skin archive: \(error)")
             return nil
         }
+    }
+    
+    /// Ensures all extracted files and folders have read/write/traverse permissions,
+    /// fixing DOS/FAT archives where folders lack execute bits (e.g. reptal~1.wsz).
+    private func ensureReadablePermissions(at dir: URL) {
+        let chmod = Process()
+        chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+        chmod.arguments = ["-R", "u+rwX", dir.path]
+        try? chmod.run()
+        chmod.waitUntilExit()
     }
     
     // MARK: - Bitmap Loading

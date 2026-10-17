@@ -61,19 +61,65 @@ public class Skin {
         self.name = name
     }
     
+    /// 14x11 transparent thumb placeholder used when a skin bakes slider knobs directly into its 28 frames
+    private static let transparentThumb: CGImage? = {
+        let width = 14
+        let height = 11
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        return ctx.makeImage()
+    }()
+    
     /// Returns the cropped CGImage for a given sprite definition from the skin's sheets.
     public func image(for slice: SpriteSlice) -> CGImage? {
-        guard let sheet = images[slice.sheet.uppercased()] else {
-            return nil
+        let sheetKey = slice.sheet.uppercased()
+        
+        // 1. Direct slice from sheet if present and within bounds
+        if let sheet = images[sheetKey] {
+            let crop = slice.rect
+            if crop.minX >= 0, crop.minY >= 0,
+               crop.maxX <= CGFloat(sheet.width),
+               crop.maxY <= CGFloat(sheet.height) {
+                return sheet.cropping(to: crop)
+            }
         }
         
-        let crop = slice.rect
-        guard crop.minX >= 0, crop.minY >= 0,
-              crop.maxX <= CGFloat(sheet.width),
-              crop.maxY <= CGFloat(sheet.height) else {
-            return nil
+        // 2. Thumb suppression rule:
+        // In skins where VOLUME.BMP or BALANCE.BMP is ~420px high (height < 430),
+        // the author baked the slider thumb directly into the 28 animated background frames.
+        // There is no thumb sprite at y=422. Returning a transparent thumb prevents falling back
+        // to baseSkin and overlaying the default silver Winamp knob on top of custom theme sliders.
+        if slice.name.hasPrefix("VOL_THUMB") {
+            if let volSheet = images["VOLUME"], volSheet.height < 430 {
+                return Skin.transparentThumb
+            }
+        }
+        if slice.name.hasPrefix("BAL_THUMB") {
+            if let balSheet = images["BALANCE"] ?? images["VOLUME"], balSheet.height < 430 {
+                return Skin.transparentThumb
+            }
         }
         
-        return sheet.cropping(to: crop)
+        // 3. Authentic Winamp fallback: When BALANCE.BMP is missing, fall back to VOLUME.BMP in the same skin.
+        // Balance frame at x = 9, width = 38 is perfectly centered in VOLUME.BMP (68px wide).
+        // Balance thumb at x = 15/0, y = 422 is identical to volume thumb coordinates.
+        if sheetKey == "BALANCE", let volSheet = images["VOLUME"] {
+            let crop = slice.rect
+            if crop.minX >= 0, crop.minY >= 0,
+               crop.maxX <= CGFloat(volSheet.width),
+               crop.maxY <= CGFloat(volSheet.height) {
+                return volSheet.cropping(to: crop)
+            }
+        }
+        
+        return nil
     }
 }
