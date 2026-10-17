@@ -12,6 +12,7 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
     private var doubleSizeItem: NSMenuItem?
     private var eqToggleItem: NSMenuItem?
     private var plToggleItem: NSMenuItem?
+    private var mbToggleItem: NSMenuItem?
     private var repeatItem: NSMenuItem?
     private var shuffleItem: NSMenuItem?
     
@@ -215,6 +216,12 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         winMenu.addItem(plItem)
         self.plToggleItem = plItem
         
+        let mbItem = NSMenuItem(title: "Minibrowser", action: #selector(PlayerCoordinator.handleToggleMinibrowser), keyEquivalent: "t")
+        mbItem.keyEquivalentModifierMask = [.option]
+        mbItem.target = coord
+        winMenu.addItem(mbItem)
+        self.mbToggleItem = mbItem
+        
         winMenu.addItem(NSMenuItem.separator())
         
         let minItem = NSMenuItem(title: "Minimize All", action: #selector(PlayerCoordinator.handleMinimizeAll), keyEquivalent: "m")
@@ -256,6 +263,7 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         doubleSizeItem?.state = (WindowLayoutManager.shared.currentScale == 2.0) ? .on : .off
         eqToggleItem?.state = coord.mainView?.eqToggle.isOn == true ? .on : .off
         plToggleItem?.state = coord.mainView?.plToggle.isOn == true ? .on : .off
+        mbToggleItem?.state = coord.persistence.state.isMinibrowserVisible ? .on : .off
         repeatItem?.state = coord.playlist.isRepeat ? .on : .off
         shuffleItem?.state = coord.playlist.isShuffle ? .on : .off
         
