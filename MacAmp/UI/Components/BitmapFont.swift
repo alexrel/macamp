@@ -175,84 +175,78 @@ public struct BitmapFont {
     /// some are dark brown on tan sepia, and some (like reptal) feature a distinct vertical amber color gradient
     /// across rows 0..4.
     ///
-    /// By scanning letter 'I' (row 0, col 8) for the maximum contrast stroke pixel on each scanline alongside
-    /// the space glyph (row 0, col 30), we capture the exact stroke color and gradient profile.
-    /// In addition, detecting whether row 5 has text pixels enables automatic adaptation between 5px and 6px fonts.
+    /// By scanning letters 'H' (row 0, col 7) and 'E' (row 0, col 4), we sample continuous vertical stems
+    /// at columns x=0 and x=3 on every scanline alongside the space glyph (row 0, col 30).
+    /// This captures the authentic stroke color, vertical gradient, and automatically detects
+    /// whether the skin uses a 5px or 6px font height (baseline detection).
     private static func sampleTextColorProfile(from sheet: CGImage) -> TextColorProfile {
         let w = Int(charWidth)
         let h = Int(charHeight)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         
+        func extractBuffer(col: Int, row: Int = 0) -> [UInt8]? {
+            let rect = CGRect(x: CGFloat(col) * charWidth, y: CGFloat(row) * charHeight, width: charWidth, height: charHeight)
+            guard let cropped = sheet.cropping(to: rect) else { return nil }
+            var buffer = [UInt8](repeating: 0, count: w * h * 4)
+            guard let ctx = CGContext(
+                data: &buffer,
+                width: w,
+                height: h,
+                bitsPerComponent: 8,
+                bytesPerRow: w * 4,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return nil }
+            ctx.draw(cropped, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return buffer
+        }
+        
         let spaceRect = CGRect(x: 30 * w, y: 0, width: w, height: h)
         let spaceGlyph = sheet.cropping(to: spaceRect)
         
-        // 1. Sample background color from space glyph (col 30: x = 150..154, y = 0..5)
-        var bgR: CGFloat = 0
-        var bgG: CGFloat = 0
-        var bgB: CGFloat = 0
-        var spaceBuffer = [UInt8](repeating: 0, count: w * h * 4)
-        if let spaceGlyph = spaceGlyph,
-           let spaceCtx = CGContext(
-               data: &spaceBuffer,
-               width: w,
-               height: h,
-               bitsPerComponent: 8,
-               bytesPerRow: w * 4,
-               space: colorSpace,
-               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-           ) {
-            spaceCtx.draw(spaceGlyph, in: CGRect(x: 0, y: 0, width: w, height: h))
-            // Center of space glyph (x=2, y=2)
-            let centerIdx = (2 * w + 2) * 4
-            bgR = CGFloat(spaceBuffer[centerIdx + 0]) / 255.0
-            bgG = CGFloat(spaceBuffer[centerIdx + 1]) / 255.0
-            bgB = CGFloat(spaceBuffer[centerIdx + 2]) / 255.0
-        }
+        // 1. Sample background color from space glyph (col 30: center x=2, y=2)
+        let spaceBuffer = extractBuffer(col: 30)
+        let centerIdx = (2 * w + 2) * 4
+        let bgR = CGFloat(spaceBuffer?[centerIdx + 0] ?? 0) / 255.0
+        let bgG = CGFloat(spaceBuffer?[centerIdx + 1] ?? 0) / 255.0
+        let bgB = CGFloat(spaceBuffer?[centerIdx + 2] ?? 0) / 255.0
         
-        // 2. Sample letter 'I' at col 8 (x = 40..44, y = 0..5)
+        // 2. Multi-letter sampling from 'H' (col 7) and 'E' (col 4).
+        // Letter 'H' provides two clean continuous vertical stems at x=0 and x=3 across all text scanlines,
+        // while letter 'E' provides a continuous vertical stem at x=0 and horizontal bars.
         let defaultWinampGreen = CGColor(red: 0.0, green: 0.886, blue: 0.0, alpha: 1.0)
-        let rectI = CGRect(x: 8 * w, y: 0, width: w, height: h)
-        guard let glyphI = sheet.cropping(to: rectI) else {
-            return TextColorProfile(rowColors: Array(repeating: defaultWinampGreen, count: 6), spaceGlyph: spaceGlyph, is5PixelFont: false)
-        }
-        
-        var iBuffer = [UInt8](repeating: 0, count: w * h * 4)
-        guard let iCtx = CGContext(
-            data: &iBuffer,
-            width: w,
-            height: h,
-            bitsPerComponent: 8,
-            bytesPerRow: w * 4,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            return TextColorProfile(rowColors: Array(repeating: defaultWinampGreen, count: 6), spaceGlyph: spaceGlyph, is5PixelFont: false)
-        }
-        
-        iCtx.draw(glyphI, in: CGRect(x: 0, y: 0, width: w, height: h))
+        let hBuffer = extractBuffer(col: 7)
+        let eBuffer = extractBuffer(col: 4)
+        let candidateBuffers = [hBuffer, eBuffer].compactMap { $0 }
         
         var sampledRows = [CGColor?](repeating: nil, count: 6)
         for y in 0..<6 {
             var bestDistSq: CGFloat = -1
             var bestColor: CGColor?
-            for x in 0..<5 {
-                let offset = (y * w + x) * 4
-                let r = CGFloat(iBuffer[offset + 0]) / 255.0
-                let g = CGFloat(iBuffer[offset + 1]) / 255.0
-                let b = CGFloat(iBuffer[offset + 2]) / 255.0
-                let a = CGFloat(iBuffer[offset + 3]) / 255.0
-                guard a > 0.1 else { continue }
-                
-                let dr = r - bgR
-                let dg = g - bgG
-                let db = b - bgB
-                let distSq = dr * dr + dg * dg + db * db
-                if distSq > bestDistSq {
-                    bestDistSq = distSq
-                    bestColor = CGColor(red: r, green: g, blue: b, alpha: 1.0)
+            
+            for buf in candidateBuffers {
+                // Prioritize solid stems (x=0, x=3) before checking all columns
+                for x in [0, 3, 1, 2, 4] {
+                    let offset = (y * w + x) * 4
+                    let r = CGFloat(buf[offset + 0]) / 255.0
+                    let g = CGFloat(buf[offset + 1]) / 255.0
+                    let b = CGFloat(buf[offset + 2]) / 255.0
+                    let a = CGFloat(buf[offset + 3]) / 255.0
+                    guard a > 0.1 else { continue }
+                    
+                    let dr = r - bgR
+                    let dg = g - bgG
+                    let db = b - bgB
+                    let distSq = dr * dr + dg * dg + db * db
+                    if distSq > bestDistSq {
+                        bestDistSq = distSq
+                        bestColor = CGColor(red: r, green: g, blue: b, alpha: 1.0)
+                    }
                 }
             }
-            if bestDistSq > 0.005 {
+            
+            // Threshold 0.025 cleanly separates genuine stroke pixels from subtle background dithering
+            if bestDistSq > 0.025 {
                 sampledRows[y] = bestColor
             }
         }
@@ -261,7 +255,7 @@ public struct BitmapFont {
         let is5PixelFont = (sampledRows[5] == nil)
         
         // Find solid reference color (row 2 or 3 is the vertical stem center)
-        let refColor = sampledRows[2] ?? sampledRows[3] ?? sampledRows[1] ?? defaultWinampGreen
+        let refColor = sampledRows[2] ?? sampledRows[3] ?? sampledRows[1] ?? sampledRows[4] ?? defaultWinampGreen
         
         // Populate any blank scanlines (e.g. y=5 or y=0)
         var finalRows = [CGColor]()
@@ -295,8 +289,9 @@ public struct BitmapFont {
     public static func drawGlyph(char: Character, in context: CGContext, at origin: CGPoint) {
         guard let textSheet = SkinManager.shared.sheet("TEXT") else { return }
         
-        // 1. Direct match in TEXT.BMP (Latin, digits, lookalike Cyrillic)
-        if let (row, col) = charMap[char] {
+        // 1. Direct match in TEXT.BMP (Latin, digits, lookalike Cyrillic: А, В, Е, К, М, Н, О, Р, С, Т, У, Х, З, І)
+        let directMatch = charMap[char] ?? char.uppercased().first.flatMap { charMap[$0] }
+        if let (row, col) = directMatch {
             let srcRect = CGRect(
                 x: CGFloat(col) * charWidth,
                 y: CGFloat(row) * charHeight,
@@ -310,10 +305,11 @@ public struct BitmapFont {
             return
         }
         
-        // 2. Custom pixel-art Cyrillic glyphs matching skin text color & gradient from letter 'I'
+        // 2. Custom pixel-art Cyrillic glyphs matching skin text color & gradient from letters 'H' & 'E'
         let profile = getTextColorProfile(from: textSheet)
         let glyphMap = profile.is5PixelFont ? cyrillicGlyphs5px : cyrillicGlyphs6px
-        if let mask = glyphMap[char] {
+        let mask = glyphMap[char] ?? char.uppercased().first.flatMap { glyphMap[$0] }
+        if let mask = mask {
             let destRect = CGRect(x: origin.x, y: origin.y, width: charWidth, height: charHeight)
             
             // 2a. Draw authentic space background beneath custom glyph so skin background doesn't shine through
@@ -321,7 +317,7 @@ public struct BitmapFont {
                 context.drawSkinImage(spaceGlyph, in: destRect)
             }
             
-            // 2b. Draw custom foreground pixels using per-row stroke colors from letter 'I'
+            // 2b. Draw custom foreground pixels using per-row stroke colors from H & E
             for y in 0..<6 {
                 let row = mask[y]
                 guard row != 0 else { continue }
