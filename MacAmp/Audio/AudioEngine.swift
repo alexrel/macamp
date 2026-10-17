@@ -28,6 +28,8 @@ public class AudioEngine {
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
     private let eqNode = AVAudioUnitEQ(numberOfBands: 10)
+    private let timePitchNode = AVAudioUnitTimePitch()
+    private let reverbNode = AVAudioUnitReverb()
     
     // Analysis
     private let fftAnalyzer = FFTAnalyzer(fftSize: 1024)
@@ -70,6 +72,7 @@ public class AudioEngine {
     private init() {
         setupGraph()
         setupEQ()
+        setupDSP()
     }
     
     deinit {
@@ -79,9 +82,13 @@ public class AudioEngine {
     private func setupGraph() {
         engine.attach(playerNode)
         engine.attach(eqNode)
+        engine.attach(timePitchNode)
+        engine.attach(reverbNode)
         
         engine.connect(playerNode, to: eqNode, format: nil)
-        engine.connect(eqNode, to: engine.mainMixerNode, format: nil)
+        engine.connect(eqNode, to: timePitchNode, format: nil)
+        engine.connect(timePitchNode, to: reverbNode, format: nil)
+        engine.connect(reverbNode, to: engine.mainMixerNode, format: nil)
         
         // Tap on main mixer node for spectrum & oscilloscope
         let tapFormat = engine.mainMixerNode.outputFormat(forBus: 0)
@@ -117,6 +124,16 @@ public class AudioEngine {
         }
         eqNode.globalGain = 0.0
         eqNode.bypass = false
+    }
+    
+    private func setupDSP() {
+        timePitchNode.pitch = 0.0
+        timePitchNode.rate = 1.0
+        timePitchNode.bypass = false
+        
+        reverbNode.loadFactoryPreset(.mediumRoom)
+        reverbNode.wetDryMix = 0.0
+        reverbNode.bypass = true
     }
     
     // MARK: - Track Loading
@@ -454,5 +471,48 @@ public class AudioEngine {
     public func setEQBand(index: Int, gainDb: Float) {
         guard index >= 0, index < eqNode.bands.count else { return }
         eqNode.bands[index].gain = gainDb
+    }
+    
+    // MARK: - DSP Effects (Pitch, Rate, Reverb)
+    public func setDspEnabled(_ enabled: Bool) {
+        timePitchNode.bypass = !enabled
+        reverbNode.bypass = !enabled || (reverbNode.wetDryMix <= 0.001)
+    }
+    
+    public func setPitchSemitones(_ semitones: Double) {
+        timePitchNode.pitch = Float(semitones * 100.0) // 1 semitone = 100 cents
+    }
+    
+    public func setPlaybackRate(_ rate: Double) {
+        timePitchNode.rate = Float(max(0.5, min(2.0, rate)))
+    }
+    
+    public func setReverbMix(_ percent: Double) {
+        let mix = Float(max(0.0, min(100.0, percent)))
+        reverbNode.wetDryMix = mix
+        reverbNode.bypass = (mix <= 0.001)
+    }
+    
+    public func setReverbPreset(index: Int) {
+        let presets: [AVAudioUnitReverbPreset] = [
+            .smallRoom,
+            .mediumRoom,
+            .largeRoom,
+            .mediumHall,
+            .largeHall,
+            .plate,
+            .cathedral
+        ]
+        if index >= 0 && index < presets.count {
+            reverbNode.loadFactoryPreset(presets[index])
+        }
+    }
+    
+    public func resetDSP() {
+        setPitchSemitones(0)
+        setPlaybackRate(1.0)
+        setReverbMix(0)
+        setReverbPreset(index: 1)
+        setDspEnabled(false)
     }
 }

@@ -17,6 +17,7 @@ public enum PrefTreeItem: String, CaseIterable, Identifiable {
     case visualization = "Visualization"
     case hotkeys = "Global Hotkeys"
     case audio = "Playback & Fading"
+    case dsp = "DSP / Effects"
     case equalizer = "Equalizer"
     case playlist = "Track Display"
     case skins = "Installed Skins"
@@ -26,7 +27,7 @@ public enum PrefTreeItem: String, CaseIterable, Identifiable {
     public var sectionHeader: String {
         switch self {
         case .display, .titles, .visualization, .hotkeys: return "Options"
-        case .audio, .equalizer: return "Audio"
+        case .audio, .dsp, .equalizer: return "Audio"
         case .playlist: return "Playlist"
         case .skins: return "Skins"
         }
@@ -179,6 +180,47 @@ public class PreferencesViewModel: ObservableObject {
         }
     }
     
+    // DSP Effects State
+    @Published public var isDspEnabled: Bool {
+        didSet {
+            PersistenceManager.shared.state.isDspEnabled = isDspEnabled
+            PersistenceManager.shared.saveSession()
+            AudioEngine.shared.setDspEnabled(isDspEnabled)
+        }
+    }
+    
+    @Published public var dspPitchSemitones: Double {
+        didSet {
+            PersistenceManager.shared.state.dspPitchSemitones = dspPitchSemitones
+            PersistenceManager.shared.saveSession()
+            AudioEngine.shared.setPitchSemitones(dspPitchSemitones)
+        }
+    }
+    
+    @Published public var dspPlaybackRate: Double {
+        didSet {
+            PersistenceManager.shared.state.dspPlaybackRate = dspPlaybackRate
+            PersistenceManager.shared.saveSession()
+            AudioEngine.shared.setPlaybackRate(dspPlaybackRate)
+        }
+    }
+    
+    @Published public var dspReverbMix: Double {
+        didSet {
+            PersistenceManager.shared.state.dspReverbMix = dspReverbMix
+            PersistenceManager.shared.saveSession()
+            AudioEngine.shared.setReverbMix(dspReverbMix)
+        }
+    }
+    
+    @Published public var dspReverbPreset: Int {
+        didSet {
+            PersistenceManager.shared.state.dspReverbPreset = dspReverbPreset
+            PersistenceManager.shared.saveSession()
+            AudioEngine.shared.setReverbPreset(index: dspReverbPreset)
+        }
+    }
+    
     public init() {
         let state = PersistenceManager.shared.state
         self.isAlwaysOnTop = state.isAlwaysOnTop
@@ -196,10 +238,24 @@ public class PreferencesViewModel: ObservableObject {
         self.audioFadeOutDurationMs = state.audioFadeOutDurationMs
         self.autoGenreEQ = state.autoGenreEQ
         self.isGlobalHotkeysEnabled = state.isGlobalHotkeysEnabled
+        self.isDspEnabled = state.isDspEnabled
+        self.dspPitchSemitones = state.dspPitchSemitones
+        self.dspPlaybackRate = state.dspPlaybackRate
+        self.dspReverbMix = state.dspReverbMix
+        self.dspReverbPreset = state.dspReverbPreset
         self.visualizerMode = state.visualizerMode
         self.visualizerShowPeaks = state.visualizerShowPeaks
         
         refreshSkins()
+    }
+    
+    public func resetDSP() {
+        self.isDspEnabled = false
+        self.dspPitchSemitones = 0.0
+        self.dspPlaybackRate = 1.0
+        self.dspReverbMix = 0.0
+        self.dspReverbPreset = 1
+        AudioEngine.shared.resetDSP()
     }
     
     public var selectedCategory: PreferencesCategory {
@@ -207,7 +263,7 @@ public class PreferencesViewModel: ObservableObject {
             switch selectedTreeItem {
             case .display, .titles, .visualization, .hotkeys: return .titles
             case .skins: return .skins
-            case .audio, .equalizer: return .audio
+            case .audio, .dsp, .equalizer: return .audio
             case .playlist: return .playlist
             }
         }
@@ -344,6 +400,8 @@ public struct PreferencesView: View {
                             hotkeysSection
                         case .audio:
                             audioSection
+                        case .dsp:
+                            dspSection
                         case .equalizer:
                             equalizerSection
                         case .playlist:
@@ -625,6 +683,101 @@ public struct PreferencesView: View {
                     Text("Smoothly reduces audio volume before pausing or stopping to avoid pops or clicks.")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Section: DSP Effects
+    private var dspSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Win32GroupBox("Digital Signal Processing (DSP)") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Win32Checkbox("Enable DSP Audio Effects", isOn: $viewModel.isDspEnabled)
+                    
+                    HStack {
+                        Spacer()
+                        Win32Button("Reset DSP to Default", width: 140, height: 21) {
+                            viewModel.resetDSP()
+                        }
+                    }
+                }
+            }
+            
+            Win32GroupBox("Pitch & Speed (TimePitch)") {
+                VStack(alignment: .leading, spacing: 10) {
+                    // Pitch Shift
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text("Pitch Shift:")
+                                .font(.system(size: 11))
+                                .foregroundColor(Win32Colors.text)
+                            Spacer()
+                            let semi = Int(round(viewModel.dspPitchSemitones))
+                            Text(semi == 0 ? "Normal (0 semitones)" : (semi > 0 ? "+\(semi) semitones" : "\(semi) semitones"))
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(Win32Colors.text)
+                        }
+                        
+                        Slider(value: $viewModel.dspPitchSemitones, in: -12.0...12.0, step: 1.0)
+                    }
+                    
+                    // Tempo / Playback Rate
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text("Playback Speed / Tempo:")
+                                .font(.system(size: 11))
+                                .foregroundColor(Win32Colors.text)
+                            Spacer()
+                            Text(String(format: "%.2fx", viewModel.dspPlaybackRate))
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(Win32Colors.text)
+                        }
+                        
+                        Slider(value: $viewModel.dspPlaybackRate, in: 0.5...2.0, step: 0.05)
+                    }
+                }
+            }
+            
+            Win32GroupBox("Reverb & Spatial Acoustics") {
+                VStack(alignment: .leading, spacing: 10) {
+                    // Reverb Mix
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text("Reverb Wet / Dry Blend:")
+                                .font(.system(size: 11))
+                                .foregroundColor(Win32Colors.text)
+                            Spacer()
+                            Text("\(Int(viewModel.dspReverbMix))%")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(Win32Colors.text)
+                        }
+                        
+                        Slider(value: $viewModel.dspReverbMix, in: 0.0...100.0, step: 1.0)
+                    }
+                    
+                    // Reverb Presets
+                    Text("Acoustic Preset:")
+                        .font(.system(size: 11))
+                        .foregroundColor(Win32Colors.text)
+                    
+                    let reverbPresets = [
+                        "Small Room",
+                        "Medium Room",
+                        "Large Room",
+                        "Medium Hall",
+                        "Large Hall",
+                        "Plate Reverb",
+                        "Cathedral"
+                    ]
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(0..<reverbPresets.count, id: \.self) { idx in
+                            Win32RadioButton(reverbPresets[idx], isSelected: viewModel.dspReverbPreset == idx) {
+                                viewModel.dspReverbPreset = idx
+                            }
+                        }
+                    }
                 }
             }
         }

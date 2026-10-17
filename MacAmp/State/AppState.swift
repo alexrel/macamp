@@ -52,6 +52,13 @@ public struct AppState: Codable {
     public var autoGenreEQ: Bool = false
     public var isGlobalHotkeysEnabled: Bool = true
     
+    // Preferences - DSP & Effects
+    public var isDspEnabled: Bool = false
+    public var dspPitchSemitones: Double = 0.0
+    public var dspPlaybackRate: Double = 1.0
+    public var dspReverbMix: Double = 0.0
+    public var dspReverbPreset: Int = 1
+    
     public init() {}
 }
 
