@@ -84,7 +84,11 @@ public class Skin {
         
         // 1. Direct slice from sheet if present and within bounds
         if let sheet = images[sheetKey] {
-            let crop = slice.rect
+            var crop = slice.rect
+            // In skins where BALANCE.BMP was cropped to 38px width (e.g. reptal~1), the 38px frames start at x = 0 instead of standard x = 9.
+            if sheetKey == "BALANCE", slice.name.hasPrefix("BAL_BG"), sheet.width < 47 {
+                crop.origin.x = 0
+            }
             if crop.minX >= 0, crop.minY >= 0,
                crop.maxX <= CGFloat(sheet.width),
                crop.maxY <= CGFloat(sheet.height) {
