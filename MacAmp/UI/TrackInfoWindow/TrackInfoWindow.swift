@@ -112,8 +112,11 @@ public class TrackInfoWindowController: NSWindowController, NSWindowDelegate {
         
         // 2. If this is the currently playing track, update MarqueeView and audio metadata
         if playlist.currentIndex == index {
-            let tickerText = "\(newArtist) - \(newTitle)".uppercased()
+            let tickerText = (newArtist.isEmpty || newArtist == "Unknown Artist")
+                ? newTitle.uppercased()
+                : "\(newArtist) - \(newTitle)".uppercased()
             coordinator.mainView?.marquee.text = tickerText
+            coordinator.audioEngine.updateCurrentMetadata(title: newTitle, artist: newArtist)
         }
     }
     

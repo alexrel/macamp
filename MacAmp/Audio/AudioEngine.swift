@@ -168,6 +168,19 @@ public class AudioEngine {
         return meta
     }
     
+    public func updateCurrentMetadata(title: String, artist: String) {
+        guard let old = currentMetadata else { return }
+        currentMetadata = TrackMetadata(
+            url: old.url,
+            title: title,
+            artist: artist,
+            duration: old.duration,
+            bitrate: old.bitrate,
+            sampleRate: old.sampleRate,
+            audioMode: old.audioMode
+        )
+    }
+    
     private func downloadRemoteAudio(from url: URL) async throws -> URL {
         let (tempURL, response) = try await URLSession.shared.download(from: url)
         let cacheDir = FileManager.default.temporaryDirectory.appendingPathComponent("MacAmp_RemoteCache")
