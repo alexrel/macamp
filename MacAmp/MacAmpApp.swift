@@ -55,5 +55,13 @@ struct MacAmpApp: App {
         Settings {
             EmptyView()
         }
+        .commands {
+            CommandMenu("Track") {
+                Button("Track Info (Alt+3)") {
+                    PlayerCoordinator.shared.showTrackInfoWindow()
+                }
+                .keyboardShortcut("3", modifiers: [.option])
+            }
+        }
     }
 }

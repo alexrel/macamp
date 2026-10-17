@@ -276,6 +276,11 @@ public class PlaylistModel: ObservableObject {
         )
     }
     
+    public func setTrack(at index: Int, _ track: TrackItem) {
+        guard index >= 0, index < tracks.count else { return }
+        tracks[index] = track
+    }
+    
     public func prefetchMetadata(for ids: [UUID]) {
         let targets = tracks.filter { ids.contains($0.id) && ($0.duration <= 0 || $0.artist == "Unknown Artist") }
         guard !targets.isEmpty else { return }

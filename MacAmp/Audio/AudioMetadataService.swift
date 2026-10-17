@@ -135,7 +135,7 @@ public struct ArtworkInfo: Equatable {
 }
 
 // MARK: - Complete Track Metadata
-public struct TrackMetadata: Equatable {
+public struct AudioFileMetadata: Equatable {
     public var url: URL
     public var techInfo: AudioTechnicalInfo
     public var id3v1: ID3v1Tag
@@ -191,8 +191,8 @@ public class AudioMetadataService {
     // MARK: - Public Read API
     
     /// Fully reads audio stream specifications, ID3v1, ID3v2, and embedded cover art for a track URL.
-    public func readMetadata(from url: URL) -> TrackMetadata {
-        var metadata = TrackMetadata(url: url)
+    public func readMetadata(from url: URL) -> AudioFileMetadata {
+        var metadata = AudioFileMetadata(url: url)
         
         let isSecurityScoped = url.startAccessingSecurityScopedResource()
         defer {
@@ -257,7 +257,7 @@ public class AudioMetadataService {
     // MARK: - Public Write API
     
     /// Writes updated metadata (ID3v1 and ID3v2.3) in-place to the target audio file.
-    public func writeMetadata(_ metadata: TrackMetadata, to url: URL) throws {
+    public func writeMetadata(_ metadata: AudioFileMetadata, to url: URL) throws {
         let isSecurityScoped = url.startAccessingSecurityScopedResource()
         defer {
             if isSecurityScoped {
@@ -602,7 +602,7 @@ public class AudioMetadataService {
     
     // MARK: - MP3 In-Place Tag Writing
     
-    private func writeMP3Tags(_ metadata: TrackMetadata, to url: URL) throws {
+    private func writeMP3Tags(_ metadata: AudioFileMetadata, to url: URL) throws {
         let fileData = try Data(contentsOf: url, options: .alwaysMapped)
         guard fileData.count >= 128 else {
             throw NSError(domain: "MacAmp.AudioMetadataService", code: 2, userInfo: [
@@ -805,7 +805,7 @@ public class AudioMetadataService {
     
     // MARK: - Non-MP3 Metadata Fallback
     
-    private func writeNonMP3Metadata(_ metadata: TrackMetadata, to url: URL) throws {
+    private func writeNonMP3Metadata(_ metadata: AudioFileMetadata, to url: URL) throws {
         // Non-MP3 files (e.g. M4A/FLAC) can be edited via AVAssetExportSession or local caches
         // For now, if the file cannot be modified in-place, throw informative error
         throw NSError(domain: "MacAmp.AudioMetadataService", code: 3, userInfo: [

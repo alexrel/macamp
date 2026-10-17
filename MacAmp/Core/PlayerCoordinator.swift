@@ -412,6 +412,29 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         }
     }
     
+    /// Opens the MPEG Audio Info Box + ID3 Tag Editor (Alt+3) for the specified or selected track.
+    public func showTrackInfoWindow(trackIndex: Int? = nil) {
+        guard !playlist.tracks.isEmpty else {
+            mainView?.marquee.showTemporaryMessage("No track in playlist")
+            return
+        }
+        
+        let targetIndex: Int = {
+            if let idx = trackIndex, idx >= 0, idx < playlist.tracks.count {
+                return idx
+            }
+            if let sel = playlist.selectedIndices.first, sel < playlist.tracks.count {
+                return sel
+            }
+            if let cur = playlist.currentIndex, cur < playlist.tracks.count {
+                return cur
+            }
+            return 0
+        }()
+        
+        TrackInfoWindow.show(trackIndex: targetIndex)
+    }
+    
     // MARK: - Drag & Drop Handling
     public func handleDroppedFiles(_ paths: [String]) {
         var tracksToAdd: [TrackItem] = []
@@ -536,6 +559,10 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         }
         
         if flags.contains(.option) {
+            if event.keyCode == 20 || chars == "3" { // KeyCode 20 = '3' (Canonical Winamp Alt+3)
+                showTrackInfoWindow()
+                return true
+            }
             switch chars {
             case "s":
                 openSkinChooser()

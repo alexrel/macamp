@@ -668,33 +668,46 @@ public class PlaylistWindowView: WinampControlView {
     }
     
     private func handleFileInfo() {
-        let selectedTrack: TrackItem? = {
+        let selectedIndex: Int? = {
             if let sel = playlist.selectedIndices.first, sel < playlist.tracks.count {
-                return playlist.tracks[sel]
+                return sel
             }
-            return playlist.currentTrack
+            return playlist.currentIndex
         }()
         
-        guard let track = selectedTrack else {
-            PlayerCoordinator.shared.mainView.marquee.showTemporaryMessage("No track selected")
+        guard let idx = selectedIndex, idx < playlist.tracks.count else {
+            PlayerCoordinator.shared.mainView?.marquee.showTemporaryMessage("No track selected")
             return
         }
         
-        let alert = NSAlert()
-        alert.messageText = "Track File Info"
-        let durStr = PlaylistModel.formatTime(track.duration)
-        let locStr = track.url.isFileURL ? track.url.path : track.url.absoluteString
-        alert.informativeText = """
-        Title: \(track.title)
-        Artist: \(track.artist)
-        Length: \(durStr)
-        
-        File / Stream URL:
-        \(locStr)
-        """
-        alert.addButton(withTitle: "Close")
-        alert.alertStyle = .informational
-        alert.runModal()
+        PlayerCoordinator.shared.showTrackInfoWindow(trackIndex: idx)
+    }
+    
+    @objc private func contextPlaySelected() {
+        if let sel = playlist.selectedIndices.first, sel < playlist.tracks.count {
+            playlist.currentIndex = sel
+            onPlayTrack?(playlist.tracks[sel])
+            needsDisplay = true
+        }
+    }
+    
+    @objc private func contextViewFileInfo() {
+        handleFileInfo()
+    }
+    
+    @objc private func contextRemoveSelected() {
+        playlist.removeSelected()
+        needsDisplay = true
+    }
+    
+    @objc private func contextCropSelected() {
+        playlist.crop()
+        needsDisplay = true
+    }
+    
+    @objc private func contextClearPlaylist() {
+        playlist.clear()
+        needsDisplay = true
     }
     
     @objc private func handleRemoveDeadFiles() {
@@ -1098,9 +1111,14 @@ public class PlaylistWindowView: WinampControlView {
             let trackIndex = scrollOffset + clickedRow
             if trackIndex < playlist.tracks.count {
                 if event.clickCount == 2 {
-                    // Double-click -> Play track immediately
-                    playlist.currentIndex = trackIndex
-                    onPlayTrack?(playlist.tracks[trackIndex])
+                    if event.modifierFlags.contains(.option) || local.x >= (listRect.maxX - 45) {
+                        // Double-click on duration column or Option+double-click -> Track Info
+                        PlayerCoordinator.shared.showTrackInfoWindow(trackIndex: trackIndex)
+                    } else {
+                        // Double-click -> Play track immediately
+                        playlist.currentIndex = trackIndex
+                        onPlayTrack?(playlist.tracks[trackIndex])
+                    }
                 } else {
                     // Single click -> Select track with modifier support
                     if event.modifierFlags.contains(.shift) {
@@ -1118,6 +1136,61 @@ public class PlaylistWindowView: WinampControlView {
                 needsDisplay = true
             }
         }
+    }
+    
+    // MARK: - Track List Context Menu
+    public override func menu(for event: NSEvent) -> NSMenu? {
+        let local = convert(event.locationInWindow, from: nil)
+        let topH = AppConstants.Playlist.Layout.topBarHeight
+        let botH = AppConstants.Playlist.Layout.bottomBarHeight
+        let listRect = NSRect(
+            x: AppConstants.Playlist.Layout.leftBorderWidth,
+            y: topH,
+            width: bounds.width - (AppConstants.Playlist.Layout.leftBorderWidth + AppConstants.Playlist.Layout.rightBorderWidth),
+            height: bounds.height - topH - botH
+        )
+        guard listRect.contains(local) else {
+            return super.menu(for: event)
+        }
+        
+        let rowH = AppConstants.Playlist.trackRowHeight
+        let clickedRow = Int((local.y - topH) / rowH)
+        let trackIndex = scrollOffset + clickedRow
+        if trackIndex < playlist.tracks.count {
+            if !playlist.selectedIndices.contains(trackIndex) {
+                playlist.selectedIndices = [trackIndex]
+                needsDisplay = true
+            }
+            
+            let menu = NSMenu(title: "Track Context Menu")
+            let playItem = NSMenuItem(title: "Play", action: #selector(contextPlaySelected), keyEquivalent: "\r")
+            playItem.target = self
+            menu.addItem(playItem)
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            let infoItem = NSMenuItem(title: "View file info... (Alt+3)", action: #selector(contextViewFileInfo), keyEquivalent: "3")
+            infoItem.keyEquivalentModifierMask = [.option]
+            infoItem.target = self
+            menu.addItem(infoItem)
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            let removeItem = NSMenuItem(title: "Remove selected (Delete)", action: #selector(contextRemoveSelected), keyEquivalent: "")
+            removeItem.target = self
+            menu.addItem(removeItem)
+            
+            let cropItem = NSMenuItem(title: "Crop selected (Ctrl+Delete)", action: #selector(contextCropSelected), keyEquivalent: "")
+            cropItem.target = self
+            menu.addItem(cropItem)
+            
+            let clearItem = NSMenuItem(title: "Clear playlist", action: #selector(contextClearPlaylist), keyEquivalent: "")
+            clearItem.target = self
+            menu.addItem(clearItem)
+            
+            return menu
+        }
+        return super.menu(for: event)
     }
     
     public override func scrollWheel(with event: NSEvent) {

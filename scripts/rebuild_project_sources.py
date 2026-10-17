@@ -95,6 +95,7 @@ if m:
     g_ui_main_id = generate_id("GROUP_UI_Main")
     g_ui_eq_id = generate_id("GROUP_UI_Eq")
     g_ui_pl_id = generate_id("GROUP_UI_Pl")
+    g_ui_track_id = generate_id("GROUP_UI_Track")
     
     # Children arrays
     core_children = [f"{generate_id('FILE_' + rel)} /* {file} */" for file, rel, _ in swift_files if rel.startswith("Core/")]
@@ -108,12 +109,14 @@ if m:
     ui_main_children = [f"{generate_id('FILE_' + rel)} /* {file} */" for file, rel, _ in swift_files if rel.startswith("UI/MainWindow/")]
     ui_eq_children = [f"{generate_id('FILE_' + rel)} /* {file} */" for file, rel, _ in swift_files if rel.startswith("UI/EqualizerWindow/")]
     ui_pl_children = [f"{generate_id('FILE_' + rel)} /* {file} */" for file, rel, _ in swift_files if rel.startswith("UI/PlaylistWindow/")]
+    ui_track_children = [f"{generate_id('FILE_' + rel)} /* {file} */" for file, rel, _ in swift_files if rel.startswith("UI/TrackInfoWindow/")]
     
     ui_children = [
         f"{g_ui_comp_id} /* Components */",
         f"{g_ui_main_id} /* MainWindow */",
         f"{g_ui_eq_id} /* EqualizerWindow */",
         f"{g_ui_pl_id} /* PlaylistWindow */",
+        f"{g_ui_track_id} /* TrackInfoWindow */",
     ]
     
     macamp_app_file_id = f"{generate_id('FILE_MacAmpApp.swift')} /* MacAmpApp.swift */"
@@ -173,6 +176,7 @@ if m:
 {make_group(g_ui_main_id, "MainWindow", "MainWindow", ui_main_children)}
 {make_group(g_ui_eq_id, "EqualizerWindow", "EqualizerWindow", ui_eq_children)}
 {make_group(g_ui_pl_id, "PlaylistWindow", "PlaylistWindow", ui_pl_children)}
+{make_group(g_ui_track_id, "TrackInfoWindow", "TrackInfoWindow", ui_track_children)}
 /* End PBXGroup section */"""
     
     pbx = pbx[:m.start()] + new_groups + pbx[m.end():]
