@@ -352,6 +352,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                     self.audioEngine.play()
                     self.mainView.needsDisplay = true
                     self.plView.needsDisplay = true
+                    MediaKeyController.shared.updateNowPlayingInfo()
+                    StatusBarManager.shared.updateStatus()
                 }
             } catch {
                 print("Failed to load track \(track.url): \(error)")
@@ -445,6 +447,16 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     /// Opens the Winamp Preferences (Ctrl+P / Cmd+,) dialog.
     public func showPreferencesWindow(category: PreferencesCategory = .titles) {
         PreferencesWindow.show(category: category)
+    }
+    
+    /// Opens the Jump to File (J / F3) dialog.
+    public func showJumpToFileWindow() {
+        JumpToFileWindow.show()
+    }
+    
+    /// Opens the Jump to Time (Ctrl+J) dialog.
+    public func showJumpToTimeWindow() {
+        JumpToTimeWindow.show()
     }
     
     // MARK: - Drag & Drop Handling
@@ -549,6 +561,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             playlist.removeSelected()
             plView.needsDisplay = true
             return true
+        case AppConstants.KeyCodes.f3: // Jump to file
+            showJumpToFileWindow()
+            return true
         default:
             break
         }
@@ -561,6 +576,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                 return true
             case "d":
                 toggleDoubleSize()
+                return true
+            case "j":
+                showJumpToTimeWindow()
                 return true
             case "o", "l":
                 openFileDialog()
@@ -621,6 +639,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                 return true
             case "b":
                 playNext()
+                return true
+            case "j":
+                showJumpToFileWindow()
                 return true
             case "l":
                 openFileDialog()
@@ -706,47 +727,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     }
     
     // MARK: - Context Menu
-    public func showMainContextMenu(at screenPoint: NSPoint? = nil, in view: NSView? = nil) {
-        let menu = NSMenu(title: "MacAmp")
-        
-        // About
-        let aboutItem = NSMenuItem(title: "MacAmp...", action: #selector(handleAbout), keyEquivalent: "")
-        aboutItem.target = self
-        menu.addItem(aboutItem)
-        menu.addItem(NSMenuItem.separator())
-        
-        // Play submenu
-        let playMenu = NSMenu(title: "Play")
-        let playFileItem = NSMenuItem(title: "File...", action: #selector(handlePlayFile), keyEquivalent: "l")
-        playFileItem.target = self
-        playMenu.addItem(playFileItem)
-        
-        let playDirItem = NSMenuItem(title: "Directory...", action: #selector(handlePlayDirectory), keyEquivalent: "L")
-        playDirItem.target = self
-        playMenu.addItem(playDirItem)
-        
-        let playURLItem = NSMenuItem(title: "URL...", action: #selector(handlePlayURL), keyEquivalent: "u")
-        playURLItem.target = self
-        playMenu.addItem(playURLItem)
-        
-        let playMenuItem = NSMenuItem(title: "Play", action: nil, keyEquivalent: "")
-        playMenuItem.submenu = playMenu
-        menu.addItem(playMenuItem)
-        menu.addItem(NSMenuItem.separator())
-        
-        // Windows toggles
-        let eqItem = NSMenuItem(title: "Equalizer", action: #selector(handleToggleEqualizer), keyEquivalent: "")
-        eqItem.target = self
-        eqItem.state = mainView.eqToggle.isOn ? .on : .off
-        menu.addItem(eqItem)
-        
-        let plItem = NSMenuItem(title: "Playlist", action: #selector(handleTogglePlaylist), keyEquivalent: "")
-        plItem.target = self
-        plItem.state = mainView.plToggle.isOn ? .on : .off
-        menu.addItem(plItem)
-        menu.addItem(NSMenuItem.separator())
-        
-        // Skins submenu
+    public func buildSkinsSubmenu() -> NSMenu {
         let skinsMenu = NSMenu(title: "Skins")
         let baseSkinItem = NSMenuItem(title: "Winamp Classic (Default)", action: #selector(handleResetBaseSkin), keyEquivalent: "")
         baseSkinItem.target = self
@@ -791,18 +772,83 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         openFolderItem.target = self
         skinsMenu.addItem(openFolderItem)
         
-        let skinsMenuItem = NSMenuItem(title: "Skins", action: nil, keyEquivalent: "")
-        skinsMenuItem.submenu = skinsMenu
-        menu.addItem(skinsMenuItem)
+        return skinsMenu
+    }
+    
+    public func buildWinampMenu() -> NSMenu {
+        let menu = NSMenu(title: "Winamp Menu")
         
-        // Options submenu
+        // 1. About
+        let aboutItem = NSMenuItem(title: "MacAmp...", action: #selector(handleAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+        
+        // 2. Track Info / ID3 Tag Editor (Alt+3)
+        let infoItem = NSMenuItem(title: "View file info... (Alt+3)", action: #selector(handleTrackInfo), keyEquivalent: "3")
+        infoItem.keyEquivalentModifierMask = [.option]
+        infoItem.target = self
+        menu.addItem(infoItem)
+        
+        menu.addItem(NSMenuItem.separator())
+        
+        // 3. Play submenu
+        let playMenu = NSMenu(title: "Play")
+        let playFileItem = NSMenuItem(title: "File...", action: #selector(handlePlayFile), keyEquivalent: "l")
+        playFileItem.target = self
+        playMenu.addItem(playFileItem)
+        
+        let playDirItem = NSMenuItem(title: "Directory...", action: #selector(handlePlayDirectory), keyEquivalent: "L")
+        playDirItem.target = self
+        playMenu.addItem(playDirItem)
+        
+        let playURLItem = NSMenuItem(title: "URL...", action: #selector(handlePlayURL), keyEquivalent: "u")
+        playURLItem.target = self
+        playMenu.addItem(playURLItem)
+        playMenu.addItem(NSMenuItem.separator())
+        
+        let jumpFileItem = NSMenuItem(title: "Jump to file... (J)", action: #selector(handleJumpToFile), keyEquivalent: "j")
+        jumpFileItem.target = self
+        playMenu.addItem(jumpFileItem)
+        
+        let playMenuItem = NSMenuItem(title: "Play", action: nil, keyEquivalent: "")
+        playMenuItem.submenu = playMenu
+        menu.addItem(playMenuItem)
+        menu.addItem(NSMenuItem.separator())
+        
+        // 4. Windows toggles
+        let eqItem = NSMenuItem(title: "Equalizer", action: #selector(handleToggleEqualizer), keyEquivalent: "")
+        eqItem.target = self
+        eqItem.state = mainView.eqToggle.isOn ? .on : .off
+        menu.addItem(eqItem)
+        
+        let plItem = NSMenuItem(title: "Playlist", action: #selector(handleTogglePlaylist), keyEquivalent: "")
+        plItem.target = self
+        plItem.state = mainView.plToggle.isOn ? .on : .off
+        menu.addItem(plItem)
+        menu.addItem(NSMenuItem.separator())
+        
+        // 5. Options submenu
         let optionsMenu = NSMenu(title: "Options")
+        
+        let prefsItem = NSMenuItem(title: "Preferences... (Ctrl+P)", action: #selector(handlePreferences), keyEquivalent: "p")
+        prefsItem.keyEquivalentModifierMask = [.control]
+        prefsItem.target = self
+        optionsMenu.addItem(prefsItem)
+        optionsMenu.addItem(NSMenuItem.separator())
+        
+        let skinsSubmenu = buildSkinsSubmenu()
+        let skinsSubItem = NSMenuItem(title: "Skins", action: nil, keyEquivalent: "")
+        skinsSubItem.submenu = skinsSubmenu
+        optionsMenu.addItem(skinsSubItem)
+        optionsMenu.addItem(NSMenuItem.separator())
+        
         let topItem = NSMenuItem(title: "Always On Top", action: #selector(handleToggleAlwaysOnTop), keyEquivalent: "")
         topItem.target = self
         topItem.state = persistence.state.isAlwaysOnTop ? .on : .off
         optionsMenu.addItem(topItem)
         
-        let dblItem = NSMenuItem(title: "Double Size", action: #selector(handleToggleDoubleSize), keyEquivalent: "d")
+        let dblItem = NSMenuItem(title: "Double Size (Ctrl+D)", action: #selector(handleToggleDoubleSize), keyEquivalent: "d")
+        dblItem.keyEquivalentModifierMask = [.control]
         dblItem.target = self
         dblItem.state = (windowManager.currentScale == 2.0) ? .on : .off
         optionsMenu.addItem(dblItem)
@@ -811,7 +857,12 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         optMenuItem.submenu = optionsMenu
         menu.addItem(optMenuItem)
         
-        // Playback submenu
+        // 6. Skins at root menu
+        let rootSkinsItem = NSMenuItem(title: "Skins", action: nil, keyEquivalent: "")
+        rootSkinsItem.submenu = buildSkinsSubmenu()
+        menu.addItem(rootSkinsItem)
+        
+        // 7. Playback submenu
         let pbMenu = NSMenu(title: "Playback")
         let prevItem = NSMenuItem(title: "Previous", action: #selector(handlePrev), keyEquivalent: "z")
         prevItem.target = self
@@ -843,29 +894,59 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         shufItem.target = self
         shufItem.state = playlist.isShuffle ? .on : .off
         pbMenu.addItem(shufItem)
+        pbMenu.addItem(NSMenuItem.separator())
+        
+        let jumpTimeItem = NSMenuItem(title: "Jump to time... (Ctrl+J)", action: #selector(handleJumpToTime), keyEquivalent: "j")
+        jumpTimeItem.keyEquivalentModifierMask = [.control]
+        jumpTimeItem.target = self
+        pbMenu.addItem(jumpTimeItem)
         
         let pbMenuItem = NSMenuItem(title: "Playback", action: nil, keyEquivalent: "")
         pbMenuItem.submenu = pbMenu
         menu.addItem(pbMenuItem)
         menu.addItem(NSMenuItem.separator())
         
-        // Exit|Quit
+        // 8. Exit
         let exitItem = NSMenuItem(title: "Exit", action: #selector(handleExit), keyEquivalent: "q")
         exitItem.target = self
         menu.addItem(exitItem)
         
+        return menu
+    }
+    
+    public func showMainContextMenu(at screenPoint: NSPoint? = nil, in view: NSView? = nil) {
+        let menu = buildWinampMenu()
         let targetPt = screenPoint ?? NSEvent.mouseLocation
-        menu.popUp(positioning: nil, at: targetPt, in: nil)
+        menu.popUp(positioning: nil, at: targetPt, in: view)
     }
     
     // MARK: - Menu Actions
+    @objc public func handleJumpToFile() {
+        showJumpToFileWindow()
+    }
+    
+    @objc public func handleJumpToTime() {
+        showJumpToTimeWindow()
+    }
+    
+    @objc public func handlePreferences() {
+        showPreferencesWindow()
+    }
+    
+    @objc public func handleTrackInfo() {
+        showTrackInfoWindow()
+    }
+    
+    @objc public func handleMinimizeAll() {
+        minimizeAll()
+    }
+    
+    @objc public func handleBringAllToFront() {
+        bringAllWindowsToFront()
+    }
+    
     @objc public func handleAbout() {
-        let alert = NSAlert()
-        alert.messageText = "MacAmp 2.91"
-        alert.informativeText = "Pixel-perfect classic Winamp 2.91 reproduction for macOS.\n\nBuilt with Swift, AppKit, and AVFoundation.\nSupports classic .wsz skins, 10-band EQ with presets, and authentic audio engine."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        AboutWindow.show()
     }
     
     @objc public func handlePlayFile() {
@@ -943,8 +1024,11 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     @objc public func handlePlay() {
         if audioEngine.status == .paused {
             audioEngine.play()
+            MediaKeyController.shared.updateNowPlayingInfo()
+            StatusBarManager.shared.updateStatus()
         } else if audioEngine.status == .playing {
             audioEngine.seek(to: 0)
+            MediaKeyController.shared.updateNowPlayingInfo()
         } else if let track = playlist.currentTrack ?? playlist.tracks.first {
             loadAndPlay(track: track)
         }
@@ -952,6 +1036,23 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     
     @objc public func handlePause() {
         audioEngine.togglePause()
+        MediaKeyController.shared.updateNowPlayingInfo()
+        StatusBarManager.shared.updateStatus()
+    }
+    
+    @objc public func handlePlayPause() {
+        if audioEngine.status == .playing {
+            audioEngine.togglePause()
+        } else {
+            handlePlay()
+        }
+        MediaKeyController.shared.updateNowPlayingInfo()
+        StatusBarManager.shared.updateStatus()
+    }
+    
+    public func seek(to time: TimeInterval) {
+        audioEngine.seek(to: time)
+        MediaKeyController.shared.updateNowPlayingInfo()
     }
     
     @objc public func handleStop() {
@@ -962,6 +1063,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         mainView.visualizer.spectrumAmplitudes = Array(repeating: 0.0, count: AppConstants.Visualizer.numSpectrumBars)
         mainView.visualizer.waveformPoints = Array(repeating: 0.0, count: AppConstants.Visualizer.numWaveformPoints)
         mainView.needsDisplay = true
+        MediaKeyController.shared.updateNowPlayingInfo()
+        StatusBarManager.shared.updateStatus()
     }
     
     @objc public func handleNext() {
@@ -1042,6 +1145,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         persistence.state.scaleFactor = factor
         persistence.saveSession()
         updateWindowMasks()
+        MainMenuManager.shared.updateStates()
     }
     
     public func toggleDoubleSize() {
@@ -1051,6 +1155,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         persistence.state.scaleFactor = (newScale == 2.0) ? .x2 : .x1
         persistence.saveSession()
         updateWindowMasks()
+        MainMenuManager.shared.updateStates()
     }
     
     // MARK: - State Restoration

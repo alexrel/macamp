@@ -5,7 +5,7 @@ import Foundation
 public class WindowLayoutManager: NSObject {
     public static let shared = WindowLayoutManager()
     
-    private let snapThreshold: CGFloat = AppConstants.Window.snapDistance
+    public var snapThreshold: CGFloat = CGFloat(PersistenceManager.shared.state.windowSnapDistance)
     private let adjacencyTolerance: CGFloat = 2.0
     
     private var effectiveSnapThreshold: CGFloat {

@@ -13,6 +13,7 @@ public struct AppState: Codable {
     public var isRepeat: Bool = false
     
     public var visualizerMode: VisualizerMode = .spectrum
+    public var visualizerShowPeaks: Bool = true
     public var timeDisplayMode: TimeDisplayMode = .elapsed
     public var scaleFactor: ScaleFactor = .x1
     
@@ -36,8 +37,10 @@ public struct AppState: Codable {
     public var desktopFontSize: Double = 9.0
     public var showTrackNumberInTitle: Bool = true
     public var isMarqueeScrollEnabled: Bool = true
+    public var windowSnapDistance: Int = 10
     
     // Preferences - Playlist
+    public var showNumbersInPlaylist: Bool = true
     public var playlistZeroPadding: Bool = false
     public var playlistShowExtensions: Bool = false
     public var authenticShuffle: Bool = true

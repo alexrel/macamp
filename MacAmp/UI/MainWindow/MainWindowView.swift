@@ -429,57 +429,6 @@ public class MainWindowView: WinampControlView {
     
     // MARK: - Context Menu
     public override func menu(for event: NSEvent) -> NSMenu? {
-        let menu = NSMenu(title: "Winamp Menu")
-        
-        let infoItem = NSMenuItem(title: "View file info... (Alt+3)", action: #selector(contextViewFileInfo), keyEquivalent: "3")
-        infoItem.keyEquivalentModifierMask = [.option]
-        infoItem.target = self
-        menu.addItem(infoItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        let prefsItem = NSMenuItem(title: "Preferences... (Ctrl+P)", action: #selector(contextOpenPreferences), keyEquivalent: "p")
-        prefsItem.keyEquivalentModifierMask = [.control]
-        prefsItem.target = self
-        menu.addItem(prefsItem)
-        
-        let doubleSizeItem = NSMenuItem(title: "Double Size (Ctrl+D)", action: #selector(contextToggleDoubleSize), keyEquivalent: "d")
-        doubleSizeItem.keyEquivalentModifierMask = [.control]
-        doubleSizeItem.target = self
-        menu.addItem(doubleSizeItem)
-        
-        let skinItem = NSMenuItem(title: "Skins...", action: #selector(contextOpenSkinChooser), keyEquivalent: "s")
-        skinItem.keyEquivalentModifierMask = [.option]
-        skinItem.target = self
-        menu.addItem(skinItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        let exitItem = NSMenuItem(title: "Exit", action: #selector(contextExit), keyEquivalent: "q")
-        exitItem.keyEquivalentModifierMask = [.command]
-        exitItem.target = self
-        menu.addItem(exitItem)
-        
-        return menu
-    }
-    
-    @objc private func contextViewFileInfo() {
-        PlayerCoordinator.shared.showTrackInfoWindow()
-    }
-    
-    @objc private func contextOpenPreferences() {
-        PlayerCoordinator.shared.showPreferencesWindow()
-    }
-    
-    @objc private func contextToggleDoubleSize() {
-        PlayerCoordinator.shared.toggleDoubleSize()
-    }
-    
-    @objc private func contextOpenSkinChooser() {
-        PlayerCoordinator.shared.openSkinChooser()
-    }
-    
-    @objc private func contextExit() {
-        NSApp.terminate(nil)
+        return PlayerCoordinator.shared.buildWinampMenu()
     }
 }

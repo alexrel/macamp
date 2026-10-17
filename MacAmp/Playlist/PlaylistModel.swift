@@ -166,7 +166,20 @@ public struct TrackItem: Codable, Identifiable, Equatable {
     }
     
     public func formattedTitle(with index: Int) -> String {
-        return "\(index). \(artist) - \(title)"
+        let state = PersistenceManager.shared.state
+        var prefix = ""
+        if state.showNumbersInPlaylist {
+            if state.playlistZeroPadding {
+                prefix = String(format: "%02d. ", index)
+            } else {
+                prefix = "\(index). "
+            }
+        }
+        var name = (artist.isEmpty ? "" : "\(artist) - ") + title
+        if state.playlistShowExtensions && !url.pathExtension.isEmpty {
+            name += ".\(url.pathExtension)"
+        }
+        return prefix + name
     }
 }
 
@@ -336,6 +349,45 @@ public class PlaylistModel: ObservableObject {
         selectedIndices.removeAll()
         currentIndex = nil
         shuffleOrder.removeAll()
+    }
+    
+    /// Reorders the specified tracks and inserts them at destinationIndex
+    public func moveTracks(from sourceIndices: Set<Int>, to destinationIndex: Int) {
+        guard !sourceIndices.isEmpty, destinationIndex >= 0, destinationIndex <= tracks.count else { return }
+        
+        let currentTrackID = currentTrack?.id
+        let sortedSources = sourceIndices.sorted()
+        let itemsToMove = sortedSources.map { tracks[$0] }
+        
+        // Remove items from tracks
+        var remainingTracks: [TrackItem] = []
+        for (i, t) in tracks.enumerated() {
+            if !sourceIndices.contains(i) {
+                remainingTracks.append(t)
+            }
+        }
+        
+        // Calculate new insertion index taking into account removed items preceding destination
+        let numRemovedBeforeDest = sortedSources.filter { $0 < destinationIndex }.count
+        let adjustedDest = max(0, min(destinationIndex - numRemovedBeforeDest, remainingTracks.count))
+        
+        remainingTracks.insert(contentsOf: itemsToMove, at: adjustedDest)
+        self.tracks = remainingTracks
+        
+        // Update selection to match new indices of moved items
+        var newSelected: Set<Int> = []
+        for i in 0..<itemsToMove.count {
+            newSelected.insert(adjustedDest + i)
+        }
+        self.selectedIndices = newSelected
+        
+        // Update currentIndex to follow currently playing track
+        if let curID = currentTrackID, let newIdx = tracks.firstIndex(where: { $0.id == curID }) {
+            self.currentIndex = newIdx
+        }
+        
+        updateShuffleOrder()
+        PersistenceManager.shared.savePlaylist(tracks)
     }
     
     // MARK: - Selection

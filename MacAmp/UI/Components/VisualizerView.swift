@@ -7,6 +7,10 @@ public class VisualizerView: WinampControlView {
         didSet { needsDisplay = true }
     }
     
+    public var showPeaks: Bool = PersistenceManager.shared.state.visualizerShowPeaks {
+        didSet { needsDisplay = true }
+    }
+    
     public var onToggleMode: (() -> Void)?
     
     /// 19 spectral frequency bins (0.0 ... 1.0)
@@ -110,11 +114,13 @@ public class VisualizerView: WinampControlView {
             }
             
             // Draw peak dot
-            let peakH = round(CGFloat(peakHeights[i]) * maxBarHeight)
-            if peakH > 0 {
-                let peakY = max(0, bounds.height - 1.0 - peakH)
-                context.setFillColor(dotColor)
-                context.fill(CGRect(x: x, y: peakY, width: barW, height: 1.0))
+            if showPeaks {
+                let peakH = round(CGFloat(peakHeights[i]) * maxBarHeight)
+                if peakH > 0 {
+                    let peakY = max(0, bounds.height - 1.0 - peakH)
+                    context.setFillColor(dotColor)
+                    context.fill(CGRect(x: x, y: peakY, width: barW, height: 1.0))
+                }
             }
         }
     }

@@ -462,4 +462,9 @@ public class EqualizerWindowView: WinampControlView {
         win.startWindowDrag(with: event)
         trackWindowDrag(with: event, in: win)
     }
+    
+    // MARK: - Context Menu
+    public override func menu(for event: NSEvent) -> NSMenu? {
+        return PlayerCoordinator.shared.buildWinampMenu()
+    }
 }

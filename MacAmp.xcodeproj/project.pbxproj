@@ -12,6 +12,8 @@
 		AAF0E2D4D2A02A51FE841B73 /* CubicSpline.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA77248ED3C6F45BCAA3EF2D /* CubicSpline.swift */; };
 		AA9E25734126AF5A37B18D2E /* EqualizerWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA07E09BCD7F8C56F79D3C6E /* EqualizerWindowView.swift */; };
 		AA49E4E81FD4135DED9F929D /* PlaylistWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9737F793D3DB5719AD50C1 /* PlaylistWindowView.swift */; };
+		AA503BE4A89AB554388DE64A /* JumpToFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA041127C9443C5ABD9033DC /* JumpToFileView.swift */; };
+		AAAEDF588FEE395FF5B58704 /* JumpToFileWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA660C866733D0575B9754DC /* JumpToFileWindow.swift */; };
 		AAEADC209F82245C4EADCEE1 /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA35A17E7BAD2C525ABBF0EC /* PreferencesView.swift */; };
 		AA26D33C9ADF29582D85CF6B /* PreferencesWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2F256CF1E109555A98DDE5 /* PreferencesWindow.swift */; };
 		AAF6727000D6465C6A84B5E8 /* BitmapFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAEF4BFC172B765F4E890B62 /* BitmapFont.swift */; };
@@ -20,8 +22,13 @@
 		AAB9424AAEB5E85C369960F9 /* SkinSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0F3341BC91CC5389B38D7A /* SkinSlider.swift */; };
 		AA8C8E891E77A251D68E6054 /* TimeDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA6E4B1CEB17358BCB77937 /* TimeDisplayView.swift */; };
 		AAA349D14C28E55D8EB21E35 /* VisualizerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA72A18D3956BE55E2989872 /* VisualizerView.swift */; };
+		AA6FC9EB08EC7C5422A04C6E /* Win32Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAE8CD2D07C26A518F905312 /* Win32Theme.swift */; };
+		AAAB8044910B03563C8DB34F /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA242A26BDCAB5DE7A2E671 /* AboutView.swift */; };
+		AA074CD353BCCE5A2DAD2E55 /* AboutWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2F0C3573C7605F6B8D4D58 /* AboutWindow.swift */; };
 		AA2031D91E47F85544BAE381 /* TrackInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA94C18A3C733D57588E2CC7 /* TrackInfoView.swift */; };
 		AA388F511138A35A8C9A1349 /* TrackInfoWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA28B146C996605B23A779D9 /* TrackInfoWindow.swift */; };
+		AAD719B780D8F95273A00FD0 /* JumpToTimeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD6E38A7F56975675B2CB94 /* JumpToTimeView.swift */; };
+		AA4D0BF6C536E9544492B22E /* JumpToTimeWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA3A148CD6471539DA79382 /* JumpToTimeWindow.swift */; };
 		AA8D8CCC061DB657208AD691 /* RegionParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1F33C7BFF21C5DFFA70857 /* RegionParser.swift */; };
 		AA8BF893901A485D189E84F9 /* SkinLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA4627C7045CDF506FB23B7A /* SkinLoader.swift */; };
 		AA8E06ACA27F6157F6B02552 /* SkinManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9A6639CAE2B651F58D1EA5 /* SkinManager.swift */; };
@@ -31,12 +38,15 @@
 		AAC032D338D42950FB89EE00 /* PlaylistModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6E8F1A02031A5DEFAC3E37 /* PlaylistModel.swift */; };
 		AA8F13D2C914E75D6688E311 /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA27AF03ADE54357D783D64D /* AppConstants.swift */; };
 		AA01006C968B8B5FEA977E7E /* Enums.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA8BEDB521E357539E9F05DE /* Enums.swift */; };
+		AA9EF05B9533115EC4B41E8D /* MediaKeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2EE4C01E58DA5839980F70 /* MediaKeyController.swift */; };
 		AA2BBF0F6C992A5E46B7A987 /* PlayerCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAC2BB3C6AE0885E199BF702 /* PlayerCoordinator.swift */; };
 		AAE0CA665F5ECB5A40A155FB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA5EF6CB8C8A2B5ED39134E5 /* AppState.swift */; };
 		AA6CEB4C05DBFB5A7397E865 /* AudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6886CEEE22F05C6A878759 /* AudioEngine.swift */; };
 		AA00DEAB8724A25242A42B3C /* AudioMetadataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADF92433DF4605233A653D6 /* AudioMetadataService.swift */; };
 		AA1DD7DC105F775895AD4CD4 /* EqualizerPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA05E180143679538AA8E2C1 /* EqualizerPresets.swift */; };
 		AA3C615651677658C9AE8BC3 /* FFTAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA962E83A0FAE25570805F4F /* FFTAnalyzer.swift */; };
+		AA7B0832325E915DC9956E69 /* MainMenuManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADC616BDF0E715B60B9A10B /* MainMenuManager.swift */; };
+		AA836AC777451C59AB95C33A /* StatusBarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA4A12DEC63F8C5A2597ACE9 /* StatusBarManager.swift */; };
 		AA7915404346F35EF3A845E4 /* WinampWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAE9F927208E8E5D3EA7E7A3 /* WinampWindow.swift */; };
 		AA18E74F7E8CB5528B921B69 /* WindowLayoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA93E0F3DA84105657AB1CCA /* WindowLayoutManager.swift */; };
 		AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */ = {isa = PBXBuildFile; fileRef = AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */; };
@@ -50,6 +60,8 @@
 		AA77248ED3C6F45BCAA3EF2D /* CubicSpline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CubicSpline.swift"; sourceTree = "<group>"; };
 		AA07E09BCD7F8C56F79D3C6E /* EqualizerWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EqualizerWindowView.swift"; sourceTree = "<group>"; };
 		AA9737F793D3DB5719AD50C1 /* PlaylistWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistWindowView.swift"; sourceTree = "<group>"; };
+		AA041127C9443C5ABD9033DC /* JumpToFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "JumpToFileView.swift"; sourceTree = "<group>"; };
+		AA660C866733D0575B9754DC /* JumpToFileWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "JumpToFileWindow.swift"; sourceTree = "<group>"; };
 		AA35A17E7BAD2C525ABBF0EC /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PreferencesView.swift"; sourceTree = "<group>"; };
 		AA2F256CF1E109555A98DDE5 /* PreferencesWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PreferencesWindow.swift"; sourceTree = "<group>"; };
 		AAEF4BFC172B765F4E890B62 /* BitmapFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BitmapFont.swift"; sourceTree = "<group>"; };
@@ -58,8 +70,13 @@
 		AA0F3341BC91CC5389B38D7A /* SkinSlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SkinSlider.swift"; sourceTree = "<group>"; };
 		AAA6E4B1CEB17358BCB77937 /* TimeDisplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TimeDisplayView.swift"; sourceTree = "<group>"; };
 		AA72A18D3956BE55E2989872 /* VisualizerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VisualizerView.swift"; sourceTree = "<group>"; };
+		AAE8CD2D07C26A518F905312 /* Win32Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Win32Theme.swift"; sourceTree = "<group>"; };
+		AAA242A26BDCAB5DE7A2E671 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AboutView.swift"; sourceTree = "<group>"; };
+		AA2F0C3573C7605F6B8D4D58 /* AboutWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AboutWindow.swift"; sourceTree = "<group>"; };
 		AA94C18A3C733D57588E2CC7 /* TrackInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrackInfoView.swift"; sourceTree = "<group>"; };
 		AA28B146C996605B23A779D9 /* TrackInfoWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TrackInfoWindow.swift"; sourceTree = "<group>"; };
+		AAD6E38A7F56975675B2CB94 /* JumpToTimeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "JumpToTimeView.swift"; sourceTree = "<group>"; };
+		AAA3A148CD6471539DA79382 /* JumpToTimeWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "JumpToTimeWindow.swift"; sourceTree = "<group>"; };
 		AA1F33C7BFF21C5DFFA70857 /* RegionParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RegionParser.swift"; sourceTree = "<group>"; };
 		AA4627C7045CDF506FB23B7A /* SkinLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SkinLoader.swift"; sourceTree = "<group>"; };
 		AA9A6639CAE2B651F58D1EA5 /* SkinManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SkinManager.swift"; sourceTree = "<group>"; };
@@ -69,12 +86,15 @@
 		AA6E8F1A02031A5DEFAC3E37 /* PlaylistModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistModel.swift"; sourceTree = "<group>"; };
 		AA27AF03ADE54357D783D64D /* AppConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppConstants.swift"; sourceTree = "<group>"; };
 		AA8BEDB521E357539E9F05DE /* Enums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Enums.swift"; sourceTree = "<group>"; };
+		AA2EE4C01E58DA5839980F70 /* MediaKeyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MediaKeyController.swift"; sourceTree = "<group>"; };
 		AAC2BB3C6AE0885E199BF702 /* PlayerCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayerCoordinator.swift"; sourceTree = "<group>"; };
 		AA5EF6CB8C8A2B5ED39134E5 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppState.swift"; sourceTree = "<group>"; };
 		AA6886CEEE22F05C6A878759 /* AudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioEngine.swift"; sourceTree = "<group>"; };
 		AADF92433DF4605233A653D6 /* AudioMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioMetadataService.swift"; sourceTree = "<group>"; };
 		AA05E180143679538AA8E2C1 /* EqualizerPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EqualizerPresets.swift"; sourceTree = "<group>"; };
 		AA962E83A0FAE25570805F4F /* FFTAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FFTAnalyzer.swift"; sourceTree = "<group>"; };
+		AADC616BDF0E715B60B9A10B /* MainMenuManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MainMenuManager.swift"; sourceTree = "<group>"; };
+		AA4A12DEC63F8C5A2597ACE9 /* StatusBarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatusBarManager.swift"; sourceTree = "<group>"; };
 		AAE9F927208E8E5D3EA7E7A3 /* WinampWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WinampWindow.swift"; sourceTree = "<group>"; };
 		AA93E0F3DA84105657AB1CCA /* WindowLayoutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WindowLayoutManager.swift"; sourceTree = "<group>"; };
 		AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */ = {isa = PBXFileReference; lastKnownFileType = file; path = "base-2.91.wsz"; sourceTree = "<group>"; };
@@ -143,6 +163,7 @@
 			children = (
 				AA27AF03ADE54357D783D64D /* AppConstants.swift */,
 				AA8BEDB521E357539E9F05DE /* Enums.swift */,
+				AA2EE4C01E58DA5839980F70 /* MediaKeyController.swift */,
 				AAC2BB3C6AE0885E199BF702 /* PlayerCoordinator.swift */,
 			);
 			path = "Core";
@@ -183,6 +204,8 @@
 		AAA3FBE9141E715B1AAC7161 /* Windowing */ = {
 			isa = PBXGroup;
 			children = (
+				AADC616BDF0E715B60B9A10B /* MainMenuManager.swift */,
+				AA4A12DEC63F8C5A2597ACE9 /* StatusBarManager.swift */,
 				AAE9F927208E8E5D3EA7E7A3 /* WinampWindow.swift */,
 				AA93E0F3DA84105657AB1CCA /* WindowLayoutManager.swift */,
 			);
@@ -206,6 +229,9 @@
 				AAFE7533CA811B50FD843D34 /* PlaylistWindow */,
 				AA023492EC1591531E865198 /* TrackInfoWindow */,
 				AAC5B9AEC723D558508C4560 /* PreferencesWindow */,
+				AA67830164D4945A79AF79DA /* AboutWindow */,
+				AA71EE3158899557768DE66E /* JumpToFileWindow */,
+				AAED4AF757E13754C480F9DF /* JumpToTimeWindow */,
 			);
 			path = "UI";
 			sourceTree = "<group>";
@@ -219,6 +245,7 @@
 				AA0F3341BC91CC5389B38D7A /* SkinSlider.swift */,
 				AAA6E4B1CEB17358BCB77937 /* TimeDisplayView.swift */,
 				AA72A18D3956BE55E2989872 /* VisualizerView.swift */,
+				AAE8CD2D07C26A518F905312 /* Win32Theme.swift */,
 			);
 			path = "Components";
 			sourceTree = "<group>";
@@ -264,6 +291,33 @@
 				AA2F256CF1E109555A98DDE5 /* PreferencesWindow.swift */,
 			);
 			path = "PreferencesWindow";
+			sourceTree = "<group>";
+		};
+		AA67830164D4945A79AF79DA /* AboutWindow */ = {
+			isa = PBXGroup;
+			children = (
+				AAA242A26BDCAB5DE7A2E671 /* AboutView.swift */,
+				AA2F0C3573C7605F6B8D4D58 /* AboutWindow.swift */,
+			);
+			path = "AboutWindow";
+			sourceTree = "<group>";
+		};
+		AA71EE3158899557768DE66E /* JumpToFileWindow */ = {
+			isa = PBXGroup;
+			children = (
+				AA041127C9443C5ABD9033DC /* JumpToFileView.swift */,
+				AA660C866733D0575B9754DC /* JumpToFileWindow.swift */,
+			);
+			path = "JumpToFileWindow";
+			sourceTree = "<group>";
+		};
+		AAED4AF757E13754C480F9DF /* JumpToTimeWindow */ = {
+			isa = PBXGroup;
+			children = (
+				AAD6E38A7F56975675B2CB94 /* JumpToTimeView.swift */,
+				AAA3A148CD6471539DA79382 /* JumpToTimeWindow.swift */,
+			);
+			path = "JumpToTimeWindow";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -329,6 +383,11 @@
 
 
 
+
+
+
+
+
 				BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */,
 				BDC069482B887D910009C001 /* Assets.xcassets in Resources */,
 			);
@@ -346,6 +405,8 @@
 				AAF0E2D4D2A02A51FE841B73 /* CubicSpline.swift in Sources */,
 				AA9E25734126AF5A37B18D2E /* EqualizerWindowView.swift in Sources */,
 				AA49E4E81FD4135DED9F929D /* PlaylistWindowView.swift in Sources */,
+				AA503BE4A89AB554388DE64A /* JumpToFileView.swift in Sources */,
+				AAAEDF588FEE395FF5B58704 /* JumpToFileWindow.swift in Sources */,
 				AAEADC209F82245C4EADCEE1 /* PreferencesView.swift in Sources */,
 				AA26D33C9ADF29582D85CF6B /* PreferencesWindow.swift in Sources */,
 				AAF6727000D6465C6A84B5E8 /* BitmapFont.swift in Sources */,
@@ -354,8 +415,13 @@
 				AAB9424AAEB5E85C369960F9 /* SkinSlider.swift in Sources */,
 				AA8C8E891E77A251D68E6054 /* TimeDisplayView.swift in Sources */,
 				AAA349D14C28E55D8EB21E35 /* VisualizerView.swift in Sources */,
+				AA6FC9EB08EC7C5422A04C6E /* Win32Theme.swift in Sources */,
+				AAAB8044910B03563C8DB34F /* AboutView.swift in Sources */,
+				AA074CD353BCCE5A2DAD2E55 /* AboutWindow.swift in Sources */,
 				AA2031D91E47F85544BAE381 /* TrackInfoView.swift in Sources */,
 				AA388F511138A35A8C9A1349 /* TrackInfoWindow.swift in Sources */,
+				AAD719B780D8F95273A00FD0 /* JumpToTimeView.swift in Sources */,
+				AA4D0BF6C536E9544492B22E /* JumpToTimeWindow.swift in Sources */,
 				AA8D8CCC061DB657208AD691 /* RegionParser.swift in Sources */,
 				AA8BF893901A485D189E84F9 /* SkinLoader.swift in Sources */,
 				AA8E06ACA27F6157F6B02552 /* SkinManager.swift in Sources */,
@@ -365,12 +431,15 @@
 				AAC032D338D42950FB89EE00 /* PlaylistModel.swift in Sources */,
 				AA8F13D2C914E75D6688E311 /* AppConstants.swift in Sources */,
 				AA01006C968B8B5FEA977E7E /* Enums.swift in Sources */,
+				AA9EF05B9533115EC4B41E8D /* MediaKeyController.swift in Sources */,
 				AA2BBF0F6C992A5E46B7A987 /* PlayerCoordinator.swift in Sources */,
 				AAE0CA665F5ECB5A40A155FB /* AppState.swift in Sources */,
 				AA6CEB4C05DBFB5A7397E865 /* AudioEngine.swift in Sources */,
 				AA00DEAB8724A25242A42B3C /* AudioMetadataService.swift in Sources */,
 				AA1DD7DC105F775895AD4CD4 /* EqualizerPresets.swift in Sources */,
 				AA3C615651677658C9AE8BC3 /* FFTAnalyzer.swift in Sources */,
+				AA7B0832325E915DC9956E69 /* MainMenuManager.swift in Sources */,
+				AA836AC777451C59AB95C33A /* StatusBarManager.swift in Sources */,
 				AA7915404346F35EF3A845E4 /* WinampWindow.swift in Sources */,
 				AA18E74F7E8CB5528B921B69 /* WindowLayoutManager.swift in Sources */,
 			);

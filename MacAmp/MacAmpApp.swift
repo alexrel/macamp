@@ -3,8 +3,20 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        MainMenuManager.shared.setupMenu()
+        StatusBarManager.shared.setup()
+        MediaKeyController.shared.setup()
         PlayerCoordinator.shared.start()
         NSApp.activate(ignoringOtherApps: true)
+        
+        DispatchQueue.main.async {
+            MainMenuManager.shared.setupMenu()
+            StatusBarManager.shared.updateStatus()
+        }
+    }
+    
+    @objc func openPreferences(_ sender: Any?) {
+        PlayerCoordinator.shared.showPreferencesWindow()
     }
     
     func applicationWillTerminate(_ notification: Notification) {
@@ -45,6 +57,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+    
+    // MARK: - macOS Dock Menu
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu(title: "Dock Menu")
+        let coord = PlayerCoordinator.shared
+        let isPlaying = (coord.audioEngine.status == .playing)
+        
+        // Track Title Header
+        let titleItem: NSMenuItem
+        if let track = coord.playlist.currentTrack {
+            let name = track.artist.isEmpty ? track.title : "\(track.artist) - \(track.title)"
+            let prefix = isPlaying ? "▶ " : "❚❚ "
+            let displayName = name.isEmpty ? track.url.lastPathComponent : name
+            titleItem = NSMenuItem(title: prefix + displayName, action: nil, keyEquivalent: "")
+        } else {
+            titleItem = NSMenuItem(title: "MacAmp 2.91 [Stopped]", action: nil, keyEquivalent: "")
+        }
+        titleItem.isEnabled = false
+        menu.addItem(titleItem)
+        menu.addItem(NSMenuItem.separator())
+        
+        // Play / Pause
+        let ppItem = NSMenuItem(title: isPlaying ? "Pause" : "Play", action: #selector(handleDockPlayPause), keyEquivalent: "")
+        ppItem.target = self
+        menu.addItem(ppItem)
+        
+        // Stop
+        let stopItem = NSMenuItem(title: "Stop", action: #selector(handleDockStop), keyEquivalent: "")
+        stopItem.target = self
+        menu.addItem(stopItem)
+        
+        // Next
+        let nextItem = NSMenuItem(title: "Next Track", action: #selector(handleDockNext), keyEquivalent: "")
+        nextItem.target = self
+        menu.addItem(nextItem)
+        
+        // Previous
+        let prevItem = NSMenuItem(title: "Previous Track", action: #selector(handleDockPrev), keyEquivalent: "")
+        prevItem.target = self
+        menu.addItem(prevItem)
+        
+        return menu
+    }
+    
+    @objc private func handleDockPlayPause() {
+        PlayerCoordinator.shared.handlePlayPause()
+    }
+    
+    @objc private func handleDockStop() {
+        PlayerCoordinator.shared.handleStop()
+    }
+    
+    @objc private func handleDockNext() {
+        PlayerCoordinator.shared.handleNext()
+    }
+    
+    @objc private func handleDockPrev() {
+        PlayerCoordinator.shared.handlePrev()
+    }
 }
 
 @main
@@ -54,38 +125,6 @@ struct MacAmpApp: App {
     var body: some Scene {
         Settings {
             EmptyView()
-        }
-        .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button("Preferences...") {
-                    PlayerCoordinator.shared.showPreferencesWindow()
-                }
-                .keyboardShortcut(",", modifiers: [.command])
-            }
-            
-            CommandMenu("Track") {
-                Button("Track Info (Alt+3)") {
-                    PlayerCoordinator.shared.showTrackInfoWindow()
-                }
-                .keyboardShortcut("3", modifiers: [.option])
-            }
-            
-            CommandMenu("Options") {
-                Button("Preferences (Ctrl+P)") {
-                    PlayerCoordinator.shared.showPreferencesWindow()
-                }
-                .keyboardShortcut("p", modifiers: [.control])
-                
-                Button("Double Size (Ctrl+D)") {
-                    PlayerCoordinator.shared.toggleDoubleSize()
-                }
-                .keyboardShortcut("d", modifiers: [.control])
-                
-                Button("Skins...") {
-                    PlayerCoordinator.shared.openSkinChooser()
-                }
-                .keyboardShortcut("s", modifiers: [.option])
-            }
         }
     }
 }

@@ -270,5 +270,7 @@ public enum AppConstants {
         public static let space: UInt16 = 49
         public static let returnKey: UInt16 = 36
         public static let deleteKey: UInt16 = 51
+        public static let f3: UInt16 = 99
+        public static let escape: UInt16 = 53
     }
 }

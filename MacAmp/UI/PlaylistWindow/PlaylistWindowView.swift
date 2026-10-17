@@ -207,6 +207,8 @@ public class PlaylistWindowView: WinampControlView {
     }
     private var scrollOffset: Int = 0
     private var isDraggingScrollThumb: Bool = false
+    private var selectionAnchorIndex: Int? = nil
+    private var dropInsertionIndex: Int? = nil
     
     public var isShadeMode: Bool = false {
         didSet {
@@ -609,6 +611,8 @@ public class PlaylistWindowView: WinampControlView {
     private func showMiscOptionsSubmenu(at button: NSView) {
         let menu = NSMenu(title: "Misc Options")
         menu.autoenablesItems = false
+        menu.addItem(createMenuItem(title: "Jump to file... (J)", action: #selector(handleJumpToFile)))
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(createMenuItem(title: "Scroll to current track", action: #selector(handleScrollToCurrentTrack)))
         menu.addItem(createMenuItem(title: "Clear selection", action: #selector(handleSelectNone)))
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: 0), in: button)
@@ -736,6 +740,10 @@ public class PlaylistWindowView: WinampControlView {
     }
     
     // MARK: - Menu Actions
+    @objc private func handleJumpToFile() {
+        PlayerCoordinator.shared.showJumpToFileWindow()
+    }
+    
     @objc private func handleAddFile() {
         onAddFiles?()
     }
@@ -1002,6 +1010,16 @@ public class PlaylistWindowView: WinampControlView {
             (durStr as NSString).draw(in: durRect, withAttributes: durAttrs)
         }
         
+        // 3b. Draw Drop Insertion Indicator Line for Track Reordering
+        if let dropIndex = dropInsertionIndex {
+            let relativeRow = dropIndex - scrollOffset
+            let insertY = listRect.minY + CGFloat(relativeRow) * rowH
+            if insertY >= listRect.minY && insertY <= listRect.maxY + 1 {
+                context.setFillColor(NSColor.white.cgColor)
+                context.fill(NSRect(x: listRect.minX, y: insertY - 1, width: listRect.width, height: 2))
+            }
+        }
+        
         // 4. Draw Scrollbar Handle
         let trackHeight = listRect.height
         if trackHeight > 0 && playlist.tracks.count > visibleRows {
@@ -1106,6 +1124,7 @@ public class PlaylistWindowView: WinampControlView {
             height: bounds.height - topH - botH
         )
         if listRect.contains(local) {
+            guard let win = self.window as? WinampWindow else { return }
             let rowH = AppConstants.Playlist.trackRowHeight
             let clickedRow = Int((local.y - topH) / rowH)
             let trackIndex = scrollOffset + clickedRow
@@ -1120,17 +1139,30 @@ public class PlaylistWindowView: WinampControlView {
                         onPlayTrack?(playlist.tracks[trackIndex])
                     }
                 } else {
-                    // Single click -> Select track with modifier support
+                    // Single click with modifier or drag
                     if event.modifierFlags.contains(.shift) {
-                        playlist.selectedIndices.insert(trackIndex)
-                    } else if event.modifierFlags.contains(.command) {
+                        let anchor = selectionAnchorIndex ?? (playlist.currentIndex ?? trackIndex)
+                        let lower = min(anchor, trackIndex)
+                        let upper = max(anchor, trackIndex)
+                        playlist.selectedIndices = Set(lower...upper)
+                        needsDisplay = true
+                    } else if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.control) {
                         if playlist.selectedIndices.contains(trackIndex) {
                             playlist.selectedIndices.remove(trackIndex)
                         } else {
                             playlist.selectedIndices.insert(trackIndex)
                         }
+                        selectionAnchorIndex = trackIndex
+                        needsDisplay = true
                     } else {
-                        playlist.selectedIndices = [trackIndex]
+                        // If clicking an unselected track, immediately select only it
+                        if !playlist.selectedIndices.contains(trackIndex) {
+                            playlist.selectedIndices = [trackIndex]
+                            selectionAnchorIndex = trackIndex
+                            needsDisplay = true
+                        }
+                        // Track drag for interactive reordering
+                        startTrackDrag(with: event, clickedIndex: trackIndex, in: win)
                     }
                 }
                 needsDisplay = true
@@ -1150,7 +1182,7 @@ public class PlaylistWindowView: WinampControlView {
             height: bounds.height - topH - botH
         )
         guard listRect.contains(local) else {
-            return super.menu(for: event)
+            return PlayerCoordinator.shared.buildWinampMenu()
         }
         
         let rowH = AppConstants.Playlist.trackRowHeight
@@ -1190,7 +1222,7 @@ public class PlaylistWindowView: WinampControlView {
             
             return menu
         }
-        return super.menu(for: event)
+        return PlayerCoordinator.shared.buildWinampMenu()
     }
     
     public override func scrollWheel(with event: NSEvent) {
@@ -1252,6 +1284,73 @@ public class PlaylistWindowView: WinampControlView {
                 WindowLayoutManager.shared.updateAdjacencies()
                 PersistenceManager.shared.state.playlistWindowSize = [Double(round(win.frame.width)), Double(round(win.frame.height))]
                 PersistenceManager.shared.saveSession()
+                
+            default:
+                break
+            }
+        }
+    }
+    
+    /// Interactive track drag reordering loop
+    private func startTrackDrag(with initialEvent: NSEvent, clickedIndex: Int, in win: WinampWindow) {
+        let initialPoint = convert(initialEvent.locationInWindow, from: nil)
+        var hasStartedDragging = false
+        var keepTracking = true
+        
+        let rowH = AppConstants.Playlist.trackRowHeight
+        let topH = AppConstants.Playlist.Layout.topBarHeight
+        let botH = AppConstants.Playlist.Layout.bottomBarHeight
+        
+        while keepTracking {
+            guard let nextEvent = win.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) else { continue }
+            switch nextEvent.type {
+            case .leftMouseDragged:
+                let currentPoint = convert(nextEvent.locationInWindow, from: nil)
+                if !hasStartedDragging {
+                    let dragDistance = hypot(currentPoint.x - initialPoint.x, currentPoint.y - initialPoint.y)
+                    if dragDistance >= 4 {
+                        hasStartedDragging = true
+                    }
+                }
+                
+                if hasStartedDragging {
+                    let visibleRows = Int((bounds.height - topH - botH) / rowH)
+                    // Auto-scroll when dragging outside the track list boundaries
+                    if currentPoint.y < topH {
+                        scrollOffset = max(0, scrollOffset - 1)
+                    } else if currentPoint.y > bounds.height - botH {
+                        let maxOffset = max(0, playlist.tracks.count - visibleRows)
+                        scrollOffset = min(maxOffset, scrollOffset + 1)
+                    }
+                    
+                    // Calculate drop insertion index
+                    let relY = currentPoint.y - topH
+                    let rowFloat = relY / rowH
+                    let targetRow = Int(round(rowFloat))
+                    let targetIndex = max(0, min(playlist.tracks.count, scrollOffset + targetRow))
+                    if dropInsertionIndex != targetIndex {
+                        dropInsertionIndex = targetIndex
+                        needsDisplay = true
+                    }
+                }
+                
+            case .leftMouseUp:
+                keepTracking = false
+                if hasStartedDragging, let targetIndex = dropInsertionIndex {
+                    dropInsertionIndex = nil
+                    playlist.moveTracks(from: playlist.selectedIndices, to: targetIndex)
+                    needsDisplay = true
+                } else {
+                    dropInsertionIndex = nil
+                    // If we didn't drag, and clicked on a previously multi-selected item, collapse selection now
+                    if !initialEvent.modifierFlags.contains(.shift) &&
+                       !initialEvent.modifierFlags.contains(.command) &&
+                       !initialEvent.modifierFlags.contains(.control) {
+                        playlist.selectedIndices = [clickedIndex]
+                        selectionAnchorIndex = clickedIndex
+                    }
+                    needsDisplay = true
+                }
                 
             default:
                 break
