@@ -2,9 +2,13 @@ import Foundation
 import CoreGraphics
 import AppKit
 
-// MARK: - CGContext Skin Image Drawing Extension
+// MARK: - CGContext Skin Image Drawing & Tiling Extensions
 extension CGContext {
     /// Draws a CGImage right-side-up in an isFlipped AppKit NSView.
+    ///
+    /// Winamp skins are loaded top-to-bottom. Since WinampControlView sets isFlipped = true,
+    /// standard CoreGraphics draw(image:) would render images inverted.
+    /// This method applies a vertical flip around the target rect to draw pixel-perfect bitmaps right-side-up.
     @inlinable
     public func drawSkinImage(_ image: CGImage, in rect: CGRect) {
         saveGState()
@@ -13,26 +17,68 @@ extension CGContext {
         draw(image, in: CGRect(x: 0, y: 0, width: rect.width, height: rect.height))
         restoreGState()
     }
+    
+    /// Draws a skin slice tiled horizontally across a given range [startX ..< endX] with a fixed tile width.
+    /// Used for top and bottom playlist filler sections, windowshade bars, etc.
+    public func drawTiledHorizontal(image: CGImage, from startX: CGFloat, to endX: CGFloat, y: CGFloat, width tileWidth: CGFloat, height: CGFloat) {
+        var x = startX
+        while x < endX {
+            let w = min(tileWidth, endX - x)
+            drawSkinImage(image, in: NSRect(x: x, y: y, width: w, height: height))
+            x += tileWidth
+        }
+    }
+    
+    /// Draws a skin slice tiled vertically down a given range [startY ..< endY] with a fixed tile height.
+    /// Used for playlist left and right decorative border tiles.
+    public func drawTiledVertical(image: CGImage, x: CGFloat, from startY: CGFloat, to endY: CGFloat, width: CGFloat, height tileHeight: CGFloat) {
+        var y = startY
+        while y < endY {
+            let h = min(tileHeight, endY - y)
+            drawSkinImage(image, in: NSRect(x: x, y: y, width: width, height: h))
+            y += tileHeight
+        }
+    }
+}
+
+// MARK: - NSView Recursive Display Invalidation Extension
+extension NSView {
+    /// Recursively marks this view and all descendant subviews as needing display.
+    /// Essential when changing skins to ensure buttons, sliders, and toggles redraw immediately.
+    public func setNeedsDisplayRecursively() {
+        self.needsDisplay = true
+        self.layer?.setNeedsDisplay()
+        for sub in subviews {
+            sub.setNeedsDisplayRecursively()
+        }
+    }
 }
 
 // MARK: - Winamp Base Control View
+/// Base NSView for all Winamp UI components.
+/// - Sets `isFlipped = true` for classic top-to-bottom pixel coordinate system (0,0 is top-left).
+/// - Enforces `.nearest` interpolation filter on CALayer for crisp, unblurred pixel art rendering.
+/// - Routes right-clicks to main Winamp context menu.
+/// - Provides unified modal mouse dragging for window dragging.
 open class WinampControlView: NSView {
     open override var isFlipped: Bool { true }
     
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        self.wantsLayer = true
-        self.layerContentsRedrawPolicy = .onSetNeedsDisplay
-        self.layer?.magnificationFilter = .nearest
-        self.layer?.minificationFilter = .nearest
+        configureLayer()
     }
     
     public required init?(coder: NSCoder) {
         super.init(coder: coder)
+        configureLayer()
+    }
+    
+    private func configureLayer() {
         self.wantsLayer = true
         self.layerContentsRedrawPolicy = .onSetNeedsDisplay
         self.layer?.magnificationFilter = .nearest
         self.layer?.minificationFilter = .nearest
+        self.layer?.isOpaque = false
     }
     
     open override func rightMouseDown(with event: NSEvent) {
@@ -42,9 +88,30 @@ open class WinampControlView: NSView {
     open override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
     }
+    
+    /// Reusable modal window drag tracking loop.
+    /// Used by MainWindow, EqualizerWindow, and PlaylistWindow to handle magnetic window docking and moving.
+    public func trackWindowDrag(with initialEvent: NSEvent, in win: WinampWindow) {
+        var keepTracking = true
+        while keepTracking {
+            guard let nextEvent = win.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) else { continue }
+            switch nextEvent.type {
+            case .leftMouseDragged:
+                win.continueWindowDrag(with: nextEvent)
+            case .leftMouseUp:
+                keepTracking = false
+                win.endWindowDrag(with: nextEvent)
+            default:
+                break
+            }
+        }
+    }
 }
 
 // MARK: - SkinButton
+/// Push button supporting normal and pressed bitmap sprite slices.
+/// When `isShadeButton` is true (in shade mode), the icon is already pre-baked into TITLEBAR.BMP background,
+/// so it renders a semi-transparent press highlight on click instead of drawing over the icon.
 public class SkinButton: WinampControlView {
     public var normalSlice: SpriteSlice?
     public var pressedSlice: SpriteSlice?
@@ -80,11 +147,8 @@ public class SkinButton: WinampControlView {
         context.interpolationQuality = .none
         
         if isShadeButton {
-            // In shade mode, icons are pre-drawn in TITLEBAR.BMP background.
-            if isPressed {
-                context.setFillColor(NSColor(white: 1.0, alpha: 0.3).cgColor)
-                context.fill(bounds)
-            }
+            // In shade mode and playlist bottom bar, icons are already pre-drawn in the skin background bitmap.
+            // Authentic Winamp 2.x does not draw any translucent overlay rectangle on click.
             return
         }
         
@@ -125,7 +189,11 @@ public class SkinButton: WinampControlView {
     }
 }
 
-// MARK: - ClutterButton (O, A, I, D, V)
+// MARK: - ClutterButton
+/// Special button for the ClutterBar strip (O, A, I, D, V) located left of the visualizer.
+/// In classic Winamp, only O (Options menu) and D (Double size toggle) are active.
+/// When unselected, the background is drawn by the ClutterBar strip;
+/// when active/selected/pressed, the active sprite slice is overlaid.
 public class ClutterButton: WinampControlView {
     public var activeSlice: SpriteSlice
     public var isSelected: Bool = false {
@@ -186,13 +254,16 @@ public class ClutterButton: WinampControlView {
                 if isInside {
                     action?()
                 }
-            default: break
+            default:
+                break
             }
         }
     }
 }
 
 // MARK: - SkinToggle
+/// Two-state toggle button with separate normal/pressed sprites for both ON and OFF states.
+/// Used for EQ on/off, Playlist window toggle, Shuffle, Repeat, and Equalizer ON/AUTO switches.
 public class SkinToggle: WinampControlView {
     public var offNormal: SpriteSlice
     public var offPressed: SpriteSlice
@@ -218,7 +289,14 @@ public class SkinToggle: WinampControlView {
         }
     }
     
-    public init(offNormal: SpriteSlice, offPressed: SpriteSlice, onNormal: SpriteSlice, onPressed: SpriteSlice, isOn: Bool = false, onChanged: ((Bool) -> Void)? = nil) {
+    public init(
+        offNormal: SpriteSlice,
+        offPressed: SpriteSlice,
+        onNormal: SpriteSlice,
+        onPressed: SpriteSlice,
+        isOn: Bool = false,
+        onChanged: ((Bool) -> Void)? = nil
+    ) {
         self.offNormal = offNormal
         self.offPressed = offPressed
         self.onNormal = onNormal

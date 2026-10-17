@@ -1,8 +1,9 @@
 import Cocoa
 import Foundation
 import Combine
+import UniformTypeIdentifiers
 
-public class PlayerCoordinator: NSObject {
+public class PlayerCoordinator: NSObject, NSWindowDelegate {
     public static let shared = PlayerCoordinator()
     
     // Core Managers
@@ -23,26 +24,42 @@ public class PlayerCoordinator: NSObject {
     public var plView: PlaylistWindowView!
     
     private var cancellables = Set<AnyCancellable>()
+    public var isDeminiaturizing: Bool = false
     
     private override init() {
         super.init()
     }
     
     public func start() {
+        // 1. Restore active custom skin before views/windows are created, so views render with it immediately
+        if let skinPath = persistence.state.activeSkinPath {
+            if FileManager.default.fileExists(atPath: skinPath) {
+                if !skinManager.loadSkin(from: URL(fileURLWithPath: skinPath)) {
+                    persistence.state.activeSkinPath = nil
+                    persistence.saveSession()
+                }
+            } else {
+                persistence.state.activeSkinPath = nil
+                persistence.saveSession()
+            }
+        }
+        
         setupWindows()
         setupBindings()
         restoreState()
+        showWindows()
     }
     
     // MARK: - Window Setup
     private func setupWindows() {
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 100, y: 100, width: 1200, height: 800)
-        let originX = screenFrame.minX + max(50, (screenFrame.width - AppConstants.Window.width) / 2)
-        let originY = screenFrame.maxY - 150
+        let originX = floor(screenFrame.minX + max(50, (screenFrame.width - AppConstants.Window.width) / 2))
+        let originY = floor(screenFrame.maxY - 150)
         
         // 1. Main Window
         let mainRect = NSRect(x: originX, y: originY, width: AppConstants.Window.width, height: AppConstants.Window.height)
         mainWindow = WinampWindow(windowID: .main, contentRect: mainRect)
+        mainWindow.delegate = self
         mainView = MainWindowView()
         mainView.autoresizesSubviews = false
         mainWindow.contentView = mainView
@@ -55,19 +72,25 @@ public class PlayerCoordinator: NSObject {
         eqWindow.contentView = eqView
         
         // 3. Playlist Window (docked directly below EQ: y = originY - 2 * height)
-        let plW = CGFloat(persistence.state.playlistWindowSize.first ?? Double(AppConstants.Window.width))
-        let plH = CGFloat(persistence.state.playlistWindowSize.last ?? Double(AppConstants.Window.height))
+        let rawPlW = CGFloat(persistence.state.playlistWindowSize.first ?? Double(AppConstants.Window.width))
+        let rawPlH = CGFloat(persistence.state.playlistWindowSize.last ?? Double(AppConstants.Window.height))
+        // Sanitize any previously saved fractional or distorted playlist widths to canonical 25px grid
+        let stepsX = max(0, round((rawPlW - AppConstants.Window.width) / AppConstants.Window.resizeStepX))
+        let plW = AppConstants.Window.width + stepsX * AppConstants.Window.resizeStepX
+        let stepsY = max(0, round((rawPlH - AppConstants.Window.height) / AppConstants.Window.resizeStepY))
+        let plH = AppConstants.Window.height + stepsY * AppConstants.Window.resizeStepY
+        
         let plRect = NSRect(x: originX, y: originY - (2 * AppConstants.Window.height) - (plH - AppConstants.Window.height), width: plW, height: plH)
         plWindow = WinampWindow(windowID: .playlist, contentRect: plRect)
         plView = PlaylistWindowView(playlist: playlist)
         plView.frame = NSRect(x: 0, y: 0, width: plW, height: plH)
         plView.autoresizesSubviews = false
         plWindow.contentView = plView
-        
-        // Show windows
-        mainWindow.makeKeyAndOrderFront(nil)
-        eqWindow.orderFront(nil)
-        plWindow.orderFront(nil)
+    }
+    
+    // MARK: - Window Display
+    private func showWindows() {
+        bringAllWindowsToFront()
     }
     
     // MARK: - Bindings & Events
@@ -76,11 +99,14 @@ public class PlayerCoordinator: NSObject {
         audioEngine.onStatusUpdate = { [weak self] status in
             guard let self else { return }
             self.mainView.timeDisplay.status = status
+            self.plView.status = status
+            self.updateBlinkState(for: status)
             self.mainView.seekSlider.isThumbHidden = (status == .stopped)
             if status == .stopped {
                 self.mainView.seekSlider.value = 0.0
             }
             self.mainView.needsDisplay = true
+            self.plView.needsDisplay = true
         }
         
         audioEngine.onTimeUpdate = { [weak self] currentSec in
@@ -88,8 +114,29 @@ public class PlayerCoordinator: NSObject {
             self.mainView.timeDisplay.currentTime = currentSec
             self.plView.currentTime = currentSec
             if let meta = self.audioEngine.currentMetadata, meta.duration > 0 {
-                self.mainView.seekSlider.value = currentSec / meta.duration
+                if !self.mainView.seekSlider.isDragging {
+                    self.mainView.seekSlider.value = currentSec / meta.duration
+                }
             }
+        }
+        
+        mainView.seekSlider.onValueChanged = { [weak self] val in
+            guard let self, let meta = self.audioEngine.currentMetadata, meta.duration > 0 else { return }
+            let scrubSec = val * meta.duration
+            self.mainView.timeDisplay.currentTime = scrubSec
+            self.plView.currentTime = scrubSec
+            let curM = Int(scrubSec) / 60
+            let curS = Int(scrubSec) % 60
+            let totM = Int(meta.duration) / 60
+            let totS = Int(meta.duration) % 60
+            let percent = Int(round(val * 100.0))
+            let msg = String(format: "Seek To: %02d:%02d/%02d:%02d (%d%%)", curM, curS, totM, totS, percent)
+            self.mainView.marquee.showTemporaryMessage(msg)
+        }
+        
+        mainView.seekSlider.onTrackingEnded = { [weak self] val in
+            guard let self, let meta = self.audioEngine.currentMetadata, meta.duration > 0 else { return }
+            self.audioEngine.seek(to: val * meta.duration)
         }
         
         audioEngine.onSpectralDataUpdate = { [weak self] bins in
@@ -134,6 +181,8 @@ public class PlayerCoordinator: NSObject {
             self.audioEngine.setVolume(val)
             self.eqView.eqShadeVolumeSlider?.value = val
             self.persistence.state.volume = val
+            let percent = Int(round(val * 100.0))
+            self.mainView.marquee.showTemporaryMessage("Volume: \(percent)%")
         }
         
         mainView.balanceSlider.onValueChanged = { [weak self] val in
@@ -141,27 +190,47 @@ public class PlayerCoordinator: NSObject {
             self.audioEngine.setBalance(val)
             self.eqView.eqShadeBalanceSlider?.value = val
             self.persistence.state.balance = val
+            let percent = Int(round(abs(val) * 100.0))
+            let msg: String
+            if percent == 0 {
+                msg = "Balance: Center"
+            } else if val < 0 {
+                msg = "Balance: \(percent)% left"
+            } else {
+                msg = "Balance: \(percent)% right"
+            }
+            self.mainView.marquee.showTemporaryMessage(msg)
+        }
+        
+        // Equalizer frequency band & preamp feedback in marquee
+        eqView.onBandAdjusted = { [weak self] name, gainDb in
+            guard let self else { return }
+            let sign = gainDb >= 0 ? "+" : "-"
+            let formatted = String(format: "EQ: %@: %@%.1f db", name, sign, abs(gainDb))
+            self.mainView.marquee.showTemporaryMessage(formatted)
         }
         
         // Window Toggles
         mainView.eqToggle.onChanged = { [weak self] isVisible in
             guard let self else { return }
+            self.persistence.state.isEqWindowVisible = isVisible
             if isVisible {
-                self.eqWindow.orderFront(nil)
+                self.eqWindow.level = self.persistence.state.isAlwaysOnTop ? .floating : .normal
+                self.bringAllWindowsToFront()
             } else {
                 self.eqWindow.orderOut(nil)
             }
-            self.persistence.state.isEqWindowVisible = isVisible
         }
         
         mainView.plToggle.onChanged = { [weak self] isVisible in
             guard let self else { return }
+            self.persistence.state.isPlaylistVisible = isVisible
             if isVisible {
-                self.plWindow.orderFront(nil)
+                self.plWindow.level = self.persistence.state.isAlwaysOnTop ? .floating : .normal
+                self.bringAllWindowsToFront()
             } else {
                 self.plWindow.orderOut(nil)
             }
-            self.persistence.state.isPlaylistVisible = isVisible
         }
         
         // Shade mode toggles
@@ -176,6 +245,9 @@ public class PlayerCoordinator: NSObject {
         plView.onClose = { [weak self] in
             self?.mainView.plToggle.isOn = false
         }
+        
+        // Always on top toggle (ClutterBar A)
+        mainView.onToggleAlwaysOnTop = { [weak self] in self?.handleToggleAlwaysOnTop() }
         
         // Double size toggle
         mainView.onToggleDoubleSize = { [weak self] in self?.toggleDoubleSize() }
@@ -203,16 +275,58 @@ public class PlayerCoordinator: NSObject {
         plView.onAddFiles = { [weak self] in
             self?.openFileDialog()
         }
+        plView.onPlay = { [weak self] in self?.handlePlay() }
+        plView.onPause = { [weak self] in self?.handlePause() }
+        plView.onStop = { [weak self] in self?.handleStop() }
+        plView.onPrevious = { [weak self] in self?.playPrevious() }
+        plView.onNext = { [weak self] in self?.playNext() }
+        plView.onEject = { [weak self] in self?.openFileDialog() }
+        
+        // Observe playlist changes to automatically update playlist view
+        playlist.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.plView.needsDisplay = true
+            }
+            .store(in: &cancellables)
         
         // Redraw on skin change
         skinManager.skinDidChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.mainView.needsDisplay = true
-                self?.eqView.needsDisplay = true
-                self?.plView.needsDisplay = true
+                guard let self else { return }
+                self.mainView.setNeedsDisplayRecursively()
+                self.eqView.setNeedsDisplayRecursively()
+                self.plView.setNeedsDisplayRecursively()
+                self.updateWindowMasks()
             }
             .store(in: &cancellables)
+    }
+    
+    // MARK: - Synchronized Blinking for Pause Mode
+    private var blinkTimer: Timer?
+    private var isBlinkVisible: Bool = true
+    
+    private func updateBlinkState(for status: PlayerStatus) {
+        blinkTimer?.invalidate()
+        blinkTimer = nil
+        
+        if status == .paused {
+            isBlinkVisible = true
+            mainView.timeDisplay.isBlinkVisible = true
+            plView.isBlinkVisible = true
+            
+            blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                self.isBlinkVisible.toggle()
+                self.mainView.timeDisplay.isBlinkVisible = self.isBlinkVisible
+                self.plView.isBlinkVisible = self.isBlinkVisible
+            }
+        } else {
+            isBlinkVisible = true
+            mainView.timeDisplay.isBlinkVisible = true
+            plView.isBlinkVisible = true
+        }
     }
     
     // MARK: - Playback Handling
@@ -221,7 +335,11 @@ public class PlayerCoordinator: NSObject {
             do {
                 let meta = try await audioEngine.load(url: track.url)
                 await MainActor.run {
-                    self.mainView.marquee.text = "\(track.artist) - \(track.title)"
+                    if let idx = self.playlist.tracks.firstIndex(where: { $0.id == track.id }) {
+                        self.playlist.currentIndex = idx
+                    }
+                    self.playlist.updateTrack(url: track.url, duration: meta.duration, artist: meta.artist, title: meta.title)
+                    self.mainView.marquee.text = "\(meta.artist) - \(meta.title)"
                     self.mainView.timeDisplay.totalDuration = meta.duration
                     self.mainView.timeDisplay.status = .playing
                     self.audioEngine.play()
@@ -255,17 +373,9 @@ public class PlayerCoordinator: NSObject {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = [
-            .init(filenameExtension: "mp3")!,
-            .init(filenameExtension: "flac")!,
-            .init(filenameExtension: "wav")!,
-            .init(filenameExtension: "aiff")!,
-            .init(filenameExtension: "aif")!,
-            .init(filenameExtension: "m4a")!,
-            .init(filenameExtension: "aac")!,
-            .init(filenameExtension: "alac")!,
-            .init(filenameExtension: "ogg")!
-        ]
+        panel.allowedContentTypes = AppConstants.Audio.supportedExtensions.compactMap {
+            UTType(filenameExtension: $0)
+        }
         
         if panel.runModal() == .OK {
             let paths = panel.urls.map { $0.path }
@@ -284,16 +394,19 @@ public class PlayerCoordinator: NSObject {
         }
     }
     
+    public func openURLDialog() {
+        plView.promptAddURL()
+    }
+    
     public func openSkinChooser() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [
-            .init(filenameExtension: "wsz")!,
-            .init(filenameExtension: "zip")!
-        ]
+        panel.allowedContentTypes = AppConstants.Audio.skinExtensions.compactMap {
+            UTType(filenameExtension: $0)
+        }
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
-            if skinManager.loadSkin(from: url) {
-                persistence.state.activeSkinPath = url.path
+            if let installedURL = skinManager.installSkin(from: url) {
+                persistence.state.activeSkinPath = installedURL.path
                 persistence.saveSession()
             }
         }
@@ -302,17 +415,17 @@ public class PlayerCoordinator: NSObject {
     // MARK: - Drag & Drop Handling
     public func handleDroppedFiles(_ paths: [String]) {
         var tracksToAdd: [TrackItem] = []
-        let audioExtensions: Set<String> = ["mp3", "flac", "wav", "aiff", "aif", "m4a", "aac", "alac", "ogg"]
-        let skinExtensions: Set<String> = ["wsz", "zip"]
-        let playlistExtensions: Set<String> = ["m3u", "pls"]
+        let audioExtensions = AppConstants.Audio.supportedExtensions
+        let skinExtensions = AppConstants.Audio.skinExtensions
+        let playlistExtensions = AppConstants.Audio.playlistExtensions
         
         for path in paths {
             let url = URL(fileURLWithPath: path)
             let ext = url.pathExtension.lowercased()
             
             if skinExtensions.contains(ext) {
-                if skinManager.loadSkin(from: url) {
-                    persistence.state.activeSkinPath = url.path
+                if let installedURL = skinManager.installSkin(from: url) {
+                    persistence.state.activeSkinPath = installedURL.path
                     persistence.saveSession()
                 }
             } else if playlistExtensions.contains(ext) {
@@ -326,8 +439,8 @@ public class PlayerCoordinator: NSObject {
                         let mainBmp1 = url.appendingPathComponent("MAIN.BMP")
                         let mainBmp2 = url.appendingPathComponent("main.bmp")
                         if FileManager.default.fileExists(atPath: mainBmp1.path) || FileManager.default.fileExists(atPath: mainBmp2.path) {
-                            if skinManager.loadSkin(from: url) {
-                                persistence.state.activeSkinPath = url.path
+                            if let installedURL = skinManager.installSkin(from: url) {
+                                persistence.state.activeSkinPath = installedURL.path
                                 persistence.saveSession()
                             }
                             continue
@@ -367,37 +480,37 @@ public class PlayerCoordinator: NSObject {
         
         // 1. Navigation / Volume via Arrow keys and Special Keys
         switch event.keyCode {
-        case 123: // Left Arrow -> Seek back 5 seconds
+        case AppConstants.KeyCodes.leftArrow: // Seek back 5 seconds
             let cur = audioEngine.currentTime
             audioEngine.seek(to: max(0, cur - 5.0))
             return true
-        case 124: // Right Arrow -> Seek forward 5 seconds
+        case AppConstants.KeyCodes.rightArrow: // Seek forward 5 seconds
             if let meta = audioEngine.currentMetadata {
                 let cur = audioEngine.currentTime
                 audioEngine.seek(to: min(meta.duration, cur + 5.0))
             }
             return true
-        case 126: // Up Arrow -> Volume up 5%
+        case AppConstants.KeyCodes.upArrow: // Volume up 5%
             let newVol = min(1.0, audioEngine.volume + 0.05)
             audioEngine.setVolume(newVol)
             mainView.volumeSlider.value = newVol
             persistence.state.volume = newVol
             return true
-        case 125: // Down Arrow -> Volume down 5%
+        case AppConstants.KeyCodes.downArrow: // Volume down 5%
             let newVol = max(0.0, audioEngine.volume - 0.05)
             audioEngine.setVolume(newVol)
             mainView.volumeSlider.value = newVol
             persistence.state.volume = newVol
             return true
-        case 49: // Space -> Toggle Pause/Resume
+        case AppConstants.KeyCodes.space: // Toggle Pause/Resume
             audioEngine.togglePause()
             return true
-        case 36: // Enter / Return -> Play selected or current track
+        case AppConstants.KeyCodes.returnKey: // Play selected or current track
             if let cur = playlist.currentTrack ?? playlist.tracks.first {
                 loadAndPlay(track: cur)
             }
             return true
-        case 51: // Backspace / Delete -> Remove selected in playlist
+        case AppConstants.KeyCodes.deleteKey: // Remove selected in playlist
             playlist.removeSelected()
             plView.needsDisplay = true
             return true
@@ -442,6 +555,13 @@ public class PlayerCoordinator: NSObject {
             }
         }
         
+        if flags.contains(.control) || flags.contains(.command) {
+            if chars == "u" {
+                openURLDialog()
+                return true
+            }
+        }
+        
         // 3. Unmodified Winamp 2.x hotkeys
         if flags.isEmpty || flags == .capsLock {
             switch chars {
@@ -477,41 +597,78 @@ public class PlayerCoordinator: NSObject {
         return false
     }
     
-    // MARK: - Always On Top
+    // MARK: - Always On Top & Window Management
     public func setAlwaysOnTop(_ enabled: Bool) {
         persistence.state.isAlwaysOnTop = enabled
         let level: NSWindow.Level = enabled ? .floating : .normal
         mainWindow?.level = level
         eqWindow?.level = level
         plWindow?.level = level
+        bringAllWindowsToFront()
+        mainView?.alwaysOnTopButton?.isSelected = enabled
     }
     
-    // MARK: - Skins Discovery
-    private func discoverAvailableSkins() -> [URL] {
-        var foundURLs: [URL] = []
-        let candidates: [URL?] = [
-            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("MacAmp/Skins"),
-            URL(fileURLWithPath: "webamp-master/packages/webamp/demo/skins"),
-            URL(fileURLWithPath: "ClassicSkins")
-        ]
-        for candidate in candidates.compactMap({ $0 }) {
-            if let enumerator = FileManager.default.enumerator(at: candidate, includingPropertiesForKeys: nil) {
-                for case let fileURL as URL in enumerator {
-                    if fileURL.pathExtension.lowercased() == "wsz" && !fileURL.lastPathComponent.contains("base-2.91") {
-                        foundURLs.append(fileURL)
-                    }
-                }
-            }
+    /// Brings all currently visible MacAmp windows to the front in proper z-order (Playlist -> Equalizer -> MainWindow)
+    /// without allowing secondary windows to drop behind other desktop applications when switching window levels or activating.
+    public func bringAllWindowsToFront() {
+        if let main = mainWindow, main.isMiniaturized || isDeminiaturizing {
+            return
         }
-        return foundURLs
+        
+        let keyWin = NSApp.keyWindow
+        
+        if persistence.state.isPlaylistVisible, let pl = plWindow, !pl.isMiniaturized {
+            pl.orderFront(nil)
+        }
+        if persistence.state.isEqWindowVisible, let eq = eqWindow, !eq.isMiniaturized {
+            eq.orderFront(nil)
+        }
+        if let main = mainWindow, !main.isMiniaturized {
+            main.orderFront(nil)
+        }
+        
+        if let key = keyWin as? WinampWindow {
+            key.makeKeyAndOrderFront(nil)
+        } else {
+            mainWindow?.makeKeyAndOrderFront(nil)
+        }
+    }
+    
+    /// Minimizes the main player window and immediately hides auxiliary windows so they never linger.
+    public func minimizeAll() {
+        isDeminiaturizing = false
+        eqWindow?.orderOut(nil)
+        plWindow?.orderOut(nil)
+        mainWindow?.miniaturize(nil)
+    }
+    
+    // MARK: - NSWindowDelegate
+    public func windowWillMiniaturize(_ notification: Notification) {
+        guard let win = notification.object as? NSWindow, win == mainWindow else { return }
+        isDeminiaturizing = false
+        eqWindow?.orderOut(nil)
+        plWindow?.orderOut(nil)
+    }
+    
+    public func windowDidMiniaturize(_ notification: Notification) {
+        guard let win = notification.object as? NSWindow, win == mainWindow else { return }
+        isDeminiaturizing = false
+        eqWindow?.orderOut(nil)
+        plWindow?.orderOut(nil)
+    }
+    
+    public func windowDidDeminiaturize(_ notification: Notification) {
+        guard let win = notification.object as? NSWindow, win == mainWindow else { return }
+        isDeminiaturizing = false
+        bringAllWindowsToFront()
     }
     
     // MARK: - Context Menu
     public func showMainContextMenu(at screenPoint: NSPoint? = nil, in view: NSView? = nil) {
-        let menu = NSMenu(title: "Winamp")
+        let menu = NSMenu(title: "MacAmp")
         
         // About
-        let aboutItem = NSMenuItem(title: "Winamp...", action: #selector(handleAbout), keyEquivalent: "")
+        let aboutItem = NSMenuItem(title: "MacAmp...", action: #selector(handleAbout), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(aboutItem)
         menu.addItem(NSMenuItem.separator())
@@ -525,6 +682,10 @@ public class PlayerCoordinator: NSObject {
         let playDirItem = NSMenuItem(title: "Directory...", action: #selector(handlePlayDirectory), keyEquivalent: "L")
         playDirItem.target = self
         playMenu.addItem(playDirItem)
+        
+        let playURLItem = NSMenuItem(title: "URL...", action: #selector(handlePlayURL), keyEquivalent: "u")
+        playURLItem.target = self
+        playMenu.addItem(playURLItem)
         
         let playMenuItem = NSMenuItem(title: "Play", action: nil, keyEquivalent: "")
         playMenuItem.submenu = playMenu
@@ -547,25 +708,46 @@ public class PlayerCoordinator: NSObject {
         let skinsMenu = NSMenu(title: "Skins")
         let baseSkinItem = NSMenuItem(title: "Winamp Classic (Default)", action: #selector(handleResetBaseSkin), keyEquivalent: "")
         baseSkinItem.target = self
-        baseSkinItem.state = (skinManager.currentSkin?.name == "base-2.91" || skinManager.currentSkin == nil) ? .on : .off
+        baseSkinItem.state = skinManager.isBaseSkinActive ? .on : .off
         skinsMenu.addItem(baseSkinItem)
+        
+        let installedSkins = skinManager.installedSkins()
+        if !installedSkins.isEmpty {
+            skinsMenu.addItem(NSMenuItem.separator())
+            for skinURL in installedSkins {
+                let name = skinURL.deletingPathExtension().lastPathComponent
+                let item = NSMenuItem(title: name, action: #selector(handleSkinSelected(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = skinURL
+                let isActive = (!skinManager.isBaseSkinActive && (skinManager.currentSkinURL?.path == skinURL.path || skinManager.currentSkin?.name == name))
+                item.state = isActive ? .on : .off
+                skinsMenu.addItem(item)
+            }
+        }
+        
+        skinsMenu.addItem(NSMenuItem.separator())
         
         let loadSkinItem = NSMenuItem(title: "Load Skin...", action: #selector(handleLoadSkin), keyEquivalent: "")
         loadSkinItem.target = self
         skinsMenu.addItem(loadSkinItem)
         
-        let discoveredSkins = discoverAvailableSkins()
-        if !discoveredSkins.isEmpty {
-            skinsMenu.addItem(NSMenuItem.separator())
-            for skinURL in discoveredSkins {
+        if !installedSkins.isEmpty {
+            let deleteMenu = NSMenu(title: "Delete Skin")
+            for skinURL in installedSkins {
                 let name = skinURL.deletingPathExtension().lastPathComponent
-                let item = NSMenuItem(title: name, action: #selector(handleSkinSelected(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = skinURL
-                item.state = (skinManager.currentSkin?.name == name) ? .on : .off
-                skinsMenu.addItem(item)
+                let delItem = NSMenuItem(title: name, action: #selector(handleDeleteSkin(_:)), keyEquivalent: "")
+                delItem.target = self
+                delItem.representedObject = skinURL
+                deleteMenu.addItem(delItem)
             }
+            let deleteSkinItem = NSMenuItem(title: "Delete Skin", action: nil, keyEquivalent: "")
+            deleteSkinItem.submenu = deleteMenu
+            skinsMenu.addItem(deleteSkinItem)
         }
+        
+        let openFolderItem = NSMenuItem(title: "Open Skins Folder", action: #selector(handleOpenSkinsFolder), keyEquivalent: "")
+        openFolderItem.target = self
+        skinsMenu.addItem(openFolderItem)
         
         let skinsMenuItem = NSMenuItem(title: "Skins", action: nil, keyEquivalent: "")
         skinsMenuItem.submenu = skinsMenu
@@ -625,10 +807,10 @@ public class PlayerCoordinator: NSObject {
         menu.addItem(pbMenuItem)
         menu.addItem(NSMenuItem.separator())
         
-        // Quit
-        let quitItem = NSMenuItem(title: "Quit MacAmp", action: #selector(handleQuit), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
+        // Exit|Quit
+        let exitItem = NSMenuItem(title: "Exit", action: #selector(handleExit), keyEquivalent: "q")
+        exitItem.target = self
+        menu.addItem(exitItem)
         
         let targetPt = screenPoint ?? NSEvent.mouseLocation
         menu.popUp(positioning: nil, at: targetPt, in: nil)
@@ -652,6 +834,10 @@ public class PlayerCoordinator: NSObject {
         openDirectoryDialog()
     }
     
+    @objc public func handlePlayURL() {
+        openURLDialog()
+    }
+    
     @objc public func handleToggleEqualizer() {
         mainView.eqToggle.isOn.toggle()
         mainView.eqToggle.onChanged?(mainView.eqToggle.isOn)
@@ -664,8 +850,6 @@ public class PlayerCoordinator: NSObject {
     
     @objc public func handleResetBaseSkin() {
         skinManager.resetToBaseSkin()
-        persistence.state.activeSkinPath = nil
-        persistence.saveSession()
     }
     
     @objc public func handleLoadSkin() {
@@ -678,6 +862,28 @@ public class PlayerCoordinator: NSObject {
             persistence.state.activeSkinPath = url.path
             persistence.saveSession()
         }
+    }
+    
+    @objc public func handleDeleteSkin(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        let skinName = url.deletingPathExtension().lastPathComponent
+        
+        let alert = NSAlert()
+        alert.messageText = "Delete Skin"
+        alert.informativeText = "Are you sure you want to delete the skin \"\(skinName)\"?"
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        
+        if alert.runModal() == .alertFirstButtonReturn {
+            skinManager.deleteSkin(at: url)
+        }
+    }
+    
+    @objc public func handleOpenSkinsFolder() {
+        let dir = skinManager.skinsDirectory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(dir)
     }
     
     @objc public func handleToggleAlwaysOnTop() {
@@ -695,6 +901,8 @@ public class PlayerCoordinator: NSObject {
     @objc public func handlePlay() {
         if audioEngine.status == .paused {
             audioEngine.play()
+        } else if audioEngine.status == .playing {
+            audioEngine.seek(to: 0)
         } else if let track = playlist.currentTrack ?? playlist.tracks.first {
             loadAndPlay(track: track)
         }
@@ -709,6 +917,8 @@ public class PlayerCoordinator: NSObject {
         mainView.timeDisplay.status = .stopped
         mainView.seekSlider.isThumbHidden = true
         mainView.seekSlider.value = 0.0
+        mainView.visualizer.spectrumAmplitudes = Array(repeating: 0.0, count: AppConstants.Visualizer.numSpectrumBars)
+        mainView.visualizer.waveformPoints = Array(repeating: 0.0, count: AppConstants.Visualizer.numWaveformPoints)
         mainView.needsDisplay = true
     }
     
@@ -730,7 +940,7 @@ public class PlayerCoordinator: NSObject {
         persistence.state.isShuffle = newS
     }
     
-    @objc public func handleQuit() {
+    @objc public func handleExit() {
         NSApp.terminate(nil)
     }
     
@@ -748,6 +958,7 @@ public class PlayerCoordinator: NSObject {
         
         persistence.state.isMainWindowShade = newShade
         persistence.saveSession()
+        updateWindowMasks()
     }
     
     public func toggleEqShade() {
@@ -763,6 +974,7 @@ public class PlayerCoordinator: NSObject {
         
         persistence.state.isEqWindowShade = newShade
         persistence.saveSession()
+        updateWindowMasks()
     }
     
     public func togglePlShade() {
@@ -787,6 +999,7 @@ public class PlayerCoordinator: NSObject {
         mainView.doubleSizeButton.isSelected = (newScale == 2.0)
         persistence.state.scaleFactor = (newScale == 2.0) ? .x2 : .x1
         persistence.saveSession()
+        updateWindowMasks()
     }
     
     // MARK: - State Restoration
@@ -848,11 +1061,6 @@ public class PlayerCoordinator: NSObject {
             togglePlShade()
         }
         
-        // Skin restoration
-        if let skinPath = s.activeSkinPath, FileManager.default.fileExists(atPath: skinPath) {
-            skinManager.loadSkin(from: URL(fileURLWithPath: skinPath))
-        }
-        
         // Always on top
         if s.isAlwaysOnTop {
             setAlwaysOnTop(true)
@@ -864,6 +1072,8 @@ public class PlayerCoordinator: NSObject {
             playlist.add(tracks: savedTracks)
             plView.needsDisplay = true
         }
+        
+        updateWindowMasks()
     }
     
     public func saveState() {
@@ -875,5 +1085,32 @@ public class PlayerCoordinator: NSObject {
         persistence.state.isAlwaysOnTop = (mainWindow?.level == .floating)
         persistence.savePlaylist(playlist.tracks)
         persistence.saveSession()
+    }
+    
+    // MARK: - Window Masking & Transparency
+    /// Applies skin-defined transparency masks from REGION.TXT to MainWindow and EqualizerWindow.
+    public func updateWindowMasks() {
+        let region = skinManager.currentSkin?.region
+        let mainPath = mainView.isShadeMode ? region?.windowShadeMask : region?.normalMask
+        let eqPath = eqView.isShadeMode ? region?.equalizerShadeMask : region?.equalizerMask
+        
+        applyWindowMask(path: mainPath, to: mainView)
+        applyWindowMask(path: eqPath, to: eqView)
+    }
+    
+    private func applyWindowMask(path: CGPath?, to view: NSView) {
+        guard let path = path else {
+            view.layer?.mask = nil
+            view.window?.invalidateShadow()
+            return
+        }
+        
+        let maskLayer = CAShapeLayer()
+        maskLayer.frame = view.bounds
+        maskLayer.fillColor = NSColor.black.cgColor
+        maskLayer.fillRule = .nonZero
+        maskLayer.path = path
+        view.layer?.mask = maskLayer
+        view.window?.invalidateShadow()
     }
 }

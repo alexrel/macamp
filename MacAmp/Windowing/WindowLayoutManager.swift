@@ -52,13 +52,15 @@ public class WindowLayoutManager: NSObject {
     
     public func applyDrag(id: WindowID, totalDelta: CGPoint, startOrigins: [WindowID: NSPoint]) {
         let groupIDs = Set(startOrigins.keys)
+        let roundedDeltaX = round(totalDelta.x)
+        let roundedDeltaY = round(totalDelta.y)
         
         // 1. Move all group windows by raw delta
         for (gid, startOrigin) in startOrigins {
             guard let win = windows[gid] else { continue }
             win.setFrameOrigin(NSPoint(
-                x: startOrigin.x + totalDelta.x,
-                y: startOrigin.y + totalDelta.y
+                x: round(startOrigin.x + roundedDeltaX),
+                y: round(startOrigin.y + roundedDeltaY)
             ))
         }
         
@@ -92,10 +94,12 @@ public class WindowLayoutManager: NSObject {
         
         // 3. Apply snap adjustment to all group windows
         if bestSnap != .zero {
+            let snapX = round(bestSnap.x)
+            let snapY = round(bestSnap.y)
             for gid in groupIDs {
                 guard let win = windows[gid] else { continue }
                 let current = win.frame.origin
-                win.setFrameOrigin(NSPoint(x: current.x + bestSnap.x, y: current.y + bestSnap.y))
+                win.setFrameOrigin(NSPoint(x: round(current.x + snapX), y: round(current.y + snapY)))
             }
         }
     }
@@ -165,26 +169,26 @@ public class WindowLayoutManager: NSObject {
         // Horizontal snapping
         if verticalOverlap {
             if abs(target.minX - other.maxX) <= threshold {
-                snap.x = other.maxX - target.minX
+                snap.x = round(other.maxX - target.minX)
             } else if abs(target.maxX - other.minX) <= threshold {
-                snap.x = other.minX - target.maxX
+                snap.x = round(other.minX - target.maxX)
             } else if abs(target.minX - other.minX) <= threshold {
-                snap.x = other.minX - target.minX
+                snap.x = round(other.minX - target.minX)
             } else if abs(target.maxX - other.maxX) <= threshold {
-                snap.x = other.maxX - target.maxX
+                snap.x = round(other.maxX - target.maxX)
             }
         }
         
         // Vertical snapping
         if horizontalOverlap {
             if abs(target.minY - other.maxY) <= threshold {
-                snap.y = other.maxY - target.minY
+                snap.y = round(other.maxY - target.minY)
             } else if abs(target.maxY - other.minY) <= threshold {
-                snap.y = other.minY - target.maxY
+                snap.y = round(other.minY - target.maxY)
             } else if abs(target.minY - other.minY) <= threshold {
-                snap.y = other.minY - target.minY
+                snap.y = round(other.minY - target.minY)
             } else if abs(target.maxY - other.maxY) <= threshold {
-                snap.y = other.maxY - target.maxY
+                snap.y = round(other.maxY - target.maxY)
             }
         }
         
@@ -195,15 +199,15 @@ public class WindowLayoutManager: NSObject {
         var snap = CGPoint.zero
         
         if abs(target.minX - screenFrame.minX) <= threshold {
-            snap.x = screenFrame.minX - target.minX
+            snap.x = round(screenFrame.minX - target.minX)
         } else if abs(target.maxX - screenFrame.maxX) <= threshold {
-            snap.x = screenFrame.maxX - target.maxX
+            snap.x = round(screenFrame.maxX - target.maxX)
         }
         
         if abs(target.minY - screenFrame.minY) <= threshold {
-            snap.y = screenFrame.minY - target.minY
+            snap.y = round(screenFrame.minY - target.minY)
         } else if abs(target.maxY - screenFrame.maxY) <= threshold {
-            snap.y = screenFrame.maxY - target.maxY
+            snap.y = round(screenFrame.maxY - target.maxY)
         }
         
         return snap
@@ -236,22 +240,25 @@ public class WindowLayoutManager: NSObject {
     public func handleWindowHeightChange(id: WindowID, newHeightUnscaled: CGFloat) {
         guard let win = windows[id] else { return }
         let scale = (id == .playlist) ? 1.0 : currentScale
-        let newH = newHeightUnscaled * scale
+        let newH = round(newHeightUnscaled * scale)
         let oldFrame = win.frame
-        let diff = oldFrame.height - newH
+        let diff = round(oldFrame.height - newH)
         guard abs(diff) > 0.001 else { return }
         
         // Find windows docked below BEFORE changing frame
         let belowWindows = findWindowsBelow(id: id)
         
         // Update target window frame
+        let unscaledW = (id == .playlist) ? round(win.frame.width) : AppConstants.Window.width
+        let newW = (id == .playlist) ? unscaledW : round(unscaledW * scale)
         var newTargetFrame = oldFrame
-        newTargetFrame.origin.y += diff
+        newTargetFrame.origin.x = round(newTargetFrame.origin.x)
+        newTargetFrame.origin.y = round(newTargetFrame.origin.y + diff)
+        newTargetFrame.size.width = newW
         newTargetFrame.size.height = newH
         win.setFrame(newTargetFrame, display: true, animate: false)
         
         if let content = win.contentView {
-            let unscaledW = (id == .playlist) ? win.frame.width : (win.frame.width / scale)
             content.frame = NSRect(x: 0, y: 0, width: win.frame.width, height: newH)
             content.bounds = NSRect(x: 0, y: 0, width: unscaledW, height: newHeightUnscaled)
             content.needsLayout = true
@@ -266,7 +273,8 @@ public class WindowLayoutManager: NSObject {
         for belowId in belowWindows {
             guard let belowWin = windows[belowId] else { continue }
             var belowFrame = belowWin.frame
-            belowFrame.origin.y += diff
+            belowFrame.origin.x = round(belowFrame.origin.x)
+            belowFrame.origin.y = round(belowFrame.origin.y + diff)
             belowWin.setFrame(belowFrame, display: true, animate: false)
         }
         
@@ -290,26 +298,28 @@ public class WindowLayoutManager: NSObject {
                 let deltaX = (win.frame.minX - anchorX) / oldScale
                 let deltaY = (anchorY - win.frame.maxY) / oldScale
                 
-                let newMinX = anchorX + (deltaX * newScale)
-                let newMaxY = anchorY - (deltaY * newScale)
-                let newMinY = newMaxY - win.frame.height
+                let newMinX = round(anchorX + (deltaX * newScale))
+                let newMaxY = round(anchorY - (deltaY * newScale))
+                let winW = round(win.frame.width)
+                let winH = round(win.frame.height)
+                let newMinY = round(newMaxY - winH)
                 
-                win.setFrame(NSRect(x: newMinX, y: newMinY, width: win.frame.width, height: win.frame.height), display: true, animate: false)
+                win.setFrame(NSRect(x: newMinX, y: newMinY, width: winW, height: winH), display: true, animate: false)
                 if let content = win.contentView {
-                    content.bounds = NSRect(x: 0, y: 0, width: win.frame.width, height: win.frame.height)
+                    content.bounds = NSRect(x: 0, y: 0, width: winW, height: winH)
                     content.needsDisplay = true
                 }
             } else {
                 let deltaX = (win.frame.minX - anchorX) / oldScale
                 let deltaY = (anchorY - win.frame.maxY) / oldScale
-                let unscaledW = win.frame.width / oldScale
+                let unscaledW = AppConstants.Window.width
                 let unscaledH = win.frame.height / oldScale
                 
-                let newW = unscaledW * newScale
-                let newH = unscaledH * newScale
-                let newMinX = anchorX + (deltaX * newScale)
-                let newMaxY = anchorY - (deltaY * newScale)
-                let newMinY = newMaxY - newH
+                let newW = round(unscaledW * newScale)
+                let newH = round(unscaledH * newScale)
+                let newMinX = round(anchorX + (deltaX * newScale))
+                let newMaxY = round(anchorY - (deltaY * newScale))
+                let newMinY = round(newMaxY - newH)
                 
                 win.setFrame(NSRect(x: newMinX, y: newMinY, width: newW, height: newH), display: true, animate: false)
                 
@@ -356,9 +366,11 @@ public class WindowLayoutManager: NSObject {
         }
         
         if shiftX != 0 || shiftY != 0 {
+            let roundedShiftX = round(shiftX)
+            let roundedShiftY = round(shiftY)
             for (_, win) in windows {
                 let origin = win.frame.origin
-                win.setFrameOrigin(NSPoint(x: origin.x + shiftX, y: origin.y + shiftY))
+                win.setFrameOrigin(NSPoint(x: round(origin.x + roundedShiftX), y: round(origin.y + roundedShiftY)))
             }
         }
     }

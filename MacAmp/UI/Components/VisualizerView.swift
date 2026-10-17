@@ -55,22 +55,27 @@ public class VisualizerView: WinampControlView {
         context.saveGState()
         context.clip(to: bounds)
         
-        let colors = SkinManager.shared.currentSkin?.visualizerColors.colors ?? VisualizerColors.defaultColors()
-        
-        // Background (black / color 0)
-        let bgColor = colors.first ?? NSColor.black
-        context.setFillColor(bgColor.cgColor)
-        context.fill(bounds)
+        // Clear bounds to transparent so MAIN.BMP's dotted LCD screen texture is visible underneath
+        context.clear(bounds)
         
         guard mode != .off else {
             context.restoreGState()
             return
         }
         
+        let colors = SkinManager.shared.currentSkin?.visualizerColors.colors ?? VisualizerColors.defaultColors()
+        
+        // Only draw spectrum bars or oscilloscope line when there is active audio signal
         if mode == .spectrum {
-            drawSpectrum(in: context, colors: colors)
+            let hasSignal = spectrumAmplitudes.contains { $0 > 0.001 } || peakHeights.contains { $0 > 0.001 }
+            if hasSignal {
+                drawSpectrum(in: context, colors: colors)
+            }
         } else if mode == .oscilloscope {
-            drawOscilloscope(in: context, colors: colors)
+            let hasWaveform = waveformPoints.contains { abs($0) > 0.001 }
+            if hasWaveform {
+                drawOscilloscope(in: context, colors: colors)
+            }
         }
         
         context.restoreGState()

@@ -24,11 +24,16 @@ print(f"Found {len(swift_files)} Swift source files:")
 for file, rel, full in swift_files:
     print(f"  {rel}")
 
-# 1. Clear old PBXBuildFile entries for Swift files
+# 1. Clear old PBXBuildFile entries for Swift files and resources
 pbx = re.sub(r'\t\t[0-9A-F]{24} /\* .*?\.swift in Sources \*/ = \{isa = PBXBuildFile; .*?\};\n', '', pbx)
+pbx = re.sub(r'\t\t[0-9A-F]{24} /\* base-2.91\.wsz in Resources \*/ = \{isa = PBXBuildFile; .*?\};\n', '', pbx)
 
-# 2. Clear old PBXFileReference entries for Swift files
+# 2. Clear old PBXFileReference entries for Swift files and resources
 pbx = re.sub(r'\t\t[0-9A-F]{24} /\* .*?\.swift \*/ = \{isa = PBXFileReference; .*?\};\n', '', pbx)
+pbx = re.sub(r'\t\t[0-9A-F]{24} /\* base-2.91\.wsz \*/ = \{isa = PBXFileReference; .*?\};\n', '', pbx)
+
+# 2b. Clear old base-2.91.wsz in Resources phase
+pbx = re.sub(r'\t\t\t\t[0-9A-F]{24} /\* base-2.91\.wsz in Resources \*/,\n?', '', pbx)
 
 # 3. Create new FileReferences and BuildFiles
 file_refs = []
@@ -56,7 +61,7 @@ pbx = re.sub(r'(/\* Begin PBXBuildFile section \*/\n)', r'\1' + "\n".join(build_
 pbx = re.sub(r'(/\* Begin PBXFileReference section \*/\n)', r'\1' + "\n".join(file_refs) + "\n", pbx)
 
 # Insert into Resources section
-pbx = re.sub(r'(/\* Resources \*/ = \{[\s\S]*?files = \()([\s\S]*?)(\);)', r'\1\n\t\t\t\t' + wsz_build_id + r' /* base-2.91.wsz in Resources */,\2\3', pbx)
+pbx = re.sub(r'(/\* Resources \*/ = \{[\s\S]*?files = \()([\s\S]*?)(\);)', r'\1\n\t\t\t\t' + wsz_build_id + r' /* base-2.91.wsz in Resources */,\n\2\3', pbx)
 
 # Insert into Sources section
 pbx = re.sub(r'(/\* Sources \*/ = \{[\s\S]*?files = \()[\s\S]*?(\);)', r'\1\n' + "\n".join(sources_entries) + r'\n\t\t\t\2', pbx)

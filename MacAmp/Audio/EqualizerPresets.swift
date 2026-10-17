@@ -28,6 +28,17 @@ public struct EQPreset: Codable, Identifiable, Equatable {
             bandsDb: bandsInt.map(convert)
         )
     }
+    
+    /// Converts dB (-12.0 ... +12.0) back to Winamp 0..63 integer representation (where 33 ≈ 0 dB)
+    public static func toWinampValue(db: Float) -> Int {
+        if db <= 0 {
+            let ratio = (db + 12.0) / 12.0
+            return max(0, min(33, Int(round(ratio * 33.0))))
+        } else {
+            let ratio = db / 12.0
+            return max(33, min(63, 33 + Int(round(ratio * 30.0))))
+        }
+    }
 }
 
 public class EqualizerPresetsManager {
@@ -91,4 +102,67 @@ public class EqualizerPresetsManager {
     }
     
     public static let flatPreset = EQPreset(name: "Flat", preampDb: 0.0, bandsDb: Array(repeating: 0.0, count: 10))
+    
+    // MARK: - Winamp .EQF File Format Support
+    private static let eqfHeader = "Winamp EQ library file v1.1\u{1A}!--"
+    
+    public func loadEQF(from url: URL) -> [EQPreset] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        guard let headerData = EqualizerPresetsManager.eqfHeader.data(using: .ascii),
+              data.starts(with: headerData) else {
+            return []
+        }
+        
+        var presets: [EQPreset] = []
+        var offset = headerData.count
+        let presetRecordLength = 257 + 11 // 257 bytes name + 10 bands + 1 preamp
+        
+        while offset + presetRecordLength <= data.count {
+            let nameData = data.subdata(in: offset..<offset + 257)
+            let nameString = (nameData.split(separator: 0).first.flatMap { String(bytes: $0, encoding: .isoLatin1) }) ?? "Preset"
+            
+            let bandBytes = data.subdata(in: offset + 257..<offset + 267)
+            let preampByte = data[offset + 267]
+            
+            let bandValues = bandBytes.map { 64 - Int($0) }
+            let preampValue = 64 - Int(preampByte)
+            
+            presets.append(EQPreset.fromWinampValues(name: nameString, preampInt: preampValue, bandsInt: bandValues))
+            offset += presetRecordLength
+        }
+        
+        return presets
+    }
+    
+    public func createEQFData(presets: [EQPreset]) -> Data {
+        var data = Data()
+        if let hData = EqualizerPresetsManager.eqfHeader.data(using: .ascii) {
+            data.append(hData)
+        }
+        
+        for preset in presets {
+            // 257 bytes null-padded name
+            var nameBytes = Array(preset.name.prefix(256).utf8)
+            nameBytes.append(contentsOf: Array(repeating: UInt8(0), count: 257 - nameBytes.count))
+            data.append(contentsOf: nameBytes)
+            
+            // 10 bands (64 - val)
+            for i in 0..<10 {
+                let gainDb = (i < preset.bandsDb.count) ? preset.bandsDb[i] : 0.0
+                let winampVal = EQPreset.toWinampValue(db: gainDb)
+                data.append(UInt8(max(0, min(255, 64 - winampVal))))
+            }
+            
+            // Preamp (64 - val)
+            let preampWinampVal = EQPreset.toWinampValue(db: preset.preampDb)
+            data.append(UInt8(max(0, min(255, 64 - preampWinampVal))))
+        }
+        
+        return data
+    }
+    
+    public func saveEQF(presets: [EQPreset], to url: URL) throws {
+        let data = createEQFData(presets: presets)
+        try data.write(to: url)
+    }
 }

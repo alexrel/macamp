@@ -2,6 +2,19 @@ import Foundation
 import CoreGraphics
 import AppKit
 
+/// Digital time display rendering minutes and seconds using NUMBERS.BMP sprites (normal mode)
+/// or TEXT.BMP font digits (shade mode).
+///
+/// Winamp 2.x Geometry:
+/// - In normal mode (frame 59x13):
+///   - Minus sign: at x: 0, y: 6 (5x1 px)
+///   - Minute tens (M1): at x: 9 (9x13 px)
+///   - Minute ones (M2): at x: 21 (9x13 px)
+///   - Green colon separator: permanently baked into MAIN.BMP between x: 30 and 38
+///   - Second tens (S1): at x: 39 (9x13 px)
+///   - Second ones (S2): at x: 51 (9x13 px)
+/// - In pause mode, PlayerCoordinator drives synchronized blinking (isBlinkVisible toggles every 500ms).
+///   When blink is off, digits disappear while the green colon remains steadily visible.
 public class TimeDisplayView: WinampControlView {
     public var currentTime: TimeInterval = 0 {
         didSet { needsDisplay = true }
@@ -13,43 +26,26 @@ public class TimeDisplayView: WinampControlView {
         didSet { needsDisplay = true }
     }
     public var status: PlayerStatus = .stopped {
-        didSet {
-            updateBlinkTimer()
-            needsDisplay = true
-        }
+        didSet { needsDisplay = true }
     }
     
     public var onToggleMode: (() -> Void)?
     
-    private var isBlinkVisible: Bool = true
-    private var blinkTimer: Timer?
+    /// Driven synchronously by PlayerCoordinator across Main and Playlist windows
+    public var isBlinkVisible: Bool = true {
+        didSet { needsDisplay = true }
+    }
     
     public init() {
-        super.init(frame: NSRect(x: 39, y: 26, width: 59, height: 13))
+        super.init(frame: AppConstants.MainWindow.Layout.timeDisplay)
     }
     
     public required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
-    private func updateBlinkTimer() {
-        blinkTimer?.invalidate()
-        blinkTimer = nil
-        
-        if status == .paused {
-            blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-                guard let self else { return }
-                self.isBlinkVisible.toggle()
-                self.needsDisplay = true
-            }
-        } else {
-            isBlinkVisible = true
-        }
-    }
-    
     public override func draw(_ dirtyRect: NSRect) {
         guard status != .stopped else { return }
-        guard isBlinkVisible else { return }
         
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
@@ -69,44 +65,56 @@ public class TimeDisplayView: WinampControlView {
         let minutes = displaySeconds / 60
         let seconds = displaySeconds % 60
         
-        // In shade mode (height <= 8), draw mini text font
+        // In shade mode (height <= 8), draw mini text font without painting over background colon
         if bounds.height <= 8 {
-            let prefix = isNegative ? "-" : " "
-            let timeStr = String(format: "%@%02d:%02d", prefix, minutes, seconds)
-            BitmapFont.draw(string: timeStr, in: context, at: CGPoint(x: 1, y: 0))
+            BitmapFont.drawMiniTime(
+                minutes: minutes,
+                seconds: seconds,
+                isNegative: isNegative,
+                status: status,
+                isBlinkVisible: isBlinkVisible,
+                in: context,
+                at: .zero
+            )
             return
         }
+        
+        // In large display mode, when paused and blinking off, do not draw digits (let background colon show)
+        guard isBlinkVisible else { return }
         
         let m1 = (minutes / 10) % 10
         let m2 = minutes % 10
         let s1 = (seconds / 10) % 10
         let s2 = seconds % 10
         
-        // Minus sign at x: 0, y: 6
+        let dW = AppConstants.TimeDisplay.digitWidth
+        let dH = AppConstants.TimeDisplay.digitHeight
+        
+        // Minus sign
         if isNegative {
             if let minusImg = SkinManager.shared.image(for: SpriteCatalog.minusSign) {
-                context.drawSkinImage(minusImg, in: NSRect(x: 0, y: 6, width: 5, height: 1))
+                context.drawSkinImage(minusImg, in: AppConstants.TimeDisplay.minusRect)
             }
         }
         
-        // Digit 1 (Minute tens) at x: 9
+        // Digit 1 (Minute tens)
         if let d1Img = SkinManager.shared.image(for: SpriteCatalog.digit(m1)) {
-            context.drawSkinImage(d1Img, in: NSRect(x: 9, y: 0, width: 9, height: 13))
+            context.drawSkinImage(d1Img, in: NSRect(x: AppConstants.TimeDisplay.minuteTensX, y: 0, width: dW, height: dH))
         }
         
-        // Digit 2 (Minute units) at x: 21
+        // Digit 2 (Minute units)
         if let d2Img = SkinManager.shared.image(for: SpriteCatalog.digit(m2)) {
-            context.drawSkinImage(d2Img, in: NSRect(x: 21, y: 0, width: 9, height: 13))
+            context.drawSkinImage(d2Img, in: NSRect(x: AppConstants.TimeDisplay.minuteOnesX, y: 0, width: dW, height: dH))
         }
         
-        // Digit 3 (Second tens) at x: 39
+        // Digit 3 (Second tens)
         if let d3Img = SkinManager.shared.image(for: SpriteCatalog.digit(s1)) {
-            context.drawSkinImage(d3Img, in: NSRect(x: 39, y: 0, width: 9, height: 13))
+            context.drawSkinImage(d3Img, in: NSRect(x: AppConstants.TimeDisplay.secondTensX, y: 0, width: dW, height: dH))
         }
         
-        // Digit 4 (Second units) at x: 51
+        // Digit 4 (Second units)
         if let d4Img = SkinManager.shared.image(for: SpriteCatalog.digit(s2)) {
-            context.drawSkinImage(d4Img, in: NSRect(x: 51, y: 0, width: 9, height: 13))
+            context.drawSkinImage(d4Img, in: NSRect(x: AppConstants.TimeDisplay.secondOnesX, y: 0, width: dW, height: dH))
         }
     }
     

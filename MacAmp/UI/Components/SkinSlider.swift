@@ -26,6 +26,7 @@ public class SkinSlider: WinampControlView {
     }
     
     public var onValueChanged: ((Double) -> Void)?
+    public var onTrackingEnded: ((Double) -> Void)?
     
     // Sprites
     public var backgroundSlice: SpriteSlice?
@@ -33,7 +34,13 @@ public class SkinSlider: WinampControlView {
     public var thumbNormal: SpriteSlice
     public var thumbPressed: SpriteSlice
     
-    private var isDragging = false {
+    /// Optional custom track width for sliders where track is shorter than background (e.g. Winamp Volume track is 65px while background is 68px)
+    public var trackWidth: CGFloat?
+    
+    /// When true, frame 0 is at center (0.0), and frames 1..27 increase outward towards edges (used exclusively by Balance slider)
+    public var centerOutwardFrames: Bool = false
+    
+    public private(set) var isDragging = false {
         didSet {
             if oldValue != isDragging {
                 needsDisplay = true
@@ -47,6 +54,8 @@ public class SkinSlider: WinampControlView {
         minValue: Double = 0.0,
         maxValue: Double = 1.0,
         initialValue: Double = 0.5,
+        trackWidth: CGFloat? = nil,
+        centerOutwardFrames: Bool = false,
         snapCenter: Bool = false,
         snapThreshold: Double = 0.05,
         background: SpriteSlice? = nil,
@@ -59,6 +68,8 @@ public class SkinSlider: WinampControlView {
         self.minValue = minValue
         self.maxValue = maxValue
         self.value = initialValue
+        self.trackWidth = trackWidth
+        self.centerOutwardFrames = centerOutwardFrames
         self.snapCenter = snapCenter
         self.snapThreshold = snapThreshold
         self.backgroundSlice = background
@@ -87,13 +98,23 @@ public class SkinSlider: WinampControlView {
         }
     }
     
+    /// Specialized mode for main window shade seek bar (which uses left, center, and right thumb sprites)
+    public var isShadePosBar: Bool = false
+    
     public override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
         
         // 1. Draw background
         if let frameProvider = backgroundFrameProvider {
-            let frameIndex = Int(round(normalizedValue * 27.0))
+            let frameIndex: Int
+            if centerOutwardFrames {
+                // Balance slider: 0 at center (value = 0.0), frame index 0..27 increases as balance shifts left or right
+                let percent = min(1.0, max(0.0, abs(value)))
+                frameIndex = min(27, max(0, Int(round(percent * 27.0))))
+            } else {
+                frameIndex = min(27, max(0, Int(round(normalizedValue * 27.0))))
+            }
             let slice = frameProvider(frameIndex)
             if let bgImg = SkinManager.shared.image(for: slice) {
                 context.drawSkinImage(bgImg, in: bounds)
@@ -105,7 +126,7 @@ public class SkinSlider: WinampControlView {
         // 2. Draw thumb
         if !isThumbHidden {
             var thumbSlice = isDragging ? thumbPressed : thumbNormal
-            if backgroundSlice?.name == "MAIN_SHADE_POS_BG" {
+            if isShadePosBar {
                 if normalizedValue <= 0.33 {
                     thumbSlice = SpriteCatalog.mainShadePosThumbLeft
                 } else if normalizedValue >= 0.66 {
@@ -120,10 +141,11 @@ public class SkinSlider: WinampControlView {
             
             var thumbRect: NSRect
             if orientation == .horizontal {
-                let travelDistance = bounds.width - thumbW
+                let effectiveTrackW = trackWidth ?? bounds.width
+                let travelDistance = effectiveTrackW - thumbW
                 let thumbX = CGFloat(normalizedValue) * travelDistance
-                let thumbY = (bounds.height - thumbH) / 2.0
-                thumbRect = NSRect(x: round(thumbX), y: round(thumbY), width: thumbW, height: thumbH)
+                let thumbY = round((bounds.height - thumbH) / 2.0)
+                thumbRect = NSRect(x: round(thumbX), y: thumbY, width: thumbW, height: thumbH)
             } else {
                 // Inverted for vertical slider (top is max value, bottom is min value)
                 // Travel distance is 51px (bounds.height 63 - 1 - 11 = 51)
@@ -153,7 +175,8 @@ public class SkinSlider: WinampControlView {
         
         var norm: Double
         if orientation == .horizontal {
-            let travel = bounds.width - thumbSlice.rect.width
+            let effectiveTrackW = trackWidth ?? bounds.width
+            let travel = effectiveTrackW - thumbSlice.rect.width
             guard travel > 0 else { return }
             let clickX = localPoint.x - (thumbSlice.rect.width / 2.0)
             norm = Double(clickX / travel)
@@ -192,6 +215,7 @@ public class SkinSlider: WinampControlView {
             case .leftMouseUp:
                 keepTracking = false
                 self.isDragging = false
+                onTrackingEnded?(self.value)
             default:
                 break
             }

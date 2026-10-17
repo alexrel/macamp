@@ -1,24 +1,27 @@
 import Cocoa
 import Foundation
 
+/// Main player window view (275x116 in normal mode, 275x14 in windowshade mode).
+/// Hosts transport controls, time display, visualizer, marquee song title, volume/balance/seek sliders,
+/// clutterbar buttons, and window toggle buttons.
 public class MainWindowView: WinampControlView {
-    // Sub-components
+    // MARK: - Sub-components
     public let timeDisplay = TimeDisplayView()
     public let visualizer = VisualizerView()
     public let marquee = MarqueeView()
     
-    // Sliders
+    // MARK: - Sliders
     public private(set) var volumeSlider: SkinSlider!
     public private(set) var balanceSlider: SkinSlider!
     public private(set) var seekSlider: SkinSlider!
     
-    // Toggles
+    // MARK: - Toggles
     public private(set) var eqToggle: SkinToggle!
     public private(set) var plToggle: SkinToggle!
     public private(set) var shuffleToggle: SkinToggle!
     public private(set) var repeatToggle: SkinToggle!
     
-    // Transport Buttons
+    // MARK: - Transport Buttons (CBUTTONS.BMP)
     public private(set) var prevButton: SkinButton!
     public private(set) var playButton: SkinButton!
     public private(set) var pauseButton: SkinButton!
@@ -26,16 +29,18 @@ public class MainWindowView: WinampControlView {
     public private(set) var nextButton: SkinButton!
     public private(set) var ejectButton: SkinButton!
     
-    // Titlebar Buttons
+    // MARK: - Titlebar Buttons (TITLEBAR.BMP)
     public private(set) var optionsButton: SkinButton!
     public private(set) var minimizeButton: SkinButton!
     public private(set) var shadeButton: SkinButton!
     public private(set) var closeButton: SkinButton!
     
-    // ClutterBar D Button (Double Size toggle)
-    public private(set) var doubleSizeButton: ClutterButton!
+    // MARK: - ClutterBar Buttons (O, A, D)
     public private(set) var clutterOptionsButton: ClutterButton!
+    public private(set) var alwaysOnTopButton: ClutterButton!
+    public private(set) var doubleSizeButton: ClutterButton!
     
+    /// Tracks windowshade mode (collapsed 14px titlebar strip vs full 116px player window)
     public var isShadeMode: Bool = false {
         didSet {
             updateLayoutForShadeMode()
@@ -46,7 +51,9 @@ public class MainWindowView: WinampControlView {
         }
     }
     
+    // Callbacks to PlayerCoordinator
     public var onToggleShade: (() -> Void)?
+    public var onToggleAlwaysOnTop: (() -> Void)?
     public var onToggleDoubleSize: (() -> Void)?
     public var onOpenOptions: (() -> Void)?
     public var onEject: (() -> Void)?
@@ -61,62 +68,72 @@ public class MainWindowView: WinampControlView {
     }
     
     private func setupControls() {
-        // 1. TitleBar Buttons (y: 3)
+        typealias Layout = AppConstants.MainWindow.Layout
+        
+        // 1. TitleBar Buttons (Top-right and Top-left)
         optionsButton = SkinButton(normal: SpriteCatalog.optionsNormal, pressed: SpriteCatalog.optionsPressed) { [weak self] in
             self?.onOpenOptions?()
         }
-        optionsButton.frame = NSRect(x: 6, y: 3, width: 9, height: 9)
+        optionsButton.frame = Layout.optionsButton
         addSubview(optionsButton)
         
-        minimizeButton = SkinButton(normal: SpriteCatalog.minimizeNormal, pressed: SpriteCatalog.minimizePressed) { [weak self] in
-            self?.window?.miniaturize(nil)
+        minimizeButton = SkinButton(normal: SpriteCatalog.minimizeNormal, pressed: SpriteCatalog.minimizePressed) {
+            PlayerCoordinator.shared.minimizeAll()
         }
-        minimizeButton.frame = NSRect(x: 244, y: 3, width: 9, height: 9)
+        minimizeButton.frame = Layout.minimizeButton
         addSubview(minimizeButton)
         
         shadeButton = SkinButton(normal: SpriteCatalog.shadeNormal, pressed: SpriteCatalog.shadePressed) { [weak self] in
             self?.onToggleShade?()
         }
-        shadeButton.frame = NSRect(x: 254, y: 3, width: 9, height: 9)
+        shadeButton.frame = Layout.shadeButton
         addSubview(shadeButton)
         
         closeButton = SkinButton(normal: SpriteCatalog.closeNormal, pressed: SpriteCatalog.closePressed) {
             NSApp.terminate(nil)
         }
-        closeButton.frame = NSRect(x: 264, y: 3, width: 9, height: 9)
+        closeButton.frame = Layout.closeButton
         addSubview(closeButton)
         
-        // 2. ClutterBar Buttons
+        // 2. ClutterBar Buttons (O = Options Menu, A = Always On Top, D = Double Size 2x Toggle)
         clutterOptionsButton = ClutterButton(activeSlice: SpriteCatalog.clutterOActive) { [weak self] in
             self?.onOpenOptions?()
         }
-        clutterOptionsButton.frame = NSRect(x: 10, y: 25, width: 8, height: 8)
+        clutterOptionsButton.frame = Layout.clutterOptionsButton
         addSubview(clutterOptionsButton)
+        
+        alwaysOnTopButton = ClutterButton(activeSlice: SpriteCatalog.clutterAActive) { [weak self] in
+            self?.onToggleAlwaysOnTop?()
+        }
+        alwaysOnTopButton.frame = Layout.clutterAlwaysOnTopButton
+        alwaysOnTopButton.isSelected = PlayerCoordinator.shared.persistence.state.isAlwaysOnTop
+        addSubview(alwaysOnTopButton)
         
         doubleSizeButton = ClutterButton(activeSlice: SpriteCatalog.clutterDActive) { [weak self] in
             self?.onToggleDoubleSize?()
         }
-        doubleSizeButton.frame = NSRect(x: 10, y: 47, width: 8, height: 8)
+        doubleSizeButton.frame = Layout.clutterDoubleSizeButton
         doubleSizeButton.isSelected = (WindowLayoutManager.shared.currentScale == 2.0)
         addSubview(doubleSizeButton)
         
         // 3. Time, Visualizer, Marquee
-        timeDisplay.frame = NSRect(x: 39, y: 26, width: 59, height: 13)
+        timeDisplay.frame = Layout.timeDisplay
         addSubview(timeDisplay)
         
-        visualizer.frame = NSRect(x: 24, y: 43, width: CGFloat(AppConstants.Visualizer.width), height: CGFloat(AppConstants.Visualizer.height))
+        visualizer.frame = Layout.visualizer
         addSubview(visualizer)
         
-        marquee.frame = NSRect(x: 112, y: 27, width: 152, height: 6)
+        marquee.frame = Layout.marquee
         addSubview(marquee)
         
-        // 4. Sliders
+        // 4. Sliders (Volume, Balance, Seek)
         volumeSlider = SkinSlider(
-            frame: NSRect(x: 107, y: 57, width: 68, height: 13),
+            frame: Layout.volumeSlider,
             orientation: .horizontal,
             minValue: 0.0,
             maxValue: 1.0,
             initialValue: AppConstants.Audio.defaultVolume,
+            trackWidth: Layout.volumeTrackWidth,
             bgFrameProvider: { SpriteCatalog.volumeBg(frame: $0) },
             thumbNormal: SpriteCatalog.volumeThumb,
             thumbPressed: SpriteCatalog.volumeThumbPressed
@@ -126,11 +143,12 @@ public class MainWindowView: WinampControlView {
         addSubview(volumeSlider)
         
         balanceSlider = SkinSlider(
-            frame: NSRect(x: 177, y: 57, width: 38, height: 13),
+            frame: Layout.balanceSlider,
             orientation: .horizontal,
             minValue: -1.0,
             maxValue: 1.0,
             initialValue: AppConstants.Audio.defaultBalance,
+            centerOutwardFrames: true,
             snapCenter: true,
             snapThreshold: 0.1,
             bgFrameProvider: { SpriteCatalog.balanceBg(frame: $0) },
@@ -142,7 +160,7 @@ public class MainWindowView: WinampControlView {
         addSubview(balanceSlider)
         
         seekSlider = SkinSlider(
-            frame: NSRect(x: 16, y: 72, width: 248, height: 10),
+            frame: Layout.seekSlider,
             orientation: .horizontal,
             minValue: 0.0,
             maxValue: 1.0,
@@ -150,11 +168,7 @@ public class MainWindowView: WinampControlView {
             background: SpriteCatalog.posBarBg,
             thumbNormal: SpriteCatalog.posBarThumb,
             thumbPressed: SpriteCatalog.posBarThumbPressed
-        ) { val in
-            if let meta = AudioEngine.shared.currentMetadata, meta.duration > 0 {
-                AudioEngine.shared.seek(to: val * meta.duration)
-            }
-        }
+        )
         seekSlider.isThumbHidden = (AudioEngine.shared.status == .stopped)
         addSubview(seekSlider)
         
@@ -166,7 +180,7 @@ public class MainWindowView: WinampControlView {
             onPressed: SpriteCatalog.eqToggleOnPressed,
             isOn: true
         )
-        eqToggle.frame = NSRect(x: 219, y: 58, width: 23, height: 12)
+        eqToggle.frame = Layout.eqToggle
         addSubview(eqToggle)
         
         plToggle = SkinToggle(
@@ -176,43 +190,43 @@ public class MainWindowView: WinampControlView {
             onPressed: SpriteCatalog.plToggleOnPressed,
             isOn: true
         )
-        plToggle.frame = NSRect(x: 242, y: 58, width: 23, height: 12)
+        plToggle.frame = Layout.plToggle
         addSubview(plToggle)
         
         // 6. Transport Buttons
         prevButton = SkinButton(normal: SpriteCatalog.prevNormal, pressed: SpriteCatalog.prevPressed)
-        prevButton.frame = NSRect(x: 16, y: 88, width: 23, height: 18)
+        prevButton.frame = Layout.prevButton
         addSubview(prevButton)
         
         playButton = SkinButton(normal: SpriteCatalog.playNormal, pressed: SpriteCatalog.playPressed) {
             AudioEngine.shared.play()
         }
-        playButton.frame = NSRect(x: 39, y: 88, width: 23, height: 18)
+        playButton.frame = Layout.playButton
         addSubview(playButton)
         
         pauseButton = SkinButton(normal: SpriteCatalog.pauseNormal, pressed: SpriteCatalog.pausePressed) {
             AudioEngine.shared.pause()
         }
-        pauseButton.frame = NSRect(x: 62, y: 88, width: 23, height: 18)
+        pauseButton.frame = Layout.pauseButton
         addSubview(pauseButton)
         
         stopButton = SkinButton(normal: SpriteCatalog.stopNormal, pressed: SpriteCatalog.stopPressed) {
             AudioEngine.shared.stop()
         }
-        stopButton.frame = NSRect(x: 85, y: 88, width: 23, height: 18)
+        stopButton.frame = Layout.stopButton
         addSubview(stopButton)
         
         nextButton = SkinButton(normal: SpriteCatalog.nextNormal, pressed: SpriteCatalog.nextPressed)
-        nextButton.frame = NSRect(x: 108, y: 88, width: 22, height: 18)
+        nextButton.frame = Layout.nextButton
         addSubview(nextButton)
         
         ejectButton = SkinButton(normal: SpriteCatalog.ejectNormal, pressed: SpriteCatalog.ejectPressed) { [weak self] in
             self?.onEject?()
         }
-        ejectButton.frame = NSRect(x: 136, y: 89, width: 22, height: 16)
+        ejectButton.frame = Layout.ejectButton
         addSubview(ejectButton)
         
-        // 7. Shuffle & Repeat
+        // 7. Shuffle & Repeat Toggles
         shuffleToggle = SkinToggle(
             offNormal: SpriteCatalog.shuffleOff,
             offPressed: SpriteCatalog.shuffleOffPressed,
@@ -220,7 +234,7 @@ public class MainWindowView: WinampControlView {
             onPressed: SpriteCatalog.shuffleOnPressed,
             isOn: false
         )
-        shuffleToggle.frame = NSRect(x: 164, y: 89, width: 47, height: 15)
+        shuffleToggle.frame = Layout.shuffleToggle
         addSubview(shuffleToggle)
         
         repeatToggle = SkinToggle(
@@ -230,13 +244,17 @@ public class MainWindowView: WinampControlView {
             onPressed: SpriteCatalog.repeatOnPressed,
             isOn: false
         )
-        repeatToggle.frame = NSRect(x: 210, y: 89, width: 28, height: 15)
+        repeatToggle.frame = Layout.repeatToggle
         addSubview(repeatToggle)
     }
     
+    // MARK: - Shade Mode Switching
     private func updateLayoutForShadeMode() {
+        typealias Normal = AppConstants.MainWindow.Layout
+        typealias Shade = AppConstants.MainWindow.ShadeLayout
+        
         if isShadeMode {
-            // Hide main body controls
+            // 1. Hide main body controls
             volumeSlider.isHidden = true
             balanceSlider.isHidden = true
             eqToggle.isHidden = true
@@ -245,38 +263,40 @@ public class MainWindowView: WinampControlView {
             repeatToggle.isHidden = true
             marquee.isHidden = true
             clutterOptionsButton.isHidden = true
+            alwaysOnTopButton.isHidden = true
             doubleSizeButton.isHidden = true
             
-            // Switch shade button to unshade sprite
+            // 2. Switch shade button to unshade sprite
             shadeButton.normalSlice = SpriteCatalog.mainShadeButtonSelected
             shadeButton.pressedSlice = SpriteCatalog.mainShadeButtonSelectedDepressed
             
-            // Move visualizer to shade header (x: 79, y: 5, w: 38, h: 5)
-            visualizer.frame = NSRect(x: 79, y: 5, width: 38, height: 5)
-            timeDisplay.frame = NSRect(x: 125, y: 4, width: 35, height: 6)
+            // 3. Move visualizer & time display to shade strip
+            visualizer.frame = Shade.visualizer
+            timeDisplay.frame = Shade.timeDisplay
             
-            // Position mini seek bar
+            // 4. Configure mini seek bar
             seekSlider.isHidden = false
-            seekSlider.frame = NSRect(x: 226, y: 4, width: 17, height: 7)
+            seekSlider.frame = Shade.seekSlider
+            seekSlider.isShadePosBar = true
             seekSlider.backgroundSlice = SpriteCatalog.mainShadePosBg
             seekSlider.thumbNormal = SpriteCatalog.mainShadePosThumb
             seekSlider.thumbPressed = SpriteCatalog.mainShadePosThumb
             
-            // Reposition mini transport buttons (top: 2, left: 169..215) and set transparent background
-            let transportButtons: [(SkinButton, NSRect)] = [
-                (prevButton, NSRect(x: 169, y: 2, width: 7, height: 10)),
-                (playButton, NSRect(x: 176, y: 2, width: 10, height: 10)),
-                (pauseButton, NSRect(x: 186, y: 2, width: 9, height: 10)),
-                (stopButton, NSRect(x: 195, y: 2, width: 9, height: 10)),
-                (nextButton, NSRect(x: 204, y: 2, width: 10, height: 10)),
-                (ejectButton, NSRect(x: 215, y: 2, width: 10, height: 10))
+            // 5. Reposition mini transport buttons and mark them as shade buttons (transparent background)
+            let shadeTransport: [(SkinButton, NSRect)] = [
+                (prevButton, Shade.prevButton),
+                (playButton, Shade.playButton),
+                (pauseButton, Shade.pauseButton),
+                (stopButton, Shade.stopButton),
+                (nextButton, Shade.nextButton),
+                (ejectButton, Shade.ejectButton)
             ]
-            for (btn, frame) in transportButtons {
+            for (btn, frame) in shadeTransport {
                 btn.frame = frame
                 btn.isShadeButton = true
             }
         } else {
-            // Restore full layout
+            // 1. Restore full layout controls visibility
             volumeSlider.isHidden = false
             balanceSlider.isHidden = false
             eqToggle.isHidden = false
@@ -285,29 +305,33 @@ public class MainWindowView: WinampControlView {
             repeatToggle.isHidden = false
             marquee.isHidden = false
             clutterOptionsButton.isHidden = false
+            alwaysOnTopButton.isHidden = false
             doubleSizeButton.isHidden = false
             
-            // Switch shade button back to normal shade sprite
+            // 2. Switch shade button back to normal shade sprite
             shadeButton.normalSlice = SpriteCatalog.shadeNormal
             shadeButton.pressedSlice = SpriteCatalog.shadePressed
             
-            // Restore full seek bar
+            // 3. Restore full seek bar
             seekSlider.isHidden = false
-            seekSlider.frame = NSRect(x: 16, y: 72, width: 248, height: 10)
+            seekSlider.frame = Normal.seekSlider
+            seekSlider.isShadePosBar = false
             seekSlider.backgroundSlice = SpriteCatalog.posBarBg
             seekSlider.thumbNormal = SpriteCatalog.posBarThumb
             seekSlider.thumbPressed = SpriteCatalog.posBarThumbPressed
             
-            visualizer.frame = NSRect(x: 24, y: 43, width: CGFloat(AppConstants.Visualizer.width), height: CGFloat(AppConstants.Visualizer.height))
-            timeDisplay.frame = NSRect(x: 39, y: 26, width: 59, height: 13)
+            // 4. Restore visualizer & time display frames
+            visualizer.frame = Normal.visualizer
+            timeDisplay.frame = Normal.timeDisplay
             
+            // 5. Restore full transport buttons
             let normalTransport: [(SkinButton, NSRect)] = [
-                (prevButton, NSRect(x: 16, y: 88, width: 23, height: 18)),
-                (playButton, NSRect(x: 39, y: 88, width: 23, height: 18)),
-                (pauseButton, NSRect(x: 62, y: 88, width: 23, height: 18)),
-                (stopButton, NSRect(x: 85, y: 88, width: 23, height: 18)),
-                (nextButton, NSRect(x: 108, y: 88, width: 22, height: 18)),
-                (ejectButton, NSRect(x: 136, y: 89, width: 22, height: 16))
+                (prevButton, Normal.prevButton),
+                (playButton, Normal.playButton),
+                (pauseButton, Normal.pauseButton),
+                (stopButton, Normal.stopButton),
+                (nextButton, Normal.nextButton),
+                (ejectButton, Normal.ejectButton)
             ]
             for (btn, frame) in normalTransport {
                 btn.frame = frame
@@ -316,7 +340,7 @@ public class MainWindowView: WinampControlView {
         }
     }
     
-    // MARK: - Drawing Background
+    // MARK: - Drawing Background & Static Indicators
     public override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
@@ -324,52 +348,65 @@ public class MainWindowView: WinampControlView {
         let isKey = window?.isKeyWindow ?? true
         
         if isShadeMode {
+            // Draw Windowshade Background (TITLEBAR.BMP)
             let slice = isKey ? SpriteCatalog.mainShadeBgSelected : SpriteCatalog.mainShadeBg
             if let img = SkinManager.shared.image(for: slice) {
-                context.drawSkinImage(img, in: bounds)
+                context.drawSkinImage(img, in: NSRect(x: 0, y: 0, width: AppConstants.Window.width, height: AppConstants.Window.shadeHeight))
             }
         } else {
-            // 1. Draw main background
+            typealias Layout = AppConstants.MainWindow.Layout
+            
+            // 1. Draw main background (MAIN.BMP 275x116)
             if let bgImg = SkinManager.shared.image(for: SpriteCatalog.mainWindowBackground) {
-                context.drawSkinImage(bgImg, in: bounds)
+                context.drawSkinImage(bgImg, in: NSRect(x: 0, y: 0, width: AppConstants.Window.width, height: AppConstants.Window.height))
             }
             
-            // 2. Draw titlebar
+            // 2. Draw titlebar (TITLEBAR.BMP 275x14)
             let titleSlice = isKey ? SpriteCatalog.titleBarSelected : SpriteCatalog.titleBarNormal
             if let titleImg = SkinManager.shared.image(for: titleSlice) {
                 context.drawSkinImage(titleImg, in: NSRect(x: 0, y: 0, width: AppConstants.Window.width, height: AppConstants.Window.shadeHeight))
             }
             
-            // 3. Draw ClutterBar background (x: 10, y: 22)
+            // 3. Draw ClutterBar background
             if let clutterImg = SkinManager.shared.image(for: SpriteCatalog.clutterBarBg) {
-                context.drawSkinImage(clutterImg, in: NSRect(x: 10, y: 22, width: 8, height: 43))
+                context.drawSkinImage(clutterImg, in: Layout.clutterBarBg)
             }
             
-            // 4. Draw Bitrate & Samplerate (KBPS at x: 111, y: 43; KHZ at x: 156, y: 43)
+            // 4. Draw Bitrate & Samplerate text and Mono/Stereo indicator
             if let meta = AudioEngine.shared.currentMetadata {
-                BitmapFont.draw(string: String(format: "%3d", meta.bitrate), in: context, at: CGPoint(x: 111, y: 43))
-                BitmapFont.draw(string: String(format: "%2d", meta.sampleRate), in: context, at: CGPoint(x: 156, y: 43))
+                BitmapFont.draw(string: String(format: "%3d", meta.bitrate), in: context, at: Layout.bitrate)
+                BitmapFont.draw(string: String(format: "%2d", meta.sampleRate), in: context, at: Layout.sampleRate)
                 
-                // Mono/Stereo indicator (x: 212, y: 41)
                 let stereoSlice = (meta.audioMode == .stereo) ? SpriteCatalog.stereoOn : SpriteCatalog.stereoOff
                 let monoSlice = (meta.audioMode == .mono) ? SpriteCatalog.monoOn : SpriteCatalog.monoOff
                 if let stereoImg = SkinManager.shared.image(for: stereoSlice) {
-                    context.drawSkinImage(stereoImg, in: NSRect(x: 239, y: 41, width: 29, height: 12))
+                    context.drawSkinImage(stereoImg, in: Layout.stereoIndicator)
                 }
                 if let monoImg = SkinManager.shared.image(for: monoSlice) {
-                    context.drawSkinImage(monoImg, in: NSRect(x: 212, y: 41, width: 27, height: 12))
+                    context.drawSkinImage(monoImg, in: Layout.monoIndicator)
                 }
             }
             
-            // 5. Draw Playback Status indicator (x: 26, y: 28)
+            // 5. Draw Playback Status indicator (play/pause/stop symbol and working indicator)
+            let currentStatus = AudioEngine.shared.status
+            if currentStatus == .playing {
+                if let workImg = SkinManager.shared.image(for: SpriteCatalog.indicatorWorking) {
+                    context.drawSkinImage(workImg, in: Layout.workingIndicator)
+                }
+            } else {
+                if let blankImg = SkinManager.shared.image(for: SpriteCatalog.indicatorWorkingBlank) {
+                    context.drawSkinImage(blankImg, in: Layout.workingIndicator)
+                }
+            }
+            
             let statusSlice: SpriteSlice
-            switch AudioEngine.shared.status {
+            switch currentStatus {
             case .playing: statusSlice = SpriteCatalog.indicatorPlaying
             case .paused: statusSlice = SpriteCatalog.indicatorPaused
             case .stopped: statusSlice = SpriteCatalog.indicatorStopped
             }
             if let indImg = SkinManager.shared.image(for: statusSlice) {
-                context.drawSkinImage(indImg, in: NSRect(x: 26, y: 28, width: 9, height: 9))
+                context.drawSkinImage(indImg, in: Layout.playbackIndicator)
             }
         }
     }
@@ -377,7 +414,7 @@ public class MainWindowView: WinampControlView {
     // MARK: - Window Dragging via Background / Titlebar
     public override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 {
-            // Double-click on titlebar toggles shade mode!
+            // Double-click on titlebar toggles windowshade mode!
             let local = convert(event.locationInWindow, from: nil)
             if local.y <= AppConstants.Window.shadeHeight {
                 onToggleShade?()
@@ -388,21 +425,5 @@ public class MainWindowView: WinampControlView {
         guard let win = self.window as? WinampWindow else { return }
         win.startWindowDrag(with: event)
         trackWindowDrag(with: event, in: win)
-    }
-    
-    private func trackWindowDrag(with initialEvent: NSEvent, in win: WinampWindow) {
-        var keepTracking = true
-        while keepTracking {
-            guard let nextEvent = win.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) else { continue }
-            switch nextEvent.type {
-            case .leftMouseDragged:
-                win.continueWindowDrag(with: nextEvent)
-            case .leftMouseUp:
-                keepTracking = false
-                win.endWindowDrag(with: nextEvent)
-            default:
-                break
-            }
-        }
     }
 }

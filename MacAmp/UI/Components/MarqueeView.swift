@@ -2,20 +2,34 @@ import Foundation
 import CoreGraphics
 import AppKit
 
+/// Scrolling text display for current track title and system messages.
+/// Renders using TEXT.BMP (5x6 bitmap font).
+/// When text exceeds marquee width (152px), it pauses for 2.5s at start,
+/// then smoothly scrolls at 2px per tick (0.12s interval) with a looping trailing copy.
 public class MarqueeView: WinampControlView {
-    public var text: String = "WINAMP 2.95 (CLASSIC)" {
+    /// Persistent song title or default text.
+    public var text: String = "MACAMP 2.91 (CLASSIC)" {
         didSet {
-            resetScroll()
-            needsDisplay = true
+            if temporaryMessage == nil {
+                currentDisplayText = text
+                resetScroll()
+                needsDisplay = true
+            }
         }
     }
     
+    /// Currently displayed text in ticker (temporary status message or song title).
+    public private(set) var currentDisplayText: String = "MACAMP 2.91 (CLASSIC)"
+    
+    private var temporaryMessage: String?
+    private var temporaryTimer: Timer?
     private var scrollOffset: CGFloat = 0.0
     private var scrollTimer: Timer?
     private var isPausedAtStart = true
+    private var pauseTicksRemaining: Int = Int(AppConstants.Marquee.pauseDuration / AppConstants.Marquee.scrollInterval)
     
     public init() {
-        super.init(frame: NSRect(x: 111, y: 24, width: AppConstants.Marquee.width, height: AppConstants.Marquee.height))
+        super.init(frame: AppConstants.MainWindow.Layout.marquee)
         startScrollTimer()
     }
     
@@ -23,9 +37,28 @@ public class MarqueeView: WinampControlView {
         fatalError("init(coder:) has not been implemented")
     }
     
+    /// Shows a temporary status message (e.g. Volume, Balance, EQ, Seek) for `duration` seconds,
+    /// then automatically reverts back to displaying the current track title.
+    public func showTemporaryMessage(_ message: String, duration: TimeInterval = 1.5) {
+        temporaryMessage = message
+        currentDisplayText = message
+        resetScroll()
+        needsDisplay = true
+        
+        temporaryTimer?.invalidate()
+        temporaryTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.temporaryMessage = nil
+            self.currentDisplayText = self.text
+            self.resetScroll()
+            self.needsDisplay = true
+        }
+    }
+    
     private func resetScroll() {
         scrollOffset = 0.0
         isPausedAtStart = true
+        pauseTicksRemaining = Int(AppConstants.Marquee.pauseDuration / AppConstants.Marquee.scrollInterval)
     }
     
     private func startScrollTimer() {
@@ -35,10 +68,8 @@ public class MarqueeView: WinampControlView {
         }
     }
     
-    private var pauseTicksRemaining: Int = Int(AppConstants.Marquee.pauseDuration / AppConstants.Marquee.scrollInterval)
-    
     private func tick() {
-        let totalTextWidth = CGFloat(text.count) * AppConstants.Font.charWidth
+        let totalTextWidth = CGFloat(currentDisplayText.count) * AppConstants.Font.charWidth
         guard totalTextWidth > bounds.width else {
             scrollOffset = 0
             needsDisplay = true
@@ -50,7 +81,7 @@ public class MarqueeView: WinampControlView {
             return
         }
         
-        scrollOffset += 2.0 // Scroll 2 pixels per tick
+        scrollOffset += 2.0 // Classic Winamp 2px step
         
         if scrollOffset > totalTextWidth + 20.0 {
             scrollOffset = 0.0
@@ -68,17 +99,18 @@ public class MarqueeView: WinampControlView {
         context.clip(to: bounds)
         
         // Draw primary text
-        BitmapFont.draw(string: text, in: context, at: CGPoint(x: -scrollOffset, y: 0))
+        BitmapFont.draw(string: currentDisplayText, in: context, at: CGPoint(x: -scrollOffset, y: 0))
         
         // If scrolling, loop text
-        let totalTextWidth = CGFloat(text.count) * AppConstants.Font.charWidth
+        let totalTextWidth = CGFloat(currentDisplayText.count) * AppConstants.Font.charWidth
         if scrollOffset > 0 {
             let loopedX = totalTextWidth + 20.0 - scrollOffset
-            BitmapFont.draw(string: text, in: context, at: CGPoint(x: loopedX, y: 0))
+            BitmapFont.draw(string: currentDisplayText, in: context, at: CGPoint(x: loopedX, y: 0))
         }
     }
     
     deinit {
         scrollTimer?.invalidate()
+        temporaryTimer?.invalidate()
     }
 }

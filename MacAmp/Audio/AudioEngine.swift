@@ -34,6 +34,7 @@ public class AudioEngine {
     
     // Playback state
     private var audioFile: AVAudioFile?
+    private var currentSecurityScopedURL: URL?
     private var fileDuration: TimeInterval = 0
     private var sampleRate: Double = 44100
     private var startFrameOffset: AVAudioFramePosition = 0
@@ -62,6 +63,10 @@ public class AudioEngine {
     private init() {
         setupGraph()
         setupEQ()
+    }
+    
+    deinit {
+        currentSecurityScopedURL?.stopAccessingSecurityScopedResource()
     }
     
     private func setupGraph() {
@@ -109,40 +114,51 @@ public class AudioEngine {
     
     // MARK: - Track Loading
     public func load(url: URL) async throws -> TrackMetadata {
-        let file = try AVAudioFile(forReading: url)
+        if let old = currentSecurityScopedURL {
+            old.stopAccessingSecurityScopedResource()
+            currentSecurityScopedURL = nil
+        }
+        if url.isFileURL && url.startAccessingSecurityScopedResource() {
+            currentSecurityScopedURL = url
+        }
+        
+        let localURL: URL
+        if !url.isFileURL {
+            localURL = try await downloadRemoteAudio(from: url)
+        } else {
+            localURL = url
+        }
+        
+        let file = try AVAudioFile(forReading: localURL)
         self.audioFile = file
         self.sampleRate = file.processingFormat.sampleRate
-        self.fileDuration = Double(file.length) / sampleRate
-        self.startFrameOffset = 0
-        self.currentTrackTime = 0
         
-        // Extract metadata (ID3 / AVAsset)
-        let asset = AVURLAsset(url: url)
-        let duration = Double(file.length) / sampleRate
-        
-        var title = url.deletingPathExtension().lastPathComponent
-        var artist = "Unknown Artist"
-        
-        if let metadata = try? await asset.load(.metadata) {
-            for item in metadata {
-                if let commonKey = item.commonKey?.rawValue {
-                    if commonKey == "title", let str = try? await item.load(.stringValue) {
-                        title = str
-                    } else if commonKey == "artist", let str = try? await item.load(.stringValue) {
-                        artist = str
-                    }
-                }
-            }
+        var duration: TimeInterval = 0
+        if file.processingFormat.sampleRate > 0 && file.length > 0 {
+            duration = Double(file.length) / file.processingFormat.sampleRate
         }
+        
+        // Extract metadata and duration asynchronously using unified TrackItem resolver
+        let (resolvedDur, artist, title) = await TrackItem.resolveMetadataAsync(from: localURL)
+        if resolvedDur > 0 {
+            duration = resolvedDur
+        }
+        
+        let finalTitle = (title != localURL.deletingPathExtension().lastPathComponent) ? title : (url.lastPathComponent.isEmpty ? (url.host ?? url.absoluteString) : url.lastPathComponent)
+        let finalArtist = (artist != "Unknown Artist") ? artist : (url.isFileURL ? "Unknown Artist" : "Internet Stream")
         
         let channels = file.processingFormat.channelCount
         let channelMode: AudioChannelMode = channels > 1 ? .stereo : .mono
-        let approxBitrate = Int((Double(file.length * 2 * Int64(channels)) / duration) * 8 / 1000)
+        let approxBitrate = duration > 0 ? Int((Double(file.length * 2 * Int64(channels)) / duration) * 8 / 1000) : 128
+        
+        self.fileDuration = duration
+        self.startFrameOffset = 0
+        self.currentTrackTime = 0
         
         let meta = TrackMetadata(
             url: url,
-            title: title,
-            artist: artist,
+            title: finalTitle,
+            artist: finalArtist,
             duration: duration,
             bitrate: max(128, min(320, approxBitrate)),
             sampleRate: Int(sampleRate / 1000),
@@ -152,9 +168,39 @@ public class AudioEngine {
         return meta
     }
     
+    private func downloadRemoteAudio(from url: URL) async throws -> URL {
+        let (tempURL, response) = try await URLSession.shared.download(from: url)
+        let cacheDir = FileManager.default.temporaryDirectory.appendingPathComponent("MacAmp_RemoteCache")
+        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        
+        var ext = url.pathExtension
+        if ext.isEmpty, let suggested = response.suggestedFilename, !URL(fileURLWithPath: suggested).pathExtension.isEmpty {
+            ext = URL(fileURLWithPath: suggested).pathExtension
+        }
+        if ext.isEmpty {
+            ext = "mp3"
+        }
+        
+        let targetURL = cacheDir.appendingPathComponent("\(UUID().uuidString).\(ext)")
+        try? FileManager.default.removeItem(at: targetURL)
+        try FileManager.default.moveItem(at: tempURL, to: targetURL)
+        return targetURL
+    }
+    
     // MARK: - Playback Control
     public func play() {
         guard let file = audioFile else { return }
+        
+        // If resuming from pause, seamlessly unpause playerNode and timer
+        if status == .paused {
+            if !engine.isRunning {
+                try? engine.start()
+            }
+            playerNode.play()
+            status = .playing
+            startTimer()
+            return
+        }
         
         playbackGeneration += 1
         let gen = playbackGeneration
@@ -164,8 +210,9 @@ public class AudioEngine {
             try? engine.start()
         }
         
+        let totalFrames = (file.length > 0) ? file.length : AVAudioFramePosition(fileDuration * sampleRate)
         let startFrame = AVAudioFramePosition(max(0, min(currentTrackTime, fileDuration)) * sampleRate)
-        let frameCount = AVAudioFrameCount(max(0, file.length - startFrame))
+        let frameCount = AVAudioFrameCount(max(0, totalFrames - startFrame))
         guard frameCount > 0 else {
             handlePlaybackCompletion()
             return
@@ -189,7 +236,7 @@ public class AudioEngine {
         guard status == .playing else { return }
         currentTrackTime = currentTime
         playbackGeneration += 1
-        playerNode.stop()
+        playerNode.pause()
         status = .paused
         playbackTimer?.invalidate()
         playbackTimer = nil
@@ -241,18 +288,22 @@ public class AudioEngine {
         let gen = playbackGeneration
         playerNode.stop()
         
+        let totalFrames = (file.length > 0) ? file.length : AVAudioFramePosition(fileDuration * sampleRate)
         let targetFrame = AVAudioFramePosition(clampedTime * sampleRate)
-        let frameCount = AVAudioFrameCount(max(0, file.length - targetFrame))
+        let frameCount = AVAudioFrameCount(max(0, totalFrames - targetFrame))
         startFrameOffset = targetFrame
+        
+        if frameCount > 0 {
+            playerNode.scheduleSegment(file, startingFrame: targetFrame, frameCount: frameCount, at: nil) { [weak self] in
+                DispatchQueue.main.async {
+                    guard let self = self, self.playbackGeneration == gen else { return }
+                    self.handlePlaybackCompletion()
+                }
+            }
+        }
         
         if status == .playing {
             if frameCount > 0 {
-                playerNode.scheduleSegment(file, startingFrame: targetFrame, frameCount: frameCount, at: nil) { [weak self] in
-                    DispatchQueue.main.async {
-                        guard let self = self, self.playbackGeneration == gen else { return }
-                        self.handlePlaybackCompletion()
-                    }
-                }
                 playerNode.play()
                 startTimer()
             } else {

@@ -18,6 +18,7 @@
 		AAB9424AAEB5E85C369960F9 /* SkinSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0F3341BC91CC5389B38D7A /* SkinSlider.swift */; };
 		AA8C8E891E77A251D68E6054 /* TimeDisplayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA6E4B1CEB17358BCB77937 /* TimeDisplayView.swift */; };
 		AAA349D14C28E55D8EB21E35 /* VisualizerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA72A18D3956BE55E2989872 /* VisualizerView.swift */; };
+		AA8D8CCC061DB657208AD691 /* RegionParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1F33C7BFF21C5DFFA70857 /* RegionParser.swift */; };
 		AA8BF893901A485D189E84F9 /* SkinLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA4627C7045CDF506FB23B7A /* SkinLoader.swift */; };
 		AA8E06ACA27F6157F6B02552 /* SkinManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9A6639CAE2B651F58D1EA5 /* SkinManager.swift */; };
 		AA06D528091F6C5F668C19FA /* SkinModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA560C0BAB74DB5D70B89CE5 /* SkinModel.swift */; };
@@ -33,7 +34,6 @@
 		AA3C615651677658C9AE8BC3 /* FFTAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA962E83A0FAE25570805F4F /* FFTAnalyzer.swift */; };
 		AA7915404346F35EF3A845E4 /* WinampWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAE9F927208E8E5D3EA7E7A3 /* WinampWindow.swift */; };
 		AA18E74F7E8CB5528B921B69 /* WindowLayoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA93E0F3DA84105657AB1CCA /* WindowLayoutManager.swift */; };
-		AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */ = {isa = PBXBuildFile; fileRef = AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */; };
 		AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */ = {isa = PBXBuildFile; fileRef = AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */; };
 		BDC069482B887D910009C001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDC069472B887D910009C001 /* Assets.xcassets */; };
 		BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDC0694A2B887D910009C001 /* Preview Assets.xcassets */; };
@@ -51,6 +51,7 @@
 		AA0F3341BC91CC5389B38D7A /* SkinSlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SkinSlider.swift"; sourceTree = "<group>"; };
 		AAA6E4B1CEB17358BCB77937 /* TimeDisplayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TimeDisplayView.swift"; sourceTree = "<group>"; };
 		AA72A18D3956BE55E2989872 /* VisualizerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VisualizerView.swift"; sourceTree = "<group>"; };
+		AA1F33C7BFF21C5DFFA70857 /* RegionParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RegionParser.swift"; sourceTree = "<group>"; };
 		AA4627C7045CDF506FB23B7A /* SkinLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SkinLoader.swift"; sourceTree = "<group>"; };
 		AA9A6639CAE2B651F58D1EA5 /* SkinManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SkinManager.swift"; sourceTree = "<group>"; };
 		AA560C0BAB74DB5D70B89CE5 /* SkinModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SkinModel.swift"; sourceTree = "<group>"; };
@@ -66,7 +67,6 @@
 		AA962E83A0FAE25570805F4F /* FFTAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FFTAnalyzer.swift"; sourceTree = "<group>"; };
 		AAE9F927208E8E5D3EA7E7A3 /* WinampWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WinampWindow.swift"; sourceTree = "<group>"; };
 		AA93E0F3DA84105657AB1CCA /* WindowLayoutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WindowLayoutManager.swift"; sourceTree = "<group>"; };
-		AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */ = {isa = PBXFileReference; lastKnownFileType = file; path = "base-2.91.wsz"; sourceTree = "<group>"; };
 		AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */ = {isa = PBXFileReference; lastKnownFileType = file; path = "base-2.91.wsz"; sourceTree = "<group>"; };
 		BDC069402B887D8B0009C001 /* MacAmp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacAmp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BDC069472B887D910009C001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -141,6 +141,7 @@
 		AA022DBB0D99275085A5E14E /* Skin */ = {
 			isa = PBXGroup;
 			children = (
+				AA1F33C7BFF21C5DFFA70857 /* RegionParser.swift */,
 				AA4627C7045CDF506FB23B7A /* SkinLoader.swift */,
 				AA9A6639CAE2B651F58D1EA5 /* SkinManager.swift */,
 				AA560C0BAB74DB5D70B89CE5 /* SkinModel.swift */,
@@ -293,7 +294,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */,
-				AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */,
+
 				BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */,
 				BDC069482B887D910009C001 /* Assets.xcassets in Resources */,
 			);
@@ -317,6 +318,7 @@
 				AAB9424AAEB5E85C369960F9 /* SkinSlider.swift in Sources */,
 				AA8C8E891E77A251D68E6054 /* TimeDisplayView.swift in Sources */,
 				AAA349D14C28E55D8EB21E35 /* VisualizerView.swift in Sources */,
+				AA8D8CCC061DB657208AD691 /* RegionParser.swift in Sources */,
 				AA8BF893901A485D189E84F9 /* SkinLoader.swift in Sources */,
 				AA8E06ACA27F6157F6B02552 /* SkinManager.swift in Sources */,
 				AA06D528091F6C5F668C19FA /* SkinModel.swift in Sources */,

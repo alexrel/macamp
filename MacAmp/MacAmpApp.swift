@@ -12,11 +12,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        for (_, window) in WindowLayoutManager.shared.windows {
-            window.deminiaturize(nil)
-            window.orderFront(nil)
+        if let main = PlayerCoordinator.shared.mainWindow, main.isMiniaturized {
+            PlayerCoordinator.shared.isDeminiaturizing = true
+            main.deminiaturize(nil)
+        } else {
+            PlayerCoordinator.shared.bringAllWindowsToFront()
         }
         return true
+    }
+    
+    func applicationDidBecomeActive(_ notification: Notification) {
+        if let main = PlayerCoordinator.shared.mainWindow, !main.isMiniaturized, !PlayerCoordinator.shared.isDeminiaturizing {
+            PlayerCoordinator.shared.bringAllWindowsToFront()
+        }
     }
     
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
@@ -24,7 +32,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let url = URL(fileURLWithPath: file)
             let ext = url.pathExtension.lowercased()
             if ext == "wsz" || ext == "zip" {
-                SkinManager.shared.loadSkin(from: url)
+                if let installed = SkinManager.shared.installSkin(from: url) {
+                    PersistenceManager.shared.state.activeSkinPath = installed.path
+                    PersistenceManager.shared.saveSession()
+                }
             } else if ext == "m3u" || ext == "pls" {
                 let tracks = PlaylistIO.loadPlaylist(from: url)
                 PlayerCoordinator.shared.playlist.add(tracks: tracks)

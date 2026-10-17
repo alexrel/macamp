@@ -8,7 +8,7 @@ public class WinampWindow: NSWindow {
         self.windowID = windowID
         super.init(
             contentRect: contentRect,
-            styleMask: [.borderless],
+            styleMask: [.borderless, .miniaturizable],
             backing: .buffered,
             defer: false
         )

@@ -56,5 +56,8 @@ fastlane/test_output
 webamp-master/
 ClassicSkins/
 docs/
-skin/
+/skin/
 stuff/
+scratch/
+__pycache__/
+*.pyc

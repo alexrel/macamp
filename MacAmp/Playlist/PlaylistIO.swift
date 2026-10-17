@@ -46,7 +46,7 @@ public enum PlaylistIO {
                 }
                 
                 let title = nextTitle.isEmpty ? trackURL.deletingPathExtension().lastPathComponent : nextTitle
-                let item = TrackItem(url: trackURL, title: title, duration: nextDuration)
+                let item = TrackItem.create(from: trackURL, titleFallback: title, durationFallback: nextDuration)
                 items.append(item)
                 
                 nextTitle = ""
@@ -88,7 +88,7 @@ public enum PlaylistIO {
             let trackURL = path.hasPrefix("/") ? URL(fileURLWithPath: path) : baseURL.appendingPathComponent(path)
             let title = titles[idx] ?? trackURL.deletingPathExtension().lastPathComponent
             let dur = lengths[idx] ?? 0
-            items.append(TrackItem(url: trackURL, title: title, duration: dur))
+            items.append(TrackItem.create(from: trackURL, titleFallback: title, durationFallback: dur))
         }
         
         return items
