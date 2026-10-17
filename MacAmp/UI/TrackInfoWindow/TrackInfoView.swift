@@ -143,6 +143,7 @@ public struct TrackInfoView: View {
         VStack(spacing: 10) {
             // 1. Technical Audio Stream Information Box
             techInfoSection
+                .fixedSize(horizontal: false, vertical: true)
             
             // 2. Tab Strip (ID3v2, ID3v1, Artwork)
             Picker("", selection: $viewModel.selectedTab) {
@@ -152,6 +153,7 @@ public struct TrackInfoView: View {
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 2)
+            .fixedSize(horizontal: false, vertical: true)
             
             // 3. Active Tab Content
             ZStack {
@@ -164,7 +166,7 @@ public struct TrackInfoView: View {
                     artworkSection
                 }
             }
-            .frame(maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             
             // 4. Status message
             if let msg = viewModel.statusMessage {
@@ -174,19 +176,25 @@ public struct TrackInfoView: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 4)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             
             // 5. Bottom Navigation & Action Buttons
             bottomButtonBar
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(14)
-        .frame(width: 530, height: 530)
+        .frame(minWidth: 520, maxWidth: .infinity, minHeight: 490, maxHeight: .infinity)
         .background(winampGray)
     }
     
     // MARK: - Section 1: Audio Technical Info
     private var techInfoSection: some View {
-        GroupBox(label: Text("Audio Stream Information").font(.system(size: 11, weight: .bold))) {
+        GroupBox(
+            label: Text("Audio Stream Information")
+                .font(.system(size: 11, weight: .bold))
+                .padding(.leading, 8)
+        ) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text("File:")
@@ -225,7 +233,7 @@ public struct TrackInfoView: View {
                     }
                 }
             }
-            .padding(4)
+            .padding(6)
         }
     }
     
@@ -245,24 +253,46 @@ public struct TrackInfoView: View {
         GroupBox(
             label: Toggle("Include ID3v2 Tag", isOn: $viewModel.metadata.id3v2.hasTag)
                 .font(.system(size: 11, weight: .bold))
+                .padding(.leading, 8)
         ) {
             ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 6) {
+                VStack(spacing: 7) {
                     labeledInput(label: "Title:", text: $viewModel.metadata.id3v2.title)
                     labeledInput(label: "Artist:", text: $viewModel.metadata.id3v2.artist)
                     labeledInput(label: "Album:", text: $viewModel.metadata.id3v2.album)
                     
-                    HStack(spacing: 12) {
-                        labeledInput(label: "Year:", text: $viewModel.metadata.id3v2.year, width: 80)
-                        labeledInput(label: "Track #:", text: $viewModel.metadata.id3v2.trackNumber, width: 70)
-                        labeledInput(label: "Disc #:", text: $viewModel.metadata.id3v2.discNumber, width: 70)
+                    HStack(spacing: 8) {
+                        Text("Year:")
+                            .font(.system(size: 11, weight: .medium))
+                            .frame(width: 88, alignment: .trailing)
+                        TextField("", text: $viewModel.metadata.id3v2.year)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11))
+                            .frame(width: 65)
+                        
+                        Text("Track #:")
+                            .font(.system(size: 11, weight: .medium))
+                            .padding(.leading, 6)
+                        TextField("", text: $viewModel.metadata.id3v2.trackNumber)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11))
+                            .frame(width: 60)
+                        
+                        Text("Disc #:")
+                            .font(.system(size: 11, weight: .medium))
+                            .padding(.leading, 6)
+                        TextField("", text: $viewModel.metadata.id3v2.discNumber)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11))
+                            .frame(width: 60)
+                        
                         Spacer()
                     }
                     
                     HStack(spacing: 8) {
                         Text("Genre:")
                             .font(.system(size: 11, weight: .medium))
-                            .frame(width: 80, alignment: .trailing)
+                            .frame(width: 88, alignment: .trailing)
                         TextField("", text: $viewModel.metadata.id3v2.genre)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(size: 11))
@@ -275,9 +305,9 @@ public struct TrackInfoView: View {
                             }
                         } label: {
                             Text("Standard ▼")
-                                .font(.system(size: 10))
+                                .font(.system(size: 11))
                         }
-                        .frame(width: 95)
+                        .frame(width: 105)
                     }
                     
                     labeledInput(label: "Composer:", text: $viewModel.metadata.id3v2.composer)
@@ -289,18 +319,21 @@ public struct TrackInfoView: View {
                     HStack(alignment: .top, spacing: 8) {
                         Text("Comment:")
                             .font(.system(size: 11, weight: .medium))
-                            .frame(width: 80, alignment: .trailing)
+                            .frame(width: 88, alignment: .trailing)
                             .padding(.top, 4)
                         TextField("", text: $viewModel.metadata.id3v2.comment)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(size: 11))
                     }
                 }
-                .padding(4)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .opacity(viewModel.metadata.id3v2.hasTag ? 1.0 : 0.4)
             .disabled(!viewModel.metadata.id3v2.hasTag)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     // MARK: - Section 3: ID3v1 Tag Editor
@@ -308,30 +341,31 @@ public struct TrackInfoView: View {
         GroupBox(
             label: Toggle("Include ID3v1 Tag", isOn: $viewModel.metadata.id3v1.hasTag)
                 .font(.system(size: 11, weight: .bold))
+                .padding(.leading, 8)
         ) {
             VStack(spacing: 8) {
                 labeledInput(label: "Title (30):", text: $viewModel.metadata.id3v1.title, maxLen: 30)
                 labeledInput(label: "Artist (30):", text: $viewModel.metadata.id3v1.artist, maxLen: 30)
                 labeledInput(label: "Album (30):", text: $viewModel.metadata.id3v1.album, maxLen: 30)
                 
-                HStack(spacing: 12) {
-                    labeledInput(label: "Year (4):", text: $viewModel.metadata.id3v1.year, width: 80, maxLen: 4)
+                HStack(spacing: 8) {
+                    labeledInput(label: "Year (4):", text: $viewModel.metadata.id3v1.year, width: 65, maxLen: 4)
                     
-                    HStack(spacing: 4) {
-                        Text("Track #:")
-                            .font(.system(size: 11, weight: .medium))
-                        TextField("", value: $viewModel.metadata.id3v1.trackNumber, formatter: NumberFormatter())
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11))
-                            .frame(width: 50)
-                    }
+                    Text("Track #:")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.leading, 6)
+                    TextField("", value: $viewModel.metadata.id3v1.trackNumber, formatter: NumberFormatter())
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11))
+                        .frame(width: 50)
+                    
                     Spacer()
                 }
                 
                 HStack(spacing: 8) {
                     Text("Genre:")
                         .font(.system(size: 11, weight: .medium))
-                        .frame(width: 80, alignment: .trailing)
+                        .frame(width: 88, alignment: .trailing)
                     
                     Picker("", selection: $viewModel.metadata.id3v1.genreIndex) {
                         Text("(None)").tag(UInt8(255))
@@ -351,87 +385,148 @@ public struct TrackInfoView: View {
                         viewModel.copyFromID3v1()
                     }
                     .font(.system(size: 11))
+                    .padding(.leading, 88 + 8)
                     
                     Spacer()
                 }
             }
-            .padding(6)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .opacity(viewModel.metadata.id3v1.hasTag ? 1.0 : 0.4)
             .disabled(!viewModel.metadata.id3v1.hasTag)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     // MARK: - Section 4: Artwork / Cover Art
     private var artworkSection: some View {
-        GroupBox(label: Text("Album Cover Artwork").font(.system(size: 11, weight: .bold))) {
-            HStack(spacing: 20) {
-                // Cover preview
+        GroupBox(
+            label: Text("Album Cover Artwork")
+                .font(.system(size: 11, weight: .bold))
+                .padding(.leading, 8)
+        ) {
+            HStack(alignment: .top, spacing: 20) {
+                // Cover preview box
                 ZStack {
-                    Rectangle()
-                        .fill(Color.black.opacity(0.1))
-                        .frame(width: 160, height: 160)
-                        .overlay(Rectangle().stroke(darkBorder, lineWidth: 1))
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.black.opacity(0.06))
+                        .frame(width: 150, height: 150)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                        )
                     
                     if let art = viewModel.metadata.artwork, let nsImg = art.image {
                         Image(nsImage: nsImg)
                             .resizable()
+                            .interpolation(.high)
                             .aspectRatio(contentMode: .fit)
-                            .frame(width: 156, height: 156)
+                            .frame(maxWidth: 144, maxHeight: 144)
+                            .cornerRadius(2)
                     } else {
-                        VStack(spacing: 4) {
+                        VStack(spacing: 5) {
+                            Image(systemName: "photo")
+                                .font(.system(size: 32))
+                                .foregroundColor(.secondary.opacity(0.6))
                             Text("No Artwork")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.system(size: 11, weight: .bold))
                                 .foregroundColor(.secondary)
                             Text("Embedded cover absent")
-                                .font(.system(size: 10))
+                                .font(.system(size: 9))
                                 .foregroundColor(.secondary)
                         }
                     }
                 }
+                .padding(.top, 4)
                 
                 // Artwork Details and Actions
-                VStack(alignment: .leading, spacing: 10) {
-                    if let art = viewModel.metadata.artwork {
-                        Text("Type: \(art.mimeType)")
-                            .font(.system(size: 11))
-                        Text("Size: \(art.imageData.count / 1024) KB")
-                            .font(.system(size: 11))
-                        if let nsImg = art.image {
-                            Text("Dimensions: \(Int(nsImg.size.width)) × \(Int(nsImg.size.height)) px")
-                                .font(.system(size: 11))
-                        }
-                    } else {
-                        Text("No embedded picture in ID3 tag.")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
+                VStack(alignment: .leading, spacing: 14) {
+                    // Metadata Info Block
                     VStack(alignment: .leading, spacing: 6) {
-                        Button("Load Artwork...") {
-                            viewModel.loadArtwork()
+                        if let art = viewModel.metadata.artwork {
+                            HStack(spacing: 6) {
+                                Text("Format:")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 75, alignment: .leading)
+                                Text(art.mimeType)
+                                    .font(.system(size: 11))
+                            }
+                            
+                            HStack(spacing: 6) {
+                                Text("File Size:")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 75, alignment: .leading)
+                                Text(formatArtworkSize(art.imageData.count))
+                                    .font(.system(size: 11))
+                            }
+                            
+                            if let nsImg = art.image {
+                                HStack(spacing: 6) {
+                                    Text("Dimensions:")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(.secondary)
+                                        .frame(width: 75, alignment: .leading)
+                                    Text("\(Int(nsImg.size.width)) × \(Int(nsImg.size.height)) px")
+                                        .font(.system(size: 11))
+                                }
+                            }
+                        } else {
+                            Text("No embedded picture in ID3 tag.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .padding(.top, 4)
+                        }
+                    }
+                    .frame(height: 55, alignment: .topLeading)
+                    
+                    Divider()
+                        .frame(width: 200)
+                    
+                    // Action Buttons (Raised directly under details)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button(action: { viewModel.loadArtwork() }) {
+                            HStack {
+                                Image(systemName: "folder")
+                                Text("Load Artwork...")
+                            }
+                            .frame(width: 140, alignment: .leading)
                         }
                         .font(.system(size: 11))
                         
-                        Button("Export Artwork...") {
-                            viewModel.exportArtwork()
+                        Button(action: { viewModel.exportArtwork() }) {
+                            HStack {
+                                Image(systemName: "square.and.arrow.down")
+                                Text("Export Artwork...")
+                            }
+                            .frame(width: 140, alignment: .leading)
                         }
                         .font(.system(size: 11))
                         .disabled(viewModel.metadata.artwork == nil)
                         
-                        Button("Remove") {
-                            viewModel.removeArtwork()
+                        Button(action: { viewModel.removeArtwork() }) {
+                            HStack {
+                                Image(systemName: "trash")
+                                Text("Remove")
+                            }
+                            .frame(width: 140, alignment: .leading)
                         }
                         .font(.system(size: 11))
                         .foregroundColor(.red)
                         .disabled(viewModel.metadata.artwork == nil)
                     }
+                    
+                    Spacer()
                 }
+                .padding(.top, 4)
+                
                 Spacer()
             }
-            .padding(10)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     // MARK: - Bottom Controls Bar
@@ -483,12 +578,21 @@ public struct TrackInfoView: View {
         .padding(.top, 4)
     }
     
-    // MARK: - Helper Views
+    // MARK: - Helper Views & Formatting
+    private func formatArtworkSize(_ bytes: Int) -> String {
+        if bytes <= 0 { return "0 bytes" }
+        if bytes < 1024 { return "\(bytes) bytes" }
+        if bytes < 1024 * 1024 {
+            return String(format: "%.1f KB", Double(bytes) / 1024.0)
+        }
+        return String(format: "%.2f MB", Double(bytes) / (1024.0 * 1024.0))
+    }
+    
     private func labeledInput(label: String, text: Binding<String>, width: CGFloat? = nil, maxLen: Int? = nil) -> some View {
         HStack(spacing: 8) {
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .frame(width: 80, alignment: .trailing)
+                .frame(width: 88, alignment: .trailing)
             
             TextField("", text: Binding(
                 get: { text.wrappedValue },

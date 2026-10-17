@@ -7,7 +7,12 @@ public class TrackInfoWindow: NSWindow {
     public static func show(trackIndex: Int) {
         if let existing = sharedController {
             existing.loadTrack(at: trackIndex)
-            existing.window?.makeKeyAndOrderFront(nil)
+            if let win = existing.window {
+                let playerLevel = PlayerCoordinator.shared.mainWindow?.level ?? .normal
+                win.level = (playerLevel == .floating) ? .modalPanel : .floating
+                win.makeKeyAndOrderFront(nil)
+                win.orderFrontRegardless()
+            }
             NSApp.activate(ignoringOtherApps: true)
             return
         }
@@ -15,6 +20,12 @@ public class TrackInfoWindow: NSWindow {
         let controller = TrackInfoWindowController(trackIndex: trackIndex)
         sharedController = controller
         controller.showWindow(nil)
+        if let win = controller.window {
+            let playerLevel = PlayerCoordinator.shared.mainWindow?.level ?? .normal
+            win.level = (playerLevel == .floating) ? .modalPanel : .floating
+            win.makeKeyAndOrderFront(nil)
+            win.orderFrontRegardless()
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 }
@@ -26,14 +37,20 @@ public class TrackInfoWindowController: NSWindowController, NSWindowDelegate {
         self.currentTrackIndex = trackIndex
         
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 530, height: 530),
-            styleMask: [.titled, .closable, .miniaturizable],
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 570),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "MPEG Audio Info Box + ID3 Tag Editor"
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 520, height: 490)
         window.center()
+        
+        // Ensure Track Info window always stays on top of player windows
+        let playerLevel = PlayerCoordinator.shared.mainWindow?.level ?? .normal
+        window.level = (playerLevel == .floating) ? .modalPanel : .floating
+        window.hidesOnDeactivate = false
         
         super.init(window: window)
         window.delegate = self
