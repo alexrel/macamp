@@ -47,9 +47,10 @@ public struct AppState: Codable {
     public var playlistShowExtensions: Bool = false
     public var authenticShuffle: Bool = true
     
-    // Preferences - Audio
+    // Preferences - Audio & Hotkeys
     public var audioFadeOutDurationMs: Double = 200.0
     public var autoGenreEQ: Bool = false
+    public var isGlobalHotkeysEnabled: Bool = true
     
     public init() {}
 }

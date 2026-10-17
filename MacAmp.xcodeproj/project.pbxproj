@@ -39,6 +39,7 @@
 		AAC032D338D42950FB89EE00 /* PlaylistModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6E8F1A02031A5DEFAC3E37 /* PlaylistModel.swift */; };
 		AA8F13D2C914E75D6688E311 /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA27AF03ADE54357D783D64D /* AppConstants.swift */; };
 		AA01006C968B8B5FEA977E7E /* Enums.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA8BEDB521E357539E9F05DE /* Enums.swift */; };
+		AA50FC858AADC05B57B35BD5 /* GlobalHotkeysController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA36A1D975E52D59DCA57075 /* GlobalHotkeysController.swift */; };
 		AA9EF05B9533115EC4B41E8D /* MediaKeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2EE4C01E58DA5839980F70 /* MediaKeyController.swift */; };
 		AA2BBF0F6C992A5E46B7A987 /* PlayerCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAC2BB3C6AE0885E199BF702 /* PlayerCoordinator.swift */; };
 		AAE0CA665F5ECB5A40A155FB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA5EF6CB8C8A2B5ED39134E5 /* AppState.swift */; };
@@ -89,6 +90,7 @@
 		AA6E8F1A02031A5DEFAC3E37 /* PlaylistModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistModel.swift"; sourceTree = "<group>"; };
 		AA27AF03ADE54357D783D64D /* AppConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppConstants.swift"; sourceTree = "<group>"; };
 		AA8BEDB521E357539E9F05DE /* Enums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Enums.swift"; sourceTree = "<group>"; };
+		AA36A1D975E52D59DCA57075 /* GlobalHotkeysController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GlobalHotkeysController.swift"; sourceTree = "<group>"; };
 		AA2EE4C01E58DA5839980F70 /* MediaKeyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MediaKeyController.swift"; sourceTree = "<group>"; };
 		AAC2BB3C6AE0885E199BF702 /* PlayerCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayerCoordinator.swift"; sourceTree = "<group>"; };
 		AA5EF6CB8C8A2B5ED39134E5 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppState.swift"; sourceTree = "<group>"; };
@@ -167,6 +169,7 @@
 			children = (
 				AA27AF03ADE54357D783D64D /* AppConstants.swift */,
 				AA8BEDB521E357539E9F05DE /* Enums.swift */,
+				AA36A1D975E52D59DCA57075 /* GlobalHotkeysController.swift */,
 				AA2EE4C01E58DA5839980F70 /* MediaKeyController.swift */,
 				AAC2BB3C6AE0885E199BF702 /* PlayerCoordinator.swift */,
 			);
@@ -404,6 +407,7 @@
 
 
 
+
 				BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */,
 				BDC069482B887D910009C001 /* Assets.xcassets in Resources */,
 			);
@@ -448,6 +452,7 @@
 				AAC032D338D42950FB89EE00 /* PlaylistModel.swift in Sources */,
 				AA8F13D2C914E75D6688E311 /* AppConstants.swift in Sources */,
 				AA01006C968B8B5FEA977E7E /* Enums.swift in Sources */,
+				AA50FC858AADC05B57B35BD5 /* GlobalHotkeysController.swift in Sources */,
 				AA9EF05B9533115EC4B41E8D /* MediaKeyController.swift in Sources */,
 				AA2BBF0F6C992A5E46B7A987 /* PlayerCoordinator.swift in Sources */,
 				AAE0CA665F5ECB5A40A155FB /* AppState.swift in Sources */,

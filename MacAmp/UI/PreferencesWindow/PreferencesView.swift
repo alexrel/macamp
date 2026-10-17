@@ -15,6 +15,7 @@ public enum PrefTreeItem: String, CaseIterable, Identifiable {
     case display = "Display"
     case titles = "Titles & Fonts"
     case visualization = "Visualization"
+    case hotkeys = "Global Hotkeys"
     case audio = "Playback & Fading"
     case equalizer = "Equalizer"
     case playlist = "Track Display"
@@ -24,7 +25,7 @@ public enum PrefTreeItem: String, CaseIterable, Identifiable {
     
     public var sectionHeader: String {
         switch self {
-        case .display, .titles, .visualization: return "Options"
+        case .display, .titles, .visualization, .hotkeys: return "Options"
         case .audio, .equalizer: return "Audio"
         case .playlist: return "Playlist"
         case .skins: return "Skins"
@@ -171,6 +172,13 @@ public class PreferencesViewModel: ObservableObject {
         }
     }
     
+    // Hotkeys State
+    @Published public var isGlobalHotkeysEnabled: Bool {
+        didSet {
+            GlobalHotkeysController.shared.isEnabled = isGlobalHotkeysEnabled
+        }
+    }
+    
     public init() {
         let state = PersistenceManager.shared.state
         self.isAlwaysOnTop = state.isAlwaysOnTop
@@ -187,6 +195,7 @@ public class PreferencesViewModel: ObservableObject {
         self.authenticShuffle = state.authenticShuffle
         self.audioFadeOutDurationMs = state.audioFadeOutDurationMs
         self.autoGenreEQ = state.autoGenreEQ
+        self.isGlobalHotkeysEnabled = state.isGlobalHotkeysEnabled
         self.visualizerMode = state.visualizerMode
         self.visualizerShowPeaks = state.visualizerShowPeaks
         
@@ -196,7 +205,7 @@ public class PreferencesViewModel: ObservableObject {
     public var selectedCategory: PreferencesCategory {
         get {
             switch selectedTreeItem {
-            case .display, .titles, .visualization: return .titles
+            case .display, .titles, .visualization, .hotkeys: return .titles
             case .skins: return .skins
             case .audio, .equalizer: return .audio
             case .playlist: return .playlist
@@ -331,6 +340,8 @@ public struct PreferencesView: View {
                             titlesSection
                         case .visualization:
                             visualizationSection
+                        case .hotkeys:
+                            hotkeysSection
                         case .audio:
                             audioSection
                         case .equalizer:
@@ -525,6 +536,74 @@ public struct PreferencesView: View {
                         .padding(.leading, 18)
                 }
             }
+        }
+    }
+    
+    // MARK: - Section: Global Hotkeys
+    private var hotkeysSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Win32GroupBox("Global Hotkeys") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Win32Checkbox("Enable Global Hotkeys", isOn: $viewModel.isGlobalHotkeysEnabled)
+                    
+                    Text("Control playback from any application when MacAmp is in background:")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    
+                    VStack(alignment: .leading, spacing: 5) {
+                        hotkeyRow("Play", "Ctrl + Alt + X")
+                        hotkeyRow("Play / Pause", "Ctrl + Alt + C  or  Space")
+                        hotkeyRow("Stop", "Ctrl + Alt + V")
+                        hotkeyRow("Previous Track", "Ctrl + Alt + Z  or  ←")
+                        hotkeyRow("Next Track", "Ctrl + Alt + B  or  →")
+                        hotkeyRow("Volume Up", "Ctrl + Alt + ↑")
+                        hotkeyRow("Volume Down", "Ctrl + Alt + ↓")
+                        hotkeyRow("Toggle Mute", "Ctrl + Alt + M")
+                    }
+                    .padding(6)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .modifier(Win32SunkenBorder())
+                }
+            }
+            
+            Win32GroupBox("Media Keys & Permissions") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("• Hardware media keys (F7, F8, F9, AirPods & Touch Bar) work globally.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    
+                    HStack {
+                        Text("Accessibility Status:")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(Win32Colors.text)
+                        
+                        if GlobalHotkeysController.shared.isAccessibilityTrusted {
+                            Text("Granted ✓")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.green)
+                        } else {
+                            Text("Permission needed for background Ctrl+Alt keys")
+                                .font(.system(size: 11))
+                                .foregroundColor(.orange)
+                            Win32Button("Grant Access...", width: 105, height: 21) {
+                                GlobalHotkeysController.shared.requestAccessibilityPermission()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private func hotkeyRow(_ action: String, _ shortcut: String) -> some View {
+        HStack {
+            Text(action)
+                .font(.system(size: 11))
+                .foregroundColor(Win32Colors.text)
+            Spacer()
+            Text(shortcut)
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundColor(Win32Colors.text)
         }
     }
     

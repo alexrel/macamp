@@ -589,16 +589,10 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             }
             return true
         case AppConstants.KeyCodes.upArrow: // Volume up 5%
-            let newVol = min(1.0, audioEngine.volume + 0.05)
-            audioEngine.setVolume(newVol)
-            mainView.volumeSlider.value = newVol
-            persistence.state.volume = newVol
+            increaseVolume(by: 0.05)
             return true
         case AppConstants.KeyCodes.downArrow: // Volume down 5%
-            let newVol = max(0.0, audioEngine.volume - 0.05)
-            audioEngine.setVolume(newVol)
-            mainView.volumeSlider.value = newVol
-            persistence.state.volume = newVol
+            decreaseVolume(by: 0.05)
             return true
         case AppConstants.KeyCodes.space: // Toggle Pause/Resume
             audioEngine.togglePause()
@@ -1155,6 +1149,43 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     
     @objc public func handleNext() {
         playNext()
+    }
+    
+    private var preMuteVolume: Double = 0.5
+    
+    @objc public func increaseVolume(by delta: Double = 0.05) {
+        let newVol = min(1.0, audioEngine.volume + delta)
+        audioEngine.setVolume(newVol)
+        mainView.volumeSlider.value = newVol
+        persistence.state.volume = newVol
+        mainView.marquee.showTemporaryMessage("Volume: \(Int(newVol * 100))%")
+        mainView.needsDisplay = true
+    }
+    
+    @objc public func decreaseVolume(by delta: Double = 0.05) {
+        let newVol = max(0.0, audioEngine.volume - delta)
+        audioEngine.setVolume(newVol)
+        mainView.volumeSlider.value = newVol
+        persistence.state.volume = newVol
+        mainView.marquee.showTemporaryMessage("Volume: \(Int(newVol * 100))%")
+        mainView.needsDisplay = true
+    }
+    
+    @objc public func toggleMute() {
+        if audioEngine.volume > 0.001 {
+            preMuteVolume = audioEngine.volume
+            audioEngine.setVolume(0.0)
+            mainView.volumeSlider.value = 0.0
+            persistence.state.volume = 0.0
+            mainView.marquee.showTemporaryMessage("Mute: ON")
+        } else {
+            let restored = (preMuteVolume > 0.001) ? preMuteVolume : 0.5
+            audioEngine.setVolume(restored)
+            mainView.volumeSlider.value = restored
+            persistence.state.volume = restored
+            mainView.marquee.showTemporaryMessage("Volume: \(Int(restored * 100))%")
+        }
+        mainView.needsDisplay = true
     }
     
     @objc public func handleToggleRepeat() {

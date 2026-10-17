@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainMenuManager.shared.setupMenu()
         StatusBarManager.shared.setup()
         MediaKeyController.shared.setup()
+        GlobalHotkeysController.shared.setup()
         PlayerCoordinator.shared.start()
         NSApp.activate(ignoringOtherApps: true)
         
