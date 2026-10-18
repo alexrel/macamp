@@ -420,6 +420,39 @@ public class AudioEngine {
         onTimeUpdate?(clampedTime)
     }
     
+    /// Primes the audio engine in a paused state at a specific timestamp without audible playback.
+    /// Used for restoring playback session state across application restarts.
+    public func preparePaused(at time: TimeInterval) {
+        guard !isStreaming else { return }
+        let clampedTime = max(0, min(time, fileDuration > 0 ? fileDuration : time))
+        currentTrackTime = clampedTime
+        
+        playbackGeneration += 1
+        let gen = playbackGeneration
+        playerNode.stop()
+        
+        if let file = audioFile {
+            let totalFrames = (file.length > 0) ? file.length : AVAudioFramePosition(fileDuration * sampleRate)
+            let targetFrame = AVAudioFramePosition(clampedTime * sampleRate)
+            let frameCount = AVAudioFrameCount(max(0, totalFrames - targetFrame))
+            startFrameOffset = targetFrame
+            
+            if frameCount > 0 {
+                playerNode.scheduleSegment(file, startingFrame: targetFrame, frameCount: frameCount, at: nil) { [weak self] in
+                    DispatchQueue.main.async {
+                        guard let self = self, self.playbackGeneration == gen else { return }
+                        self.handlePlaybackCompletion()
+                    }
+                }
+            }
+        }
+        
+        status = .paused
+        playbackTimer?.invalidate()
+        playbackTimer = nil
+        onTimeUpdate?(clampedTime)
+    }
+    
     private func handlePlaybackCompletion() {
         if status == .playing {
             stop()

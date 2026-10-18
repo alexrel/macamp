@@ -345,4 +345,34 @@ testGroup("Retro Visualizer Studio & Presets") {
     assertTrue(windowIDs.contains(.playlist), "WindowID contains .playlist")
 }
 
+// 7. Playback State & Position Persistence Tests
+testGroup("Playback State & Position Persistence") {
+    var state = AppState()
+    state.lastPlaybackState = .paused
+    state.lastPlayedTrackTime = 42.5
+    state.lastPlayedTrackIndex = 2
+    state.lastPlayedTrackURL = "file:///test/track.mp3"
+    
+    let encoder = JSONEncoder()
+    let decoder = JSONDecoder()
+    
+    let encoded = try encoder.encode(state)
+    let decoded = try decoder.decode(AppState.self, from: encoded)
+    
+    assertEqual(decoded.lastPlaybackState, .paused, "lastPlaybackState should be .paused")
+    assertEqual(decoded.lastPlayedTrackTime, 42.5, "lastPlayedTrackTime should match")
+    assertEqual(decoded.lastPlayedTrackIndex, 2, "lastPlayedTrackIndex should match")
+    assertEqual(decoded.lastPlayedTrackURL, "file:///test/track.mp3", "lastPlayedTrackURL should match")
+    
+    // Test AudioEngine preparePaused logic (status & currentTime)
+    let engine = AudioEngine.shared
+    engine.preparePaused(at: 15.0)
+    // Note: without a loaded audio file, fileDuration is 0 so clamped time is 0, but status transitions to .paused
+    assertEqual(engine.status, .paused, "AudioEngine should be in .paused state after preparePaused")
+    
+    engine.stop()
+    assertEqual(engine.status, .stopped, "AudioEngine should be stopped after stop()")
+    assertEqual(engine.currentTime, 0.0, "AudioEngine currentTime should be 0 after stop()")
+}
+
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")

@@ -147,6 +147,14 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         // 1. Audio Engine Callbacks
         audioEngine.onStatusUpdate = { [weak self] status in
             guard let self else { return }
+            self.persistence.state.lastPlaybackState = status
+            self.persistence.state.lastPlayedTrackTime = self.audioEngine.currentTime
+            if let curIdx = self.playlist.currentIndex, curIdx < self.playlist.tracks.count {
+                self.persistence.state.lastPlayedTrackIndex = curIdx
+                self.persistence.state.lastPlayedTrackURL = self.playlist.tracks[curIdx].url.absoluteString
+            }
+            self.persistence.saveSession()
+            
             self.mainView.timeDisplay.status = status
             self.plView.status = status
             self.updateBlinkState(for: status)
@@ -185,7 +193,10 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         
         mainView.seekSlider.onTrackingEnded = { [weak self] val in
             guard let self, let meta = self.audioEngine.currentMetadata, meta.duration > 0 else { return }
-            self.audioEngine.seek(to: val * meta.duration)
+            let seekSec = val * meta.duration
+            self.audioEngine.seek(to: seekSec)
+            self.persistence.state.lastPlayedTrackTime = seekSec
+            self.persistence.saveSession()
         }
         
         audioEngine.onSpectralDataUpdate = { [weak self] bins in
@@ -439,6 +450,10 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                 await MainActor.run {
                     if let idx = self.playlist.tracks.firstIndex(where: { $0.id == track.id }) {
                         self.playlist.currentIndex = idx
+                        self.persistence.state.lastPlayedTrackIndex = idx
+                        self.persistence.state.lastPlayedTrackURL = track.url.absoluteString
+                        self.persistence.state.lastPlayedTrackTime = 0.0
+                        self.persistence.saveSession()
                     }
                     self.playlist.updateTrack(url: track.url, duration: meta.duration, artist: meta.artist, title: meta.title)
                     self.mainView.marquee.text = "\(meta.artist) - \(meta.title)"
@@ -460,6 +475,59 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                 await MainActor.run {
                     self.mainView.marquee.showTemporaryMessage("Stream Error")
                 }
+            }
+        }
+    }
+    
+    /// Primes audio engine and displays in paused state at a specific position without playing out loud.
+    public func preparePausedPlayback(track: TrackItem, at savedTime: TimeInterval) {
+        if !track.url.isFileURL {
+            mainView.marquee.text = "\(track.artist) - \(track.title)"
+            mainView.marquee.resetScroll()
+            mainView.timeDisplay.totalDuration = track.duration
+            mainView.timeDisplay.currentTime = savedTime
+            mainView.timeDisplay.status = .paused
+            mainView.seekSlider.isThumbHidden = false
+            mainView.seekSlider.value = track.duration > 0 ? (savedTime / track.duration) : 0.0
+            plView.currentTime = savedTime
+            plView.status = .paused
+            updateBlinkState(for: .paused)
+            mainView.needsDisplay = true
+            plView.needsDisplay = true
+            return
+        }
+        
+        Task {
+            do {
+                let meta = try await audioEngine.load(url: track.url)
+                await MainActor.run {
+                    self.playlist.updateTrack(url: track.url, duration: meta.duration, artist: meta.artist, title: meta.title)
+                    self.audioEngine.preparePaused(at: savedTime)
+                    
+                    self.mainView.marquee.text = "\(meta.artist) - \(meta.title)"
+                    self.mainView.marquee.resetScroll()
+                    self.mainView.timeDisplay.totalDuration = meta.duration
+                    self.mainView.timeDisplay.currentTime = savedTime
+                    self.mainView.timeDisplay.status = .paused
+                    self.mainView.seekSlider.isThumbHidden = false
+                    self.mainView.seekSlider.value = meta.duration > 0 ? (savedTime / meta.duration) : 0.0
+                    
+                    self.plView.currentTime = savedTime
+                    self.plView.status = .paused
+                    self.updateBlinkState(for: .paused)
+                    
+                    self.mainView.needsDisplay = true
+                    self.plView.needsDisplay = true
+                    
+                    MediaKeyController.shared.updateNowPlayingInfo()
+                    StatusBarManager.shared.updateStatus()
+                    
+                    if self.persistence.state.isEqAuto {
+                        self.applyAutoEQ(for: track.url)
+                    }
+                }
+            } catch {
+                print("Failed to preload paused track \(track.url): \(error)")
             }
         }
     }
@@ -1195,11 +1263,16 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     
     public func seek(to time: TimeInterval) {
         audioEngine.seek(to: time)
+        persistence.state.lastPlayedTrackTime = time
+        persistence.saveSession()
         MediaKeyController.shared.updateNowPlayingInfo()
     }
     
     @objc public func handleStop() {
         audioEngine.stop()
+        persistence.state.lastPlaybackState = .stopped
+        persistence.state.lastPlayedTrackTime = 0.0
+        persistence.saveSession()
         mainView.timeDisplay.status = .stopped
         mainView.seekSlider.isThumbHidden = true
         mainView.seekSlider.value = 0.0
@@ -1406,6 +1479,45 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         let savedTracks = persistence.loadPlaylist()
         if !savedTracks.isEmpty {
             playlist.add(tracks: savedTracks)
+            
+            var targetIndex: Int = 0
+            if let savedIndex = s.lastPlayedTrackIndex, savedIndex >= 0 && savedIndex < playlist.tracks.count {
+                targetIndex = savedIndex
+            } else if let savedURLStr = s.lastPlayedTrackURL,
+                      let matchIndex = playlist.tracks.firstIndex(where: { $0.url.absoluteString == savedURLStr }) {
+                targetIndex = matchIndex
+            }
+            
+            playlist.currentIndex = targetIndex
+            playlist.selectedIndices = [targetIndex]
+            
+            let track = playlist.tracks[targetIndex]
+            if s.lastPlaybackState == .paused || (s.lastPlaybackState == .playing && s.lastPlayedTrackTime > 0) {
+                // Immediately prime UI for paused state
+                mainView.marquee.text = "\(track.artist) - \(track.title)"
+                mainView.marquee.resetScroll()
+                mainView.timeDisplay.totalDuration = track.duration
+                mainView.timeDisplay.currentTime = s.lastPlayedTrackTime
+                mainView.timeDisplay.status = .paused
+                mainView.seekSlider.isThumbHidden = false
+                mainView.seekSlider.value = track.duration > 0 ? (s.lastPlayedTrackTime / track.duration) : 0.0
+                plView.status = .paused
+                plView.currentTime = s.lastPlayedTrackTime
+                updateBlinkState(for: .paused)
+                
+                preparePausedPlayback(track: track, at: s.lastPlayedTrackTime)
+            } else {
+                // Stopped state
+                mainView.marquee.text = "\(track.artist) - \(track.title)"
+                mainView.marquee.resetScroll()
+                mainView.timeDisplay.totalDuration = track.duration
+                mainView.timeDisplay.currentTime = 0.0
+                mainView.timeDisplay.status = .stopped
+                mainView.seekSlider.isThumbHidden = true
+                mainView.seekSlider.value = 0.0
+                plView.status = .stopped
+                plView.currentTime = 0.0
+            }
             plView.needsDisplay = true
         }
         
@@ -1421,6 +1533,15 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         persistence.state.preampDb = Float(eqView.preampSlider.value)
         persistence.state.eqBandsDb = eqView.bandSliders.map { Float($0.value) }
         persistence.state.isAlwaysOnTop = (mainWindow?.level == .floating)
+        
+        // Save current playback state and position
+        persistence.state.lastPlaybackState = audioEngine.status
+        persistence.state.lastPlayedTrackTime = audioEngine.currentTime
+        if let curIdx = playlist.currentIndex, curIdx < playlist.tracks.count {
+            persistence.state.lastPlayedTrackIndex = curIdx
+            persistence.state.lastPlayedTrackURL = playlist.tracks[curIdx].url.absoluteString
+        }
+        
         saveWindowLayout()
         persistence.savePlaylist(playlist.tracks)
         persistence.saveSession()

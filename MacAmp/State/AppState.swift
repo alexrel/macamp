@@ -28,7 +28,9 @@ public struct AppState: Codable {
     public var playlistWindowSize: [Double] = [Double(AppConstants.Window.width), Double(AppConstants.Window.height)]
     
     public var lastPlayedTrackURL: String? = nil
+    public var lastPlayedTrackIndex: Int? = nil
     public var lastPlayedTrackTime: Double = 0.0
+    public var lastPlaybackState: PlayerStatus = .stopped
     public var activeSkinPath: String? = nil
     
     // Preferences - Titles & Display
