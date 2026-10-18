@@ -80,6 +80,36 @@ testGroup("WindowLayoutManager & Magnetic Snapping") {
     let below = wlm.findWindowsBelow(id: .main)
     assertTrue(below.contains(.equalizer), "Equalizer should be found below Main window")
     assertTrue(below.contains(.playlist), "Playlist should be found below Equalizer window")
+    
+    // Test Scaling with Inverted Window Layout: Playlist TOP, Equalizer MIDDLE, Main BOTTOM
+    // In 1x: Main at y=100 (height 116 -> maxY=216), EQ at y=216 (maxY=332), Playlist at y=332 (maxY=448)
+    winA.setFrame(NSRect(x: 100, y: 100, width: 275, height: 116), display: false)
+    winB.setFrame(NSRect(x: 100, y: 216, width: 275, height: 116), display: false)
+    winC.setFrame(NSRect(x: 100, y: 332, width: 275, height: 116), display: false)
+    winA.orderFront(nil)
+    winB.orderFront(nil)
+    winC.orderFront(nil)
+    wlm.updateAdjacencies()
+    
+    // Scale 1x -> 2x
+    wlm.setScale(2.0)
+    assertEqual(wlm.currentScale, 2.0, "Scale factor should be 2.0")
+    
+    let main2x = winA.frame
+    let eq2x = winB.frame
+    let pl2x = winC.frame
+    assertTrue(abs(eq2x.minY - main2x.maxY) <= 1.0, "At 2x: EQ bottom must touch Main top with 0 gap")
+    assertTrue(abs(pl2x.minY - eq2x.maxY) <= 1.0, "At 2x: Playlist bottom must touch EQ top with 0 gap (no gap/flying up)")
+    
+    // Scale 2x -> 1x
+    wlm.setScale(1.0)
+    assertEqual(wlm.currentScale, 1.0, "Scale factor should be 1.0")
+    
+    let main1x = winA.frame
+    let eq1x = winB.frame
+    let pl1x = winC.frame
+    assertTrue(abs(eq1x.minY - main1x.maxY) <= 1.0, "At 1x: EQ bottom must touch Main top with 0 gap")
+    assertTrue(abs(pl1x.minY - eq1x.maxY) <= 1.0, "At 1x: Playlist bottom must touch EQ top with 0 gap (no overlap)")
 }
 
 // 2. ICY Streaming & Metadata Parsing Tests

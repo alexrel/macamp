@@ -292,6 +292,7 @@ public class WindowLayoutManager: NSObject {
     }
     
     // MARK: - Window Scaling (1x / 2x)
+    // MARK: - Window Scaling (1x / 2x)
     public func setScale(_ newScale: CGFloat) {
         guard newScale != currentScale else { return }
         let oldScale = currentScale
@@ -301,38 +302,121 @@ public class WindowLayoutManager: NSObject {
         let anchorX = mainWin.frame.minX
         let anchorY = mainWin.frame.maxY
         
-        for (id, win) in windows {
+        // Snapshot current visible frames at old scale
+        var oldFrames: [WindowID: NSRect] = [:]
+        for (id, win) in windows where win.isVisible {
+            oldFrames[id] = win.frame
+        }
+        
+        // Target sizes at new scale
+        var targetSizes: [WindowID: NSSize] = [:]
+        for (id, win) in windows where win.isVisible {
             if id == .playlist {
                 // Playlist window remains at 1x resolution (canDouble = false in Winamp)
-                let deltaX = (win.frame.minX - anchorX) / oldScale
-                let deltaY = (anchorY - win.frame.maxY) / oldScale
-                
-                let newMinX = round(anchorX + (deltaX * newScale))
-                let newMaxY = round(anchorY - (deltaY * newScale))
-                let winW = round(win.frame.width)
-                let winH = round(win.frame.height)
-                let newMinY = round(newMaxY - winH)
-                
-                win.setFrame(NSRect(x: newMinX, y: newMinY, width: winW, height: winH), display: true, animate: false)
-                if let content = win.contentView {
-                    content.bounds = NSRect(x: 0, y: 0, width: winW, height: winH)
-                    content.needsDisplay = true
-                }
+                targetSizes[id] = NSSize(width: round(win.frame.width), height: round(win.frame.height))
             } else {
-                let deltaX = (win.frame.minX - anchorX) / oldScale
-                let deltaY = (anchorY - win.frame.maxY) / oldScale
                 let unscaledW = AppConstants.Window.width
                 let unscaledH = win.frame.height / oldScale
+                targetSizes[id] = NSSize(width: round(unscaledW * newScale), height: round(unscaledH * newScale))
+            }
+        }
+        
+        // Calculate new frames using docking relationships
+        var newFrames: [WindowID: NSRect] = [:]
+        
+        // 1. Root anchor: MainWindow top-left remains fixed at (anchorX, anchorY)
+        if let mainSize = targetSizes[.main] {
+            newFrames[.main] = NSRect(
+                x: anchorX,
+                y: round(anchorY - mainSize.height),
+                width: mainSize.width,
+                height: mainSize.height
+            )
+        }
+        
+        // 2. Iteratively place all windows docked to placed windows
+        let tolerance = max(4.0, effectiveAdjacencyTolerance)
+        var unplaced = Set(oldFrames.keys)
+        unplaced.remove(.main)
+        
+        var progress = true
+        while progress && !unplaced.isEmpty {
+            progress = false
+            for u in Array(unplaced) {
+                guard let oldU = oldFrames[u], let sizeU = targetSizes[u] else { continue }
                 
-                let newW = round(unscaledW * newScale)
-                let newH = round(unscaledH * newScale)
-                let newMinX = round(anchorX + (deltaX * newScale))
-                let newMaxY = round(anchorY - (deltaY * newScale))
-                let newMinY = round(newMaxY - newH)
+                var placedFrame: NSRect? = nil
                 
-                win.setFrame(NSRect(x: newMinX, y: newMinY, width: newW, height: newH), display: true, animate: false)
+                // Check if u was docked to any already placed window p
+                for p in newFrames.keys {
+                    guard let oldP = oldFrames[p], let newP = newFrames[p] else { continue }
+                    
+                    let touchAbove = abs(oldU.minY - oldP.maxY) <= tolerance
+                    let touchBelow = abs(oldU.maxY - oldP.minY) <= tolerance
+                    let touchRight = abs(oldU.minX - oldP.maxX) <= tolerance
+                    let touchLeft  = abs(oldU.maxX - oldP.minX) <= tolerance
+                    
+                    let overlapH = oldU.maxX > oldP.minX + 1.0 && oldU.minX < oldP.maxX - 1.0
+                    let overlapV = oldU.maxY > oldP.minY + 1.0 && oldU.minY < oldP.maxY - 1.0
+                    
+                    if touchAbove && overlapH {
+                        // u is docked directly ABOVE p
+                        let newY = newP.maxY
+                        let newX = calculateDockedX(oldU: oldU, oldP: oldP, newP: newP, sizeU: sizeU, tolerance: tolerance, oldScale: oldScale, newScale: newScale)
+                        placedFrame = NSRect(x: newX, y: newY, width: sizeU.width, height: sizeU.height)
+                        break
+                    } else if touchBelow && overlapH {
+                        // u is docked directly BELOW p
+                        let newY = round(newP.minY - sizeU.height)
+                        let newX = calculateDockedX(oldU: oldU, oldP: oldP, newP: newP, sizeU: sizeU, tolerance: tolerance, oldScale: oldScale, newScale: newScale)
+                        placedFrame = NSRect(x: newX, y: newY, width: sizeU.width, height: sizeU.height)
+                        break
+                    } else if touchRight && overlapV {
+                        // u is docked directly to the RIGHT of p
+                        let newX = newP.maxX
+                        let newY = calculateDockedY(oldU: oldU, oldP: oldP, newP: newP, sizeU: sizeU, tolerance: tolerance, oldScale: oldScale, newScale: newScale)
+                        placedFrame = NSRect(x: newX, y: newY, width: sizeU.width, height: sizeU.height)
+                        break
+                    } else if touchLeft && overlapV {
+                        // u is docked directly to the LEFT of p
+                        let newX = round(newP.minX - sizeU.width)
+                        let newY = calculateDockedY(oldU: oldU, oldP: oldP, newP: newP, sizeU: sizeU, tolerance: tolerance, oldScale: oldScale, newScale: newScale)
+                        placedFrame = NSRect(x: newX, y: newY, width: sizeU.width, height: sizeU.height)
+                        break
+                    }
+                }
                 
-                if let content = win.contentView {
+                if let frame = placedFrame {
+                    newFrames[u] = frame
+                    unplaced.remove(u)
+                    progress = true
+                }
+            }
+        }
+        
+        // 3. Any remaining unplaced windows are floating freely (not docked)
+        for u in unplaced {
+            guard let oldU = oldFrames[u], let sizeU = targetSizes[u] else { continue }
+            let deltaX = (oldU.minX - anchorX) / oldScale
+            let deltaY = (anchorY - oldU.maxY) / oldScale
+            let newMinX = round(anchorX + (deltaX * newScale))
+            let newMaxY = round(anchorY - (deltaY * newScale))
+            let newMinY = round(newMaxY - sizeU.height)
+            newFrames[u] = NSRect(x: newMinX, y: newMinY, width: sizeU.width, height: sizeU.height)
+        }
+        
+        // 4. Apply new frames to all windows
+        for (id, win) in windows {
+            guard let newFrame = newFrames[id] else { continue }
+            win.setFrame(newFrame, display: true, animate: false)
+            
+            if let content = win.contentView {
+                if id == .playlist {
+                    content.bounds = NSRect(x: 0, y: 0, width: newFrame.width, height: newFrame.height)
+                    content.needsDisplay = true
+                } else {
+                    let unscaledW = AppConstants.Window.width
+                    let unscaledH = win.frame.height / newScale
                     content.bounds = NSRect(x: 0, y: 0, width: unscaledW, height: unscaledH)
                     content.needsDisplay = true
                 }
@@ -341,6 +425,34 @@ public class WindowLayoutManager: NSObject {
         
         clampToScreen()
         updateAdjacencies()
+    }
+    
+    private func calculateDockedX(oldU: NSRect, oldP: NSRect, newP: NSRect, sizeU: NSSize, tolerance: CGFloat, oldScale: CGFloat, newScale: CGFloat) -> CGFloat {
+        if abs(oldU.minX - oldP.minX) <= tolerance {
+            // Left edges were aligned
+            return newP.minX
+        } else if abs(oldU.maxX - oldP.maxX) <= tolerance {
+            // Right edges were aligned
+            return round(newP.maxX - sizeU.width)
+        } else {
+            // Proportional offset
+            let relX = (oldU.minX - oldP.minX) / oldScale
+            return round(newP.minX + relX * newScale)
+        }
+    }
+    
+    private func calculateDockedY(oldU: NSRect, oldP: NSRect, newP: NSRect, sizeU: NSSize, tolerance: CGFloat, oldScale: CGFloat, newScale: CGFloat) -> CGFloat {
+        if abs(oldU.maxY - oldP.maxY) <= tolerance {
+            // Top edges were aligned
+            return round(newP.maxY - sizeU.height)
+        } else if abs(oldU.minY - oldP.minY) <= tolerance {
+            // Bottom edges were aligned
+            return newP.minY
+        } else {
+            // Proportional offset
+            let relY = (oldP.maxY - oldU.maxY) / oldScale
+            return round(newP.maxY - relY * newScale - sizeU.height)
+        }
     }
     
     public func clampToScreen() {
@@ -352,12 +464,14 @@ public class WindowLayoutManager: NSObject {
         var minY = CGFloat.infinity
         var maxY = -CGFloat.infinity
         
-        for (_, win) in windows {
+        for (_, win) in windows where win.isVisible {
             minX = min(minX, win.frame.minX)
             maxX = max(maxX, win.frame.maxX)
             minY = min(minY, win.frame.minY)
             maxY = max(maxY, win.frame.maxY)
         }
+        
+        guard minX < maxX && minY < maxY else { return }
         
         var shiftX: CGFloat = 0
         var shiftY: CGFloat = 0
@@ -377,7 +491,7 @@ public class WindowLayoutManager: NSObject {
         if shiftX != 0 || shiftY != 0 {
             let roundedShiftX = round(shiftX)
             let roundedShiftY = round(shiftY)
-            for (_, win) in windows {
+            for (_, win) in windows where win.isVisible {
                 let origin = win.frame.origin
                 win.setFrameOrigin(NSPoint(x: round(origin.x + roundedShiftX), y: round(origin.y + roundedShiftY)))
             }
