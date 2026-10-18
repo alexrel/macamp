@@ -308,6 +308,21 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             self.saveWindowLayout()
         }
         
+        // EQ Toggles
+        eqView.onToggle.onChanged = { [weak self] isOn in
+            guard let self else { return }
+            self.audioEngine.setEqEnabled(isOn)
+            self.persistence.state.isEqEnabled = isOn
+            self.persistence.saveSession()
+        }
+        
+        eqView.autoToggle.onChanged = { [weak self] isOn in
+            guard let self else { return }
+            self.persistence.state.isEqAuto = isOn
+            self.persistence.state.autoGenreEQ = isOn
+            self.persistence.saveSession()
+        }
+        
         // Shade mode toggles
         mainView.onToggleShade = { [weak self] in self?.toggleMainShade() }
         eqView.onToggleShade = { [weak self] in self?.toggleEqShade() }
@@ -435,6 +450,10 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                     self.plView.needsDisplay = true
                     MediaKeyController.shared.updateNowPlayingInfo()
                     StatusBarManager.shared.updateStatus()
+                    
+                    if self.persistence.state.isEqAuto {
+                        self.applyAutoEQ(for: track.url)
+                    }
                 }
             } catch {
                 print("Failed to load track \(track.url): \(error)")
@@ -442,6 +461,31 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                     self.mainView.marquee.showTemporaryMessage("Stream Error")
                 }
             }
+        }
+    }
+    
+    /// Auto-loads EQ preset based on track's ID3 genre when EQ AUTO is active
+    public func applyAutoEQ(for url: URL) {
+        guard persistence.state.isEqAuto else { return }
+        
+        let rawGenre: String
+        if url.isFileURL {
+            let meta = AudioMetadataService.shared.readMetadata(from: url)
+            rawGenre = meta.id3v2.genre.isEmpty ? (meta.id3v1.genreIndex < ID3Genre.allGenres.count ? ID3Genre.name(for: meta.id3v1.genreIndex) : "") : meta.id3v2.genre
+        } else {
+            rawGenre = audioEngine.icySession?.genre ?? ""
+        }
+        
+        let cleanedGenre = rawGenre.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !cleanedGenre.isEmpty else { return }
+        
+        let allPresets = EqualizerPresetsManager.shared.builtInPresets + EqualizerPresetsManager.shared.userPresets
+        if let match = allPresets.first(where: { preset in
+            let pName = preset.name.lowercased()
+            return cleanedGenre == pName || cleanedGenre.contains(pName) || pName.contains(cleanedGenre)
+        }) {
+            eqView.applyPreset(match)
+            mainView.marquee.showTemporaryMessage("EQ Auto: \(match.name)")
         }
     }
     
@@ -1309,6 +1353,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         // EQ
         audioEngine.setEqEnabled(s.isEqEnabled)
         eqView.onToggle.isOn = s.isEqEnabled
+        eqView.autoToggle.isOn = s.isEqAuto
         audioEngine.setPreamp(gainDb: s.preampDb)
         eqView.preampSlider.value = Double(s.preampDb)
         for (i, gain) in s.eqBandsDb.enumerated() {
@@ -1371,6 +1416,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         persistence.state.volume = mainView.volumeSlider.value
         persistence.state.balance = mainView.balanceSlider.value
         persistence.state.isEqEnabled = eqView.onToggle.isOn
+        persistence.state.isEqAuto = eqView.autoToggle.isOn
+        persistence.state.autoGenreEQ = eqView.autoToggle.isOn
         persistence.state.preampDb = Float(eqView.preampSlider.value)
         persistence.state.eqBandsDb = eqView.bandSliders.map { Float($0.value) }
         persistence.state.isAlwaysOnTop = (mainWindow?.level == .floating)
@@ -1411,6 +1458,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         persistence.state.isPlaylistShade = plView.isShadeMode
         persistence.state.isEqWindowVisible = eq.isVisible
         persistence.state.isPlaylistVisible = pl.isVisible
+        persistence.state.isEqAuto = eqView.autoToggle.isOn
+        persistence.state.autoGenreEQ = eqView.autoToggle.isOn
         
         persistence.saveSession()
     }

@@ -62,7 +62,7 @@ public class AudioEngine {
     
     // Streaming state
     private var streamPlayer: AVPlayer?
-    private var icySession: ICYStreamSession?
+    public private(set) var icySession: ICYStreamSession?
     public var isStreaming: Bool { streamPlayer != nil }
     private var streamElapsed: TimeInterval = 0
     

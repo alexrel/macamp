@@ -138,10 +138,14 @@ testGroup("Window Position & Layout Persistence") {
     persistence.state.isPlaylistShade = false
     persistence.state.isEqWindowVisible = true
     persistence.state.isPlaylistVisible = true
+    persistence.state.isEqAuto = true
+    persistence.state.autoGenreEQ = true
     persistence.saveSession()
     
     // Simulate relaunch by reading back the session state
     persistence.loadSession()
+    assertTrue(persistence.state.isEqAuto, "isEqAuto must be persisted across sessions")
+    assertTrue(persistence.state.autoGenreEQ, "autoGenreEQ must be persisted across sessions")
     let loaded = persistence.state.windowPositions
     assertTrue(loaded["playlist"] != nil, "Playlist position must be persisted")
     assertTrue(loaded["equalizer"] != nil, "Equalizer position must be persisted")

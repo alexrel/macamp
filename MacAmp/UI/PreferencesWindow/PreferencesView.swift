@@ -152,7 +152,9 @@ public class PreferencesViewModel: ObservableObject {
     @Published public var autoGenreEQ: Bool {
         didSet {
             PersistenceManager.shared.state.autoGenreEQ = autoGenreEQ
+            PersistenceManager.shared.state.isEqAuto = autoGenreEQ
             PersistenceManager.shared.saveSession()
+            PlayerCoordinator.shared.eqView?.autoToggle?.isOn = autoGenreEQ
         }
     }
     
