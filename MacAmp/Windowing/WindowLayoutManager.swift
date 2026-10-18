@@ -19,6 +19,7 @@ public class WindowLayoutManager: NSObject {
     private var adjacencies: [WindowID: Set<WindowID>] = [:]
     
     public var currentScale: CGFloat = 1.0
+    public var onLayoutChanged: (() -> Void)?
     
     private override init() {
         super.init()
@@ -165,6 +166,7 @@ public class WindowLayoutManager: NSObject {
     
     public func endDrag(for id: WindowID) {
         updateAdjacencies()
+        onLayoutChanged?()
     }
     
     // MARK: - Adjacency Graph
@@ -190,7 +192,7 @@ public class WindowLayoutManager: NSObject {
         }
     }
     
-    private func findGroup(for root: WindowID) -> Set<WindowID> {
+    public func findGroup(for root: WindowID) -> Set<WindowID> {
         guard let rootWin = windows[root], rootWin.isVisible else { return [root] }
         var visited = Set<WindowID>()
         var queue = [root]
@@ -289,6 +291,7 @@ public class WindowLayoutManager: NSObject {
         
         clampToScreen()
         updateAdjacencies()
+        onLayoutChanged?()
     }
     
     // MARK: - Window Scaling (1x / 2x)
@@ -425,6 +428,7 @@ public class WindowLayoutManager: NSObject {
         
         clampToScreen()
         updateAdjacencies()
+        onLayoutChanged?()
     }
     
     private func calculateDockedX(oldU: NSRect, oldP: NSRect, newP: NSRect, sizeU: NSSize, tolerance: CGFloat, oldScale: CGFloat, newScale: CGFloat) -> CGFloat {
@@ -456,45 +460,64 @@ public class WindowLayoutManager: NSObject {
     }
     
     public func clampToScreen() {
-        guard let mainWin = windows[.main], let screen = mainWin.screen ?? NSScreen.main else { return }
-        let visible = screen.visibleFrame
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return }
         
-        var minX = CGFloat.infinity
-        var maxX = -CGFloat.infinity
-        var minY = CGFloat.infinity
-        var maxY = -CGFloat.infinity
+        var processed = Set<WindowID>()
+        var didShift = false
         
-        for (_, win) in windows where win.isVisible {
-            minX = min(minX, win.frame.minX)
-            maxX = max(maxX, win.frame.maxX)
-            minY = min(minY, win.frame.minY)
-            maxY = max(maxY, win.frame.maxY)
-        }
-        
-        guard minX < maxX && minY < maxY else { return }
-        
-        var shiftX: CGFloat = 0
-        var shiftY: CGFloat = 0
-        
-        if maxY > visible.maxY {
-            shiftY = visible.maxY - maxY
-        }
-        if minY + shiftY < visible.minY {
-            shiftY = visible.minY - minY
-        }
-        if minX < visible.minX {
-            shiftX = visible.minX - minX
-        } else if maxX > visible.maxX {
-            shiftX = visible.maxX - maxX
-        }
-        
-        if shiftX != 0 || shiftY != 0 {
-            let roundedShiftX = round(shiftX)
-            let roundedShiftY = round(shiftY)
-            for (_, win) in windows where win.isVisible {
-                let origin = win.frame.origin
-                win.setFrameOrigin(NSPoint(x: round(origin.x + roundedShiftX), y: round(origin.y + roundedShiftY)))
+        for id in windows.keys {
+            guard let win = windows[id], win.isVisible, !processed.contains(id) else { continue }
+            let group = findGroup(for: id)
+            processed.formUnion(group)
+            
+            let groupScreen = win.screen ?? NSScreen.main ?? screens[0]
+            let visible = groupScreen.visibleFrame
+            
+            var minX = CGFloat.infinity
+            var maxX = -CGFloat.infinity
+            var minY = CGFloat.infinity
+            var maxY = -CGFloat.infinity
+            
+            for gid in group {
+                guard let gWin = windows[gid], gWin.isVisible else { continue }
+                minX = min(minX, gWin.frame.minX)
+                maxX = max(maxX, gWin.frame.maxX)
+                minY = min(minY, gWin.frame.minY)
+                maxY = max(maxY, gWin.frame.maxY)
             }
+            
+            guard minX < maxX && minY < maxY else { continue }
+            
+            var shiftX: CGFloat = 0
+            var shiftY: CGFloat = 0
+            
+            if maxY > visible.maxY {
+                shiftY = visible.maxY - maxY
+            }
+            if minY + shiftY < visible.minY {
+                shiftY = visible.minY - minY
+            }
+            if minX < visible.minX {
+                shiftX = visible.minX - minX
+            } else if maxX > visible.maxX {
+                shiftX = visible.maxX - maxX
+            }
+            
+            if shiftX != 0 || shiftY != 0 {
+                let roundedShiftX = round(shiftX)
+                let roundedShiftY = round(shiftY)
+                for gid in group {
+                    guard let gWin = windows[gid], gWin.isVisible else { continue }
+                    let origin = gWin.frame.origin
+                    gWin.setFrameOrigin(NSPoint(x: round(origin.x + roundedShiftX), y: round(origin.y + roundedShiftY)))
+                }
+                didShift = true
+            }
+        }
+        
+        if didShift {
+            updateAdjacencies()
         }
     }
 }

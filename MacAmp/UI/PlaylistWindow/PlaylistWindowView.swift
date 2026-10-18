@@ -1284,6 +1284,7 @@ public class PlaylistWindowView: WinampControlView {
                 WindowLayoutManager.shared.updateAdjacencies()
                 PersistenceManager.shared.state.playlistWindowSize = [Double(round(win.frame.width)), Double(round(win.frame.height))]
                 PersistenceManager.shared.saveSession()
+                PlayerCoordinator.shared.saveWindowLayout()
                 
             default:
                 break

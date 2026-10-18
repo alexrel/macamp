@@ -110,9 +110,79 @@ testGroup("WindowLayoutManager & Magnetic Snapping") {
     let pl1x = winC.frame
     assertTrue(abs(eq1x.minY - main1x.maxY) <= 1.0, "At 1x: EQ bottom must touch Main top with 0 gap")
     assertTrue(abs(pl1x.minY - eq1x.maxY) <= 1.0, "At 1x: Playlist bottom must touch EQ top with 0 gap (no overlap)")
+    
+    // Test onLayoutChanged callback trigger
+    var layoutChangedFired = false
+    wlm.onLayoutChanged = {
+        layoutChangedFired = true
+    }
+    wlm.endDrag(for: .main)
+    assertTrue(layoutChangedFired, "onLayoutChanged must be triggered when dragging ends")
 }
 
-// 2. ICY Streaming & Metadata Parsing Tests
+// 2. Window Position & Layout Persistence Tests
+testGroup("Window Position & Layout Persistence") {
+    let persistence = PersistenceManager.shared
+    
+    // Simulate user arranging windows in inverted layout: Playlist (top), EQ (middle), Main (bottom)
+    let pFrame = NSRect(x: 350, y: 600, width: 275, height: 116)
+    let eFrame = NSRect(x: 350, y: 484, width: 275, height: 116)
+    let mFrame = NSRect(x: 350, y: 368, width: 275, height: 116)
+    
+    persistence.state.windowPositions["playlist"] = [Double(pFrame.minX), Double(pFrame.minY), Double(pFrame.width), Double(pFrame.height)]
+    persistence.state.windowPositions["equalizer"] = [Double(eFrame.minX), Double(eFrame.minY), Double(eFrame.width), Double(eFrame.height)]
+    persistence.state.windowPositions["main"] = [Double(mFrame.minX), Double(mFrame.minY), Double(mFrame.width), Double(mFrame.height)]
+    persistence.state.scaleFactor = .x1
+    persistence.state.isMainWindowShade = false
+    persistence.state.isEqWindowShade = false
+    persistence.state.isPlaylistShade = false
+    persistence.state.isEqWindowVisible = true
+    persistence.state.isPlaylistVisible = true
+    persistence.saveSession()
+    
+    // Simulate relaunch by reading back the session state
+    persistence.loadSession()
+    let loaded = persistence.state.windowPositions
+    assertTrue(loaded["playlist"] != nil, "Playlist position must be persisted")
+    assertTrue(loaded["equalizer"] != nil, "Equalizer position must be persisted")
+    assertTrue(loaded["main"] != nil, "Main window position must be persisted")
+    
+    let loadedP = loaded["playlist"]!
+    let loadedE = loaded["equalizer"]!
+    let loadedM = loaded["main"]!
+    
+    assertEqual(loadedP[0], 350.0, "Playlist X coordinate restored accurately")
+    assertEqual(loadedP[1], 600.0, "Playlist Y coordinate restored accurately (top)")
+    assertEqual(loadedE[0], 350.0, "Equalizer X coordinate restored accurately")
+    assertEqual(loadedE[1], 484.0, "Equalizer Y coordinate restored accurately (middle)")
+    assertEqual(loadedM[0], 350.0, "Main X coordinate restored accurately")
+    assertEqual(loadedM[1], 368.0, "Main Y coordinate restored accurately (bottom)")
+    
+    // Verify vertical order: Playlist > Equalizer > Main
+    assertTrue(loadedP[1] > loadedE[1], "Playlist must be positioned above Equalizer")
+    assertTrue(loadedE[1] > loadedM[1], "Equalizer must be positioned above Main window")
+    
+    // Test that adjacency graph correctly identifies docking when windows are restored at these coordinates
+    let wlm = WindowLayoutManager.shared
+    let winA = NSWindow(contentRect: NSRect(x: loadedM[0], y: loadedM[1], width: loadedM[2], height: loadedM[3]), styleMask: .borderless, backing: .buffered, defer: false)
+    let winB = NSWindow(contentRect: NSRect(x: loadedE[0], y: loadedE[1], width: loadedE[2], height: loadedE[3]), styleMask: .borderless, backing: .buffered, defer: false)
+    let winC = NSWindow(contentRect: NSRect(x: loadedP[0], y: loadedP[1], width: loadedP[2], height: loadedP[3]), styleMask: .borderless, backing: .buffered, defer: false)
+    
+    wlm.register(window: winA, for: .main)
+    wlm.register(window: winB, for: .equalizer)
+    wlm.register(window: winC, for: .playlist)
+    winA.orderFront(nil)
+    winB.orderFront(nil)
+    winC.orderFront(nil)
+    wlm.updateAdjacencies()
+    
+    let group = wlm.findGroup(for: .main)
+    assertTrue(group.contains(.main), "Restored group contains Main")
+    assertTrue(group.contains(.equalizer), "Restored group contains Equalizer")
+    assertTrue(group.contains(.playlist), "Restored group contains Playlist")
+}
+
+// 3. ICY Streaming & Metadata Parsing Tests
 testGroup("ICY Streaming & Metadata Parser") {
     let dummyURL = URL(string: "http://streaming.somafm.com:80/groovesalad-128-mp3")!
     let session = ICYStreamSession(url: dummyURL)
