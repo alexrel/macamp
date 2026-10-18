@@ -515,4 +515,17 @@ public class AudioEngine {
         setReverbPreset(index: 1)
         setDspEnabled(false)
     }
+    
+    public var currentPitchSemitones: Double {
+        Double(timePitchNode.pitch / 100.0)
+    }
+    public var currentPlaybackRate: Double {
+        Double(timePitchNode.rate)
+    }
+    public var currentReverbMix: Double {
+        Double(reverbNode.wetDryMix)
+    }
+    public var isDspTimePitchBypassed: Bool {
+        timePitchNode.bypass
+    }
 }

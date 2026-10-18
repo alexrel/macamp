@@ -16,6 +16,15 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
     public private(set) var bitrate: Int = 128
     public private(set) var sampleRate: Int = 44
     public private(set) var currentStreamTitle: String = ""
+    public var metaInt: Int { metaInterval }
+    
+    // Testing Hooks
+    public func feedHeadersForTesting(_ headers: [AnyHashable: Any]) {
+        parseHeaders(headers)
+    }
+    public func feedDataForTesting(_ data: Data) {
+        urlSession(URLSession.shared, dataTask: URLSessionDataTask(), didReceive: data)
+    }
     
     // ICY Parsing State
     private var metaInterval: Int = 0

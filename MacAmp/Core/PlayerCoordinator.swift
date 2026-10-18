@@ -23,9 +23,6 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     public var plWindow: WinampWindow!
     public var plView: PlaylistWindowView!
     
-    public var mbWindow: WinampWindow!
-    public var mbView: MinibrowserWindowView!
-    
     public var visualizerStudioWindow: RetroVisualizerWindow?
     
     private var cancellables = Set<AnyCancellable>()
@@ -91,20 +88,6 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         plView.frame = NSRect(x: 0, y: 0, width: plW, height: plH)
         plView.autoresizesSubviews = false
         plWindow.contentView = plView
-        
-        // 4. Minibrowser Window (docked below Playlist: y = plRect.minY - mbH)
-        let rawMbW = CGFloat(persistence.state.minibrowserWindowSize.first ?? Double(AppConstants.Window.width))
-        let rawMbH = CGFloat(persistence.state.minibrowserWindowSize.last ?? Double(AppConstants.Window.height))
-        let mbStepsX = max(0, round((rawMbW - AppConstants.Window.width) / AppConstants.Window.resizeStepX))
-        let mbW = AppConstants.Window.width + mbStepsX * AppConstants.Window.resizeStepX
-        let mbStepsY = max(0, round((rawMbH - AppConstants.Window.height) / AppConstants.Window.resizeStepY))
-        let mbH = AppConstants.Window.height + mbStepsY * AppConstants.Window.resizeStepY
-        
-        let mbRect = NSRect(x: originX, y: plRect.minY - mbH, width: mbW, height: mbH)
-        mbWindow = WinampWindow(windowID: .minibrowser, contentRect: mbRect)
-        mbView = MinibrowserWindowView(frame: NSRect(x: 0, y: 0, width: mbW, height: mbH))
-        mbView.autoresizesSubviews = false
-        mbWindow.contentView = mbView
     }
     
     // MARK: - Window Display
@@ -256,6 +239,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             } else {
                 self.eqWindow.orderOut(nil)
             }
+            self.windowManager.updateAdjacencies()
         }
         
         mainView.plToggle.onChanged = { [weak self] isVisible in
@@ -267,27 +251,20 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             } else {
                 self.plWindow.orderOut(nil)
             }
+            self.windowManager.updateAdjacencies()
         }
         
         // Shade mode toggles
         mainView.onToggleShade = { [weak self] in self?.toggleMainShade() }
         eqView.onToggleShade = { [weak self] in self?.toggleEqShade() }
         plView.onToggleShade = { [weak self] in self?.togglePlShade() }
-        mbView.onToggleShade = { [weak self] in
-            guard let self = self else { return }
-            self.mbView.isShadeMode.toggle()
-            self.windowManager.updateAdjacencies()
-        }
         
-        // Close EQ, PL & MB
+        // Close EQ & PL
         eqView.onClose = { [weak self] in
             self?.mainView.eqToggle.isOn = false
         }
         plView.onClose = { [weak self] in
             self?.mainView.plToggle.isOn = false
-        }
-        mbView.onClose = { [weak self] in
-            self?.toggleMinibrowser()
         }
         
         // Always on top toggle (ClutterBar A)
@@ -342,7 +319,6 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                 self.mainView.setNeedsDisplayRecursively()
                 self.eqView.setNeedsDisplayRecursively()
                 self.plView.setNeedsDisplayRecursively()
-                self.mbView?.setNeedsDisplayRecursively()
                 self.updateWindowMasks()
             }
             .store(in: &cancellables)
@@ -352,7 +328,6 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         mainView?.setNeedsDisplayRecursively()
         eqView?.setNeedsDisplayRecursively()
         plView?.setNeedsDisplayRecursively()
-        mbView?.setNeedsDisplayRecursively()
         updateWindowMasks()
     }
     
@@ -652,9 +627,6 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             case "s":
                 openSkinChooser()
                 return true
-            case "t":
-                toggleMinibrowser()
-                return true
             case "w":
                 toggleMainShade()
                 return true
@@ -722,24 +694,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         mainWindow?.level = level
         eqWindow?.level = level
         plWindow?.level = level
-        mbWindow?.level = level
         bringAllWindowsToFront()
         mainView?.alwaysOnTopButton?.isSelected = enabled
-    }
-    
-    /// Toggles the Minibrowser window visibility.
-    public func toggleMinibrowser() {
-        let isVisible = persistence.state.isMinibrowserVisible
-        persistence.state.isMinibrowserVisible = !isVisible
-        if persistence.state.isMinibrowserVisible {
-            mbWindow.level = persistence.state.isAlwaysOnTop ? .floating : .normal
-            mbWindow.orderFront(nil)
-            bringAllWindowsToFront()
-        } else {
-            mbWindow.orderOut(nil)
-        }
-        windowManager.updateAdjacencies()
-        persistence.saveSession()
     }
     
     @objc public func handleToggleVisualizerStudio() {
@@ -760,7 +716,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         }
     }
     
-    /// Brings all currently visible MacAmp windows to the front in proper z-order (Playlist -> Equalizer -> Minibrowser -> MainWindow)
+    /// Brings all currently visible MacAmp windows to the front in proper z-order (Playlist -> Equalizer -> MainWindow)
     /// without allowing secondary windows to drop behind other desktop applications when switching window levels or activating.
     public func bringAllWindowsToFront() {
         if let main = mainWindow, main.isMiniaturized || isDeminiaturizing {
@@ -769,9 +725,6 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         
         let keyWin = NSApp.keyWindow
         
-        if persistence.state.isMinibrowserVisible, let mb = mbWindow, !mb.isMiniaturized {
-            mb.orderFront(nil)
-        }
         if persistence.state.isPlaylistVisible, let pl = plWindow, !pl.isMiniaturized {
             pl.orderFront(nil)
         }
@@ -794,7 +747,6 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         isDeminiaturizing = false
         eqWindow?.orderOut(nil)
         plWindow?.orderOut(nil)
-        mbWindow?.orderOut(nil)
         mainWindow?.miniaturize(nil)
     }
     
@@ -804,7 +756,6 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         isDeminiaturizing = false
         eqWindow?.orderOut(nil)
         plWindow?.orderOut(nil)
-        mbWindow?.orderOut(nil)
     }
     
     public func windowDidMiniaturize(_ notification: Notification) {
@@ -812,7 +763,6 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         isDeminiaturizing = false
         eqWindow?.orderOut(nil)
         plWindow?.orderOut(nil)
-        mbWindow?.orderOut(nil)
     }
     
     public func windowDidDeminiaturize(_ notification: Notification) {
@@ -920,12 +870,6 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         plItem.target = self
         plItem.state = mainView.plToggle.isOn ? .on : .off
         menu.addItem(plItem)
-        
-        let mbItem = NSMenuItem(title: "Minibrowser", action: #selector(handleToggleMinibrowser), keyEquivalent: "t")
-        mbItem.keyEquivalentModifierMask = [.option]
-        mbItem.target = self
-        mbItem.state = persistence.state.isMinibrowserVisible ? .on : .off
-        menu.addItem(mbItem)
         menu.addItem(NSMenuItem.separator())
         
         // 5. Options submenu
@@ -1070,10 +1014,6 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     @objc public func handleTogglePlaylist() {
         mainView.plToggle.isOn.toggle()
         mainView.plToggle.onChanged?(mainView.plToggle.isOn)
-    }
-    
-    @objc public func handleToggleMinibrowser() {
-        toggleMinibrowser()
     }
     
     @objc public func handleResetBaseSkin() {
@@ -1329,7 +1269,6 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         if !s.isEqWindowVisible { eqWindow.orderOut(nil) }
         mainView.plToggle.isOn = s.isPlaylistVisible
         if !s.isPlaylistVisible { plWindow.orderOut(nil) }
-        if !s.isMinibrowserVisible { mbWindow.orderOut(nil) }
         
         // Toggles
         mainView.shuffleToggle.isOn = s.isShuffle

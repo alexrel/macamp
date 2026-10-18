@@ -17,7 +17,7 @@ public enum PlaylistIO {
     }
     
     // MARK: - M3U Parser
-    private static func parseM3U(content: String, baseURL: URL) -> [TrackItem] {
+    static func parseM3U(content: String, baseURL: URL) -> [TrackItem] {
         var items: [TrackItem] = []
         var nextTitle = ""
         var nextDuration: TimeInterval = 0
@@ -59,7 +59,7 @@ public enum PlaylistIO {
     }
     
     // MARK: - PLS Parser
-    private static func parsePLS(content: String, baseURL: URL) -> [TrackItem] {
+    static func parsePLS(content: String, baseURL: URL) -> [TrackItem] {
         var items: [TrackItem] = []
         var files: [Int: String] = [:]
         var titles: [Int: String] = [:]

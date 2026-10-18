@@ -150,6 +150,22 @@ build_dmg() {
     log_ok "DMG package created: $DMG_PATH"
 }
 
+run_tests() {
+    build_debug
+    log_step "Compiling & executing verification test suite"
+    mkdir -p "$DERIVED_DATA/ModuleCache"
+    local obj_files
+    obj_files=$(ls "$DERIVED_DATA"/Build/Intermediates.noindex/MacAmp.build/Debug/MacAmp.build/Objects-normal/arm64/*.o | grep -v 'MacAmpApp.o')
+    swiftc -module-cache-path "$DERIVED_DATA/ModuleCache" \
+           -target arm64-apple-macos14.0 \
+           -I "$DERIVED_DATA/Build/Products/Debug/" \
+           -framework Cocoa -framework AVFoundation -framework AppKit -framework WebKit -framework Carbon \
+           $obj_files scripts/run_all_tests.swift -o "$BUILD_DIR/run_all_tests"
+    
+    "$BUILD_DIR/run_all_tests"
+    log_ok "All MacAmp tests passed successfully!"
+}
+
 show_help() {
     print_banner
     echo "Usage: ./build.sh [COMMAND]"
@@ -157,6 +173,7 @@ show_help() {
     echo "Commands:"
     echo "  (none) / build   Fast incremental Debug build (default)"
     echo "  run              Build Debug and launch MacAmp"
+    echo "  test             Run test suite and verification checks"
     echo "  release          Build optimized Release configuration"
     echo "  run-release      Build Release and launch MacAmp"
     echo "  clean            Remove DerivedData and build directories"
@@ -177,6 +194,10 @@ case "$COMMAND" in
         print_banner
         build_debug
         run_app "$DEBUG_APP"
+        ;;
+    test|tests)
+        print_banner
+        run_tests
         ;;
     release)
         print_banner

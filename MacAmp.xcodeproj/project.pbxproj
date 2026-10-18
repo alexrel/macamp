@@ -13,7 +13,6 @@
 		AA41F9DD7C55435BD6A690A7 /* RetroVisualizerWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAE1F0C29EF5855E6B39317 /* RetroVisualizerWindow.swift */; };
 		AAF0E2D4D2A02A51FE841B73 /* CubicSpline.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA77248ED3C6F45BCAA3EF2D /* CubicSpline.swift */; };
 		AA9E25734126AF5A37B18D2E /* EqualizerWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA07E09BCD7F8C56F79D3C6E /* EqualizerWindowView.swift */; };
-		AA548D40C755415066B7D00C /* MinibrowserWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3D502CC2C97950B1B16852 /* MinibrowserWindowView.swift */; };
 		AA49E4E81FD4135DED9F929D /* PlaylistWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9737F793D3DB5719AD50C1 /* PlaylistWindowView.swift */; };
 		AA503BE4A89AB554388DE64A /* JumpToFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA041127C9443C5ABD9033DC /* JumpToFileView.swift */; };
 		AAAEDF588FEE395FF5B58704 /* JumpToFileWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA660C866733D0575B9754DC /* JumpToFileWindow.swift */; };
@@ -66,7 +65,6 @@
 		AAAE1F0C29EF5855E6B39317 /* RetroVisualizerWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RetroVisualizerWindow.swift"; sourceTree = "<group>"; };
 		AA77248ED3C6F45BCAA3EF2D /* CubicSpline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CubicSpline.swift"; sourceTree = "<group>"; };
 		AA07E09BCD7F8C56F79D3C6E /* EqualizerWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EqualizerWindowView.swift"; sourceTree = "<group>"; };
-		AA3D502CC2C97950B1B16852 /* MinibrowserWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MinibrowserWindowView.swift"; sourceTree = "<group>"; };
 		AA9737F793D3DB5719AD50C1 /* PlaylistWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistWindowView.swift"; sourceTree = "<group>"; };
 		AA041127C9443C5ABD9033DC /* JumpToFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "JumpToFileView.swift"; sourceTree = "<group>"; };
 		AA660C866733D0575B9754DC /* JumpToFileWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "JumpToFileWindow.swift"; sourceTree = "<group>"; };
@@ -244,7 +242,6 @@
 				AA67830164D4945A79AF79DA /* AboutWindow */,
 				AA71EE3158899557768DE66E /* JumpToFileWindow */,
 				AAED4AF757E13754C480F9DF /* JumpToTimeWindow */,
-				AA77F606E65CBD5DE2893F52 /* MinibrowserWindow */,
 				AA78FCFF83CE2E5F7DADFE8C /* VisualizerStudio */,
 			);
 			path = "UI";
@@ -334,14 +331,6 @@
 			path = "JumpToTimeWindow";
 			sourceTree = "<group>";
 		};
-		AA77F606E65CBD5DE2893F52 /* MinibrowserWindow */ = {
-			isa = PBXGroup;
-			children = (
-				AA3D502CC2C97950B1B16852 /* MinibrowserWindowView.swift */,
-			);
-			path = "MinibrowserWindow";
-			sourceTree = "<group>";
-		};
 		AA78FCFF83CE2E5F7DADFE8C /* VisualizerStudio */ = {
 			isa = PBXGroup;
 			children = (
@@ -423,6 +412,7 @@
 
 
 
+
 				BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */,
 				BDC069482B887D910009C001 /* Assets.xcassets in Resources */,
 			);
@@ -441,7 +431,6 @@
 				AA41F9DD7C55435BD6A690A7 /* RetroVisualizerWindow.swift in Sources */,
 				AAF0E2D4D2A02A51FE841B73 /* CubicSpline.swift in Sources */,
 				AA9E25734126AF5A37B18D2E /* EqualizerWindowView.swift in Sources */,
-				AA548D40C755415066B7D00C /* MinibrowserWindowView.swift in Sources */,
 				AA49E4E81FD4135DED9F929D /* PlaylistWindowView.swift in Sources */,
 				AA503BE4A89AB554388DE64A /* JumpToFileView.swift in Sources */,
 				AAAEDF588FEE395FF5B58704 /* JumpToFileWindow.swift in Sources */,

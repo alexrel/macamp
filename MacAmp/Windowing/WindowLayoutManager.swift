@@ -39,12 +39,12 @@ public class WindowLayoutManager: NSObject {
     // MARK: - Dragging & Snapping
     public func startDrag(for id: WindowID) -> [WindowID: NSPoint] {
         updateAdjacencies()
-        // Main window moves all attached windows; other windows move individually
+        // Main window moves all attached visible windows; other windows move individually
         let group: Set<WindowID> = (id == .main) ? findGroup(for: id) : [id]
         var origins: [WindowID: NSPoint] = [:]
         for gid in group {
-            if let origin = windows[gid]?.frame.origin {
-                origins[gid] = origin
+            if let win = windows[gid], win.isVisible {
+                origins[gid] = win.frame.origin
             }
         }
         return origins
@@ -55,52 +55,111 @@ public class WindowLayoutManager: NSObject {
         let roundedDeltaX = round(totalDelta.x)
         let roundedDeltaY = round(totalDelta.y)
         
-        // 1. Move all group windows by raw delta
-        for (gid, startOrigin) in startOrigins {
-            guard let win = windows[gid] else { continue }
-            win.setFrameOrigin(NSPoint(
+        // 1. Calculate proposed un-snapped frames for all group windows
+        var proposedFrames: [WindowID: NSRect] = [:]
+        for gid in groupIDs {
+            guard let win = windows[gid], win.isVisible, let startOrigin = startOrigins[gid] else { continue }
+            let proposedOrigin = NSPoint(
                 x: round(startOrigin.x + roundedDeltaX),
                 y: round(startOrigin.y + roundedDeltaY)
-            ))
+            )
+            proposedFrames[gid] = NSRect(origin: proposedOrigin, size: win.frame.size)
         }
         
-        // 2. Find best magnetic snap against screen edges and other windows
-        var bestSnap = CGPoint.zero
-        var minDistance = CGFloat.infinity
+        // 2. Find best magnetic snap on X and Y axes independently
+        var bestSnapX: CGFloat = 0
+        var minDistanceX: CGFloat = CGFloat.infinity
+        
+        var bestSnapY: CGFloat = 0
+        var minDistanceY: CGFloat = CGFloat.infinity
         
         for gid in groupIDs {
-            guard let win = windows[gid] else { continue }
+            guard let proposedFrame = proposedFrames[gid], let win = windows[gid] else { continue }
             
             // Snap against screen visible frame
             if let screen = win.screen {
-                let screenSnap = calculateScreenSnap(target: win.frame, screenFrame: screen.visibleFrame, threshold: effectiveSnapThreshold)
-                let dist = hypot(screenSnap.x, screenSnap.y)
-                if dist > 0 && dist < minDistance {
-                    minDistance = dist
-                    bestSnap = screenSnap
+                let sf = screen.visibleFrame
+                
+                // Screen X snapping (left and right edges)
+                let leftDist = abs(proposedFrame.minX - sf.minX)
+                if leftDist <= effectiveSnapThreshold && leftDist < minDistanceX {
+                    minDistanceX = leftDist
+                    bestSnapX = round(sf.minX - proposedFrame.minX)
+                }
+                let rightDist = abs(proposedFrame.maxX - sf.maxX)
+                if rightDist <= effectiveSnapThreshold && rightDist < minDistanceX {
+                    minDistanceX = rightDist
+                    bestSnapX = round(sf.maxX - proposedFrame.maxX)
+                }
+                
+                // Screen Y snapping (bottom and top edges)
+                let bottomDist = abs(proposedFrame.minY - sf.minY)
+                if bottomDist <= effectiveSnapThreshold && bottomDist < minDistanceY {
+                    minDistanceY = bottomDist
+                    bestSnapY = round(sf.minY - proposedFrame.minY)
+                }
+                let topDist = abs(proposedFrame.maxY - sf.maxY)
+                if topDist <= effectiveSnapThreshold && topDist < minDistanceY {
+                    minDistanceY = topDist
+                    bestSnapY = round(sf.maxY - proposedFrame.maxY)
                 }
             }
             
-            // Snap against other (non-group) windows
-            for (otherId, otherWin) in windows where !groupIDs.contains(otherId) {
-                let snap = calculateWindowSnap(target: win.frame, other: otherWin.frame, threshold: effectiveSnapThreshold)
-                let dist = hypot(snap.x, snap.y)
-                if dist > 0 && dist < minDistance {
-                    minDistance = dist
-                    bestSnap = snap
+            // Snap against other (non-group) visible windows
+            for (otherId, otherWin) in windows where !groupIDs.contains(otherId) && otherWin.isVisible {
+                let otherFrame = otherWin.frame
+                
+                let verticalOverlap = (proposedFrame.maxY >= otherFrame.minY - effectiveSnapThreshold) &&
+                                      (proposedFrame.minY <= otherFrame.maxY + effectiveSnapThreshold)
+                let horizontalOverlap = (proposedFrame.maxX >= otherFrame.minX - effectiveSnapThreshold) &&
+                                        (proposedFrame.minX <= otherFrame.maxX + effectiveSnapThreshold)
+                
+                // Horizontal docking candidates (when vertical overlap exists)
+                if verticalOverlap {
+                    let candidatesX: [CGFloat] = [
+                        round(otherFrame.maxX - proposedFrame.minX), // target docks to right of other
+                        round(otherFrame.minX - proposedFrame.maxX), // target docks to left of other
+                        round(otherFrame.minX - proposedFrame.minX), // align left edges
+                        round(otherFrame.maxX - proposedFrame.maxX)  // align right edges
+                    ]
+                    for dx in candidatesX {
+                        let dist = abs(dx)
+                        if dist <= effectiveSnapThreshold && dist < minDistanceX {
+                            minDistanceX = dist
+                            bestSnapX = dx
+                        }
+                    }
+                }
+                
+                // Vertical docking candidates (when horizontal overlap exists)
+                if horizontalOverlap {
+                    let candidatesY: [CGFloat] = [
+                        round(otherFrame.maxY - proposedFrame.minY), // target docks above other
+                        round(otherFrame.minY - proposedFrame.maxY), // target docks below other
+                        round(otherFrame.minY - proposedFrame.minY), // align bottom edges
+                        round(otherFrame.maxY - proposedFrame.maxY)  // align top edges
+                    ]
+                    for dy in candidatesY {
+                        let dist = abs(dy)
+                        if dist <= effectiveSnapThreshold && dist < minDistanceY {
+                            minDistanceY = dist
+                            bestSnapY = dy
+                        }
+                    }
                 }
             }
         }
         
-        // 3. Apply snap adjustment to all group windows
-        if bestSnap != .zero {
-            let snapX = round(bestSnap.x)
-            let snapY = round(bestSnap.y)
-            for gid in groupIDs {
-                guard let win = windows[gid] else { continue }
-                let current = win.frame.origin
-                win.setFrameOrigin(NSPoint(x: round(current.x + snapX), y: round(current.y + snapY)))
-            }
+        // 3. Apply final snapped position to all group windows in a single update
+        let totalShiftX = roundedDeltaX + bestSnapX
+        let totalShiftY = roundedDeltaY + bestSnapY
+        
+        for (gid, startOrigin) in startOrigins {
+            guard let win = windows[gid], win.isVisible else { continue }
+            win.setFrameOrigin(NSPoint(
+                x: round(startOrigin.x + totalShiftX),
+                y: round(startOrigin.y + totalShiftY)
+            ))
         }
     }
     
@@ -120,9 +179,10 @@ public class WindowLayoutManager: NSObject {
             for j in (i + 1)..<allIDs.count {
                 let idA = allIDs[i]
                 let idB = allIDs[j]
-                guard let frameA = windows[idA]?.frame, let frameB = windows[idB]?.frame else { continue }
+                guard let winA = windows[idA], let winB = windows[idB],
+                      winA.isVisible, winB.isVisible else { continue }
                 
-                if areFramesAdjacent(frameA, frameB, tolerance: effectiveAdjacencyTolerance) {
+                if areFramesAdjacent(winA.frame, winB.frame, tolerance: effectiveAdjacencyTolerance) {
                     adjacencies[idA]?.insert(idB)
                     adjacencies[idB]?.insert(idA)
                 }
@@ -131,6 +191,7 @@ public class WindowLayoutManager: NSObject {
     }
     
     private func findGroup(for root: WindowID) -> Set<WindowID> {
+        guard let rootWin = windows[root], rootWin.isVisible else { return [root] }
         var visited = Set<WindowID>()
         var queue = [root]
         
@@ -139,7 +200,9 @@ public class WindowLayoutManager: NSObject {
             if visited.insert(current).inserted {
                 if let neighbors = adjacencies[current] {
                     for neighbor in neighbors where !visited.contains(neighbor) {
-                        queue.append(neighbor)
+                        if let neighborWin = windows[neighbor], neighborWin.isVisible {
+                            queue.append(neighbor)
+                        }
                     }
                 }
             }
@@ -159,72 +222,18 @@ public class WindowLayoutManager: NSObject {
         return false
     }
     
-    // MARK: - Snap Calculations
-    private func calculateWindowSnap(target: NSRect, other: NSRect, threshold: CGFloat) -> CGPoint {
-        var snap = CGPoint.zero
-        
-        let verticalOverlap = (target.maxY >= other.minY - threshold) && (target.minY <= other.maxY + threshold)
-        let horizontalOverlap = (target.maxX >= other.minX - threshold) && (target.minX <= other.maxX + threshold)
-        
-        // Horizontal snapping
-        if verticalOverlap {
-            if abs(target.minX - other.maxX) <= threshold {
-                snap.x = round(other.maxX - target.minX)
-            } else if abs(target.maxX - other.minX) <= threshold {
-                snap.x = round(other.minX - target.maxX)
-            } else if abs(target.minX - other.minX) <= threshold {
-                snap.x = round(other.minX - target.minX)
-            } else if abs(target.maxX - other.maxX) <= threshold {
-                snap.x = round(other.maxX - target.maxX)
-            }
-        }
-        
-        // Vertical snapping
-        if horizontalOverlap {
-            if abs(target.minY - other.maxY) <= threshold {
-                snap.y = round(other.maxY - target.minY)
-            } else if abs(target.maxY - other.minY) <= threshold {
-                snap.y = round(other.minY - target.maxY)
-            } else if abs(target.minY - other.minY) <= threshold {
-                snap.y = round(other.minY - target.minY)
-            } else if abs(target.maxY - other.maxY) <= threshold {
-                snap.y = round(other.maxY - target.maxY)
-            }
-        }
-        
-        return snap
-    }
-    
-    private func calculateScreenSnap(target: NSRect, screenFrame: NSRect, threshold: CGFloat) -> CGPoint {
-        var snap = CGPoint.zero
-        
-        if abs(target.minX - screenFrame.minX) <= threshold {
-            snap.x = round(screenFrame.minX - target.minX)
-        } else if abs(target.maxX - screenFrame.maxX) <= threshold {
-            snap.x = round(screenFrame.maxX - target.maxX)
-        }
-        
-        if abs(target.minY - screenFrame.minY) <= threshold {
-            snap.y = round(screenFrame.minY - target.minY)
-        } else if abs(target.maxY - screenFrame.maxY) <= threshold {
-            snap.y = round(screenFrame.maxY - target.maxY)
-        }
-        
-        return snap
-    }
-    
     // MARK: - Shade Mode Height Change & Docked Windows Shift
     public func findWindowsBelow(id: WindowID) -> Set<WindowID> {
-        guard windows[id] != nil else { return [] }
+        guard let currentWin = windows[id], currentWin.isVisible else { return [] }
         var result = Set<WindowID>()
         var queue: [WindowID] = [id]
         
         while !queue.isEmpty {
             let currentId = queue.removeFirst()
-            guard let currentWin = windows[currentId] else { continue }
-            let currentFrame = currentWin.frame
+            guard let cWin = windows[currentId], cWin.isVisible else { continue }
+            let currentFrame = cWin.frame
             
-            for (otherId, otherWin) in windows where otherId != currentId && !result.contains(otherId) && otherId != id {
+            for (otherId, otherWin) in windows where otherId != currentId && !result.contains(otherId) && otherId != id && otherWin.isVisible {
                 let otherFrame = otherWin.frame
                 let isDirectlyBelow = abs(currentFrame.minY - otherFrame.maxY) <= effectiveAdjacencyTolerance
                 let horizontalOverlap = currentFrame.maxX > otherFrame.minX && currentFrame.minX < otherFrame.maxX

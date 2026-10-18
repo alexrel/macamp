@@ -30,7 +30,6 @@ public enum WindowID: String, Codable, CaseIterable {
     case main
     case equalizer
     case playlist
-    case minibrowser
 }
 
 public enum ScaleFactor: Int, Codable {
