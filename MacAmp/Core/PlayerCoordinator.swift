@@ -347,11 +347,18 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             self?.mainView.plToggle.isOn = false
         }
         
-        // Always on top toggle (ClutterBar A)
+        // ClutterBar buttons (A, I, D, V)
         mainView.onToggleAlwaysOnTop = { [weak self] in self?.handleToggleAlwaysOnTop() }
-        
-        // Double size toggle
+        mainView.onTrackInfo = { [weak self] in self?.showTrackInfoWindow() }
         mainView.onToggleDoubleSize = { [weak self] in self?.toggleDoubleSize() }
+        mainView.onToggleVisualizerMode = { [weak self] in
+            guard let self else { return }
+            let next = self.mainView.visualizer.mode.next
+            self.mainView.visualizer.mode = next
+            self.persistence.state.visualizerMode = next
+            let modeName = (next == .spectrum) ? "Spectrum" : (next == .oscilloscope ? "Oscilloscope" : "Off")
+            self.mainView.marquee.showTemporaryMessage("Vis Mode: \(modeName)")
+        }
         
         // Time display mode toggle
         mainView.timeDisplay.onToggleMode = { [weak self] in
@@ -361,12 +368,14 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             self.persistence.state.timeDisplayMode = nextMode
         }
         
-        // Visualizer mode cycle
+        // Visualizer mode cycle (clicking directly on visualizer view)
         mainView.visualizer.onToggleMode = { [weak self] in
             guard let self else { return }
             let next = self.mainView.visualizer.mode.next
             self.mainView.visualizer.mode = next
             self.persistence.state.visualizerMode = next
+            let modeName = (next == .spectrum) ? "Spectrum" : (next == .oscilloscope ? "Oscilloscope" : "Off")
+            self.mainView.marquee.showTemporaryMessage("Vis Mode: \(modeName)")
         }
         
         // Playlist callbacks

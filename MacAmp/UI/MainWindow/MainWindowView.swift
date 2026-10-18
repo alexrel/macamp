@@ -35,10 +35,12 @@ public class MainWindowView: WinampControlView {
     public private(set) var shadeButton: SkinButton!
     public private(set) var closeButton: SkinButton!
     
-    // MARK: - ClutterBar Buttons (O, A, D)
+    // MARK: - ClutterBar Buttons (O, A, I, D, V)
     public private(set) var clutterOptionsButton: ClutterButton!
     public private(set) var alwaysOnTopButton: ClutterButton!
+    public private(set) var clutterFileInfoButton: ClutterButton!
     public private(set) var doubleSizeButton: ClutterButton!
+    public private(set) var clutterVisualizerButton: ClutterButton!
     
     /// Tracks windowshade mode (collapsed 14px titlebar strip vs full 116px player window)
     public var isShadeMode: Bool = false {
@@ -56,6 +58,8 @@ public class MainWindowView: WinampControlView {
     public var onToggleAlwaysOnTop: (() -> Void)?
     public var onToggleDoubleSize: (() -> Void)?
     public var onOpenOptions: (() -> Void)?
+    public var onTrackInfo: (() -> Void)?
+    public var onToggleVisualizerMode: (() -> Void)?
     public var onEject: (() -> Void)?
     
     public init() {
@@ -95,7 +99,7 @@ public class MainWindowView: WinampControlView {
         closeButton.frame = Layout.closeButton
         addSubview(closeButton)
         
-        // 2. ClutterBar Buttons (O = Options Menu, A = Always On Top, D = Double Size 2x Toggle)
+        // 2. ClutterBar Buttons (O = Options Menu, A = Always On Top, I = File Info, D = Double Size 2x Toggle, V = Visualizer Mode Cycle)
         clutterOptionsButton = ClutterButton(activeSlice: SpriteCatalog.clutterOActive) { [weak self] in
             self?.onOpenOptions?()
         }
@@ -109,12 +113,24 @@ public class MainWindowView: WinampControlView {
         alwaysOnTopButton.isSelected = PlayerCoordinator.shared.persistence.state.isAlwaysOnTop
         addSubview(alwaysOnTopButton)
         
+        clutterFileInfoButton = ClutterButton(activeSlice: SpriteCatalog.clutterIActive) { [weak self] in
+            self?.onTrackInfo?()
+        }
+        clutterFileInfoButton.frame = Layout.clutterFileInfoButton
+        addSubview(clutterFileInfoButton)
+        
         doubleSizeButton = ClutterButton(activeSlice: SpriteCatalog.clutterDActive) { [weak self] in
             self?.onToggleDoubleSize?()
         }
         doubleSizeButton.frame = Layout.clutterDoubleSizeButton
         doubleSizeButton.isSelected = (WindowLayoutManager.shared.currentScale == 2.0)
         addSubview(doubleSizeButton)
+        
+        clutterVisualizerButton = ClutterButton(activeSlice: SpriteCatalog.clutterVActive) { [weak self] in
+            self?.onToggleVisualizerMode?()
+        }
+        clutterVisualizerButton.frame = Layout.clutterVisualizerButton
+        addSubview(clutterVisualizerButton)
         
         // 3. Time, Visualizer, Marquee
         timeDisplay.frame = Layout.timeDisplay
@@ -264,7 +280,9 @@ public class MainWindowView: WinampControlView {
             marquee.isHidden = true
             clutterOptionsButton.isHidden = true
             alwaysOnTopButton.isHidden = true
+            clutterFileInfoButton.isHidden = true
             doubleSizeButton.isHidden = true
+            clutterVisualizerButton.isHidden = true
             
             // 2. Switch shade button to unshade sprite
             shadeButton.normalSlice = SpriteCatalog.mainShadeButtonSelected
@@ -306,7 +324,9 @@ public class MainWindowView: WinampControlView {
             marquee.isHidden = false
             clutterOptionsButton.isHidden = false
             alwaysOnTopButton.isHidden = false
+            clutterFileInfoButton.isHidden = false
             doubleSizeButton.isHidden = false
+            clutterVisualizerButton.isHidden = false
             
             // 2. Switch shade button back to normal shade sprite
             shadeButton.normalSlice = SpriteCatalog.shadeNormal

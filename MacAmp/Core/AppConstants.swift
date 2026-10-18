@@ -37,7 +37,9 @@ public enum AppConstants {
             public static let clutterBarBg = NSRect(x: 10, y: 22, width: 8, height: 43)
             public static let clutterOptionsButton = NSRect(x: 10, y: 25, width: 8, height: 8)
             public static let clutterAlwaysOnTopButton = NSRect(x: 10, y: 33, width: 8, height: 7)
+            public static let clutterFileInfoButton = NSRect(x: 10, y: 40, width: 8, height: 7)
             public static let clutterDoubleSizeButton = NSRect(x: 10, y: 47, width: 8, height: 8)
+            public static let clutterVisualizerButton = NSRect(x: 10, y: 55, width: 8, height: 7)
             
             // Displays and Indicators
             public static let workingIndicator = NSRect(x: 24, y: 28, width: 3, height: 9)

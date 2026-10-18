@@ -375,4 +375,46 @@ testGroup("Playback State & Position Persistence") {
     assertEqual(engine.currentTime, 0.0, "AudioEngine currentTime should be 0 after stop()")
 }
 
+// 8. ClutterBar (O, A, I, D, V) Controls Tests
+testGroup("ClutterBar 100% (O, A, I, D, V) Controls") {
+    typealias Layout = AppConstants.MainWindow.Layout
+    
+    // 1. Verify layout geometry
+    assertEqual(Layout.clutterBarBg, NSRect(x: 10, y: 22, width: 8, height: 43), "clutterBarBg rect")
+    assertEqual(Layout.clutterOptionsButton, NSRect(x: 10, y: 25, width: 8, height: 8), "clutterOptionsButton rect")
+    assertEqual(Layout.clutterAlwaysOnTopButton, NSRect(x: 10, y: 33, width: 8, height: 7), "clutterAlwaysOnTopButton rect")
+    assertEqual(Layout.clutterFileInfoButton, NSRect(x: 10, y: 40, width: 8, height: 7), "clutterFileInfoButton rect")
+    assertEqual(Layout.clutterDoubleSizeButton, NSRect(x: 10, y: 47, width: 8, height: 8), "clutterDoubleSizeButton rect")
+    assertEqual(Layout.clutterVisualizerButton, NSRect(x: 10, y: 55, width: 8, height: 7), "clutterVisualizerButton rect")
+    
+    // 2. Verify MainWindowView subviews & initial states
+    let mainView = MainWindowView()
+    assertTrue(mainView.clutterOptionsButton != nil, "clutterOptionsButton exists")
+    assertTrue(mainView.alwaysOnTopButton != nil, "alwaysOnTopButton exists")
+    assertTrue(mainView.clutterFileInfoButton != nil, "clutterFileInfoButton exists")
+    assertTrue(mainView.doubleSizeButton != nil, "doubleSizeButton exists")
+    assertTrue(mainView.clutterVisualizerButton != nil, "clutterVisualizerButton exists")
+    
+    // Normal mode: all 5 are visible
+    assertTrue(!mainView.clutterOptionsButton.isHidden, "Options visible in normal mode")
+    assertTrue(!mainView.alwaysOnTopButton.isHidden, "AlwaysOnTop visible in normal mode")
+    assertTrue(!mainView.clutterFileInfoButton.isHidden, "FileInfo visible in normal mode")
+    assertTrue(!mainView.doubleSizeButton.isHidden, "DoubleSize visible in normal mode")
+    assertTrue(!mainView.clutterVisualizerButton.isHidden, "Visualizer button visible in normal mode")
+    
+    // Shade mode: all 5 must be hidden
+    mainView.isShadeMode = true
+    assertTrue(mainView.clutterOptionsButton.isHidden, "Options hidden in shade mode")
+    assertTrue(mainView.alwaysOnTopButton.isHidden, "AlwaysOnTop hidden in shade mode")
+    assertTrue(mainView.clutterFileInfoButton.isHidden, "FileInfo hidden in shade mode")
+    assertTrue(mainView.doubleSizeButton.isHidden, "DoubleSize hidden in shade mode")
+    assertTrue(mainView.clutterVisualizerButton.isHidden, "Visualizer button hidden in shade mode")
+    
+    // 3. Test Visualizer Mode Cycling
+    mainView.visualizer.mode = .spectrum
+    assertEqual(mainView.visualizer.mode.next, .oscilloscope, "Spectrum -> Oscilloscope")
+    assertEqual(VisualizerMode.oscilloscope.next, .off, "Oscilloscope -> Off")
+    assertEqual(VisualizerMode.off.next, .spectrum, "Off -> Spectrum")
+}
+
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")
