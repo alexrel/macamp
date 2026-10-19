@@ -73,8 +73,8 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
         toggleWinItem.target = self
         menu.addItem(toggleWinItem)
         
-        // 6. Preferences (Ctrl+P)
-        let prefsItem = NSMenuItem(title: "Preferences... (Ctrl+P)", action: #selector(handlePreferences), keyEquivalent: "p")
+        // 6. Preferences
+        let prefsItem = NSMenuItem(title: "Preferences...", action: #selector(handlePreferences), keyEquivalent: "p")
         prefsItem.keyEquivalentModifierMask = [.control]
         prefsItem.target = self
         menu.addItem(prefsItem)

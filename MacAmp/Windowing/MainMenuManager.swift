@@ -136,12 +136,12 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         
         pbMenu.addItem(NSMenuItem.separator())
         
-        let jumpFileItem = NSMenuItem(title: "Jump to File... (J)", action: #selector(PlayerCoordinator.handleJumpToFile), keyEquivalent: "j")
+        let jumpFileItem = NSMenuItem(title: "Jump to File...", action: #selector(PlayerCoordinator.handleJumpToFile), keyEquivalent: "j")
         jumpFileItem.keyEquivalentModifierMask = []
         jumpFileItem.target = coord
         pbMenu.addItem(jumpFileItem)
         
-        let jumpTimeItem = NSMenuItem(title: "Jump to Time... (Ctrl+J)", action: #selector(PlayerCoordinator.handleJumpToTime), keyEquivalent: "j")
+        let jumpTimeItem = NSMenuItem(title: "Jump to Time...", action: #selector(PlayerCoordinator.handleJumpToTime), keyEquivalent: "j")
         jumpTimeItem.keyEquivalentModifierMask = [.control]
         jumpTimeItem.target = coord
         pbMenu.addItem(jumpTimeItem)
@@ -153,7 +153,7 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         let trackMenuItem = NSMenuItem()
         let trackMenu = NSMenu(title: "Track")
         
-        let trackInfoItem = NSMenuItem(title: "Track Info / ID3 Tag Editor... (Alt+3)", action: #selector(PlayerCoordinator.handleTrackInfo), keyEquivalent: "3")
+        let trackInfoItem = NSMenuItem(title: "Track Info / ID3 Tag Editor...", action: #selector(PlayerCoordinator.handleTrackInfo), keyEquivalent: "3")
         trackInfoItem.keyEquivalentModifierMask = [.option]
         trackInfoItem.target = coord
         trackMenu.addItem(trackInfoItem)
@@ -167,7 +167,7 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         optsMenu.delegate = self
         self.optionsMenu = optsMenu
         
-        let optsPrefsItem = NSMenuItem(title: "Preferences... (Ctrl+P)", action: #selector(PlayerCoordinator.handlePreferences), keyEquivalent: "p")
+        let optsPrefsItem = NSMenuItem(title: "Preferences...", action: #selector(PlayerCoordinator.handlePreferences), keyEquivalent: "p")
         optsPrefsItem.keyEquivalentModifierMask = [.control]
         optsPrefsItem.target = coord
         optsMenu.addItem(optsPrefsItem)
@@ -188,7 +188,7 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         optsMenu.addItem(aotItem)
         self.alwaysOnTopItem = aotItem
         
-        let dblItem = NSMenuItem(title: "Double Size (Ctrl+D)", action: #selector(PlayerCoordinator.handleToggleDoubleSize), keyEquivalent: "d")
+        let dblItem = NSMenuItem(title: "Double Size", action: #selector(PlayerCoordinator.handleToggleDoubleSize), keyEquivalent: "d")
         dblItem.keyEquivalentModifierMask = [.control]
         dblItem.target = coord
         optsMenu.addItem(dblItem)

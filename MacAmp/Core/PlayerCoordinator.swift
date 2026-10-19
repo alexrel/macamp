@@ -1030,8 +1030,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         aboutItem.target = self
         menu.addItem(aboutItem)
         
-        // 2. Track Info / ID3 Tag Editor (Alt+3)
-        let infoItem = NSMenuItem(title: "View file info... (Alt+3)", action: #selector(handleTrackInfo), keyEquivalent: "3")
+        // 2. Track Info / ID3 Tag Editor
+        let infoItem = NSMenuItem(title: "View file info...", action: #selector(handleTrackInfo), keyEquivalent: "3")
         infoItem.keyEquivalentModifierMask = [.option]
         infoItem.target = self
         menu.addItem(infoItem)
@@ -1053,7 +1053,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         playMenu.addItem(playURLItem)
         playMenu.addItem(NSMenuItem.separator())
         
-        let jumpFileItem = NSMenuItem(title: "Jump to file... (J)", action: #selector(handleJumpToFile), keyEquivalent: "j")
+        let jumpFileItem = NSMenuItem(title: "Jump to file...", action: #selector(handleJumpToFile), keyEquivalent: "j")
         jumpFileItem.target = self
         playMenu.addItem(jumpFileItem)
         
@@ -1077,7 +1077,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         // 5. Options submenu
         let optionsMenu = NSMenu(title: "Options")
         
-        let prefsItem = NSMenuItem(title: "Preferences... (Ctrl+P)", action: #selector(handlePreferences), keyEquivalent: "p")
+        let prefsItem = NSMenuItem(title: "Preferences...", action: #selector(handlePreferences), keyEquivalent: "p")
         prefsItem.keyEquivalentModifierMask = [.control]
         prefsItem.target = self
         optionsMenu.addItem(prefsItem)
@@ -1094,7 +1094,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         topItem.state = persistence.state.isAlwaysOnTop ? .on : .off
         optionsMenu.addItem(topItem)
         
-        let dblItem = NSMenuItem(title: "Double Size (Ctrl+D)", action: #selector(handleToggleDoubleSize), keyEquivalent: "d")
+        let dblItem = NSMenuItem(title: "Double Size", action: #selector(handleToggleDoubleSize), keyEquivalent: "d")
         dblItem.keyEquivalentModifierMask = [.control]
         dblItem.target = self
         dblItem.state = (windowManager.currentScale == 2.0) ? .on : .off
@@ -1143,7 +1143,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         pbMenu.addItem(shufItem)
         pbMenu.addItem(NSMenuItem.separator())
         
-        let jumpTimeItem = NSMenuItem(title: "Jump to time... (Ctrl+J)", action: #selector(handleJumpToTime), keyEquivalent: "j")
+        let jumpTimeItem = NSMenuItem(title: "Jump to time...", action: #selector(handleJumpToTime), keyEquivalent: "j")
         jumpTimeItem.keyEquivalentModifierMask = [.control]
         jumpTimeItem.target = self
         pbMenu.addItem(jumpTimeItem)

@@ -613,7 +613,7 @@ public class PlaylistWindowView: WinampControlView {
     private func showMiscOptionsSubmenu(at button: NSView) {
         let menu = NSMenu(title: "Misc Options")
         menu.autoenablesItems = false
-        menu.addItem(createMenuItem(title: "Jump to file... (J)", action: #selector(handleJumpToFile)))
+        menu.addItem(createMenuItem(title: "Jump to file...", action: #selector(handleJumpToFile), keyEquivalent: "j"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(createMenuItem(title: "Scroll to current track", action: #selector(handleScrollToCurrentTrack)))
         menu.addItem(createMenuItem(title: "Clear selection", action: #selector(handleSelectNone)))
@@ -1272,18 +1272,18 @@ public class PlaylistWindowView: WinampControlView {
             
             menu.addItem(NSMenuItem.separator())
             
-            let infoItem = NSMenuItem(title: "View file info... (Alt+3)", action: #selector(contextViewFileInfo), keyEquivalent: "3")
+            let infoItem = NSMenuItem(title: "View file info...", action: #selector(contextViewFileInfo), keyEquivalent: "3")
             infoItem.keyEquivalentModifierMask = [.option]
             infoItem.target = self
             menu.addItem(infoItem)
             
             menu.addItem(NSMenuItem.separator())
             
-            let removeItem = NSMenuItem(title: "Remove selected (Delete)", action: #selector(contextRemoveSelected), keyEquivalent: "")
+            let removeItem = NSMenuItem(title: "Remove selected", action: #selector(contextRemoveSelected), keyEquivalent: "")
             removeItem.target = self
             menu.addItem(removeItem)
             
-            let cropItem = NSMenuItem(title: "Crop selected (Ctrl+Delete)", action: #selector(contextCropSelected), keyEquivalent: "")
+            let cropItem = NSMenuItem(title: "Crop selected", action: #selector(contextCropSelected), keyEquivalent: "")
             cropItem.target = self
             menu.addItem(cropItem)
             
