@@ -201,6 +201,7 @@ public enum SpriteCatalog {
     public static let plClosePressed = SpriteSlice("PL_CLOSE_P", "PLEDIT", 52, 42, 9, 9)
     public static let plShadeNormal = SpriteSlice("PL_SHADE", "PLEDIT", 62, 42, 9, 9)
     public static let plShadePressed = SpriteSlice("PL_SHADE_P", "PLEDIT", 62, 42, 9, 9)
+    public static let plExpandPressed = SpriteSlice("PL_EXPAND_P", "PLEDIT", 150, 42, 9, 9)
     
     // Playlist Windowshade (PLEDIT.BMP)
     public static let plShadeLeft = SpriteSlice("PL_SHADE_LEFT", "PLEDIT", 72, 42, 25, 14)

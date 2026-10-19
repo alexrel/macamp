@@ -187,7 +187,7 @@ public enum AppConstants {
             public static let scrollButtonWidth: CGFloat = 8
             public static let scrollButtonHeight: CGFloat = 5
             
-            public static let scrollbarOffsetFromRight: CGFloat = 14
+            public static let scrollbarOffsetFromRight: CGFloat = 15
             public static let scrollbarThumbWidth: CGFloat = 8
             public static let scrollbarThumbHeight: CGFloat = 18
             

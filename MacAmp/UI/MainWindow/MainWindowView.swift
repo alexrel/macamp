@@ -365,7 +365,7 @@ public class MainWindowView: WinampControlView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
         
-        let isKey = window?.isKeyWindow ?? true
+        let isKey = NSApp.isActive && (window?.isKeyWindow ?? false)
         
         if isShadeMode {
             // Draw Windowshade Background (TITLEBAR.BMP)

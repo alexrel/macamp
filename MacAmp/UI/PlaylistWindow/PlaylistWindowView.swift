@@ -215,6 +215,7 @@ public class PlaylistWindowView: WinampControlView {
             updateLayoutForShadeMode()
             layoutButtons()
             clampScrollOffset()
+            window?.invalidateCursorRects(for: self)
             needsDisplay = true
             for sub in subviews {
                 sub.needsDisplay = true
@@ -340,6 +341,7 @@ public class PlaylistWindowView: WinampControlView {
     public override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         layoutButtons()
+        window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
     
@@ -432,8 +434,8 @@ public class PlaylistWindowView: WinampControlView {
         plScrollUpButton?.isHidden = !isFull
         plScrollDownButton?.isHidden = !isFull
         
-        shadeButton.normalSlice = isShadeMode ? SpriteCatalog.mainShadeButtonSelected : SpriteCatalog.plShadeNormal
-        shadeButton.pressedSlice = isShadeMode ? SpriteCatalog.mainShadeButtonSelectedDepressed : SpriteCatalog.plShadeNormal
+        shadeButton.normalSlice = nil
+        shadeButton.pressedSlice = isShadeMode ? SpriteCatalog.plExpandPressed : SpriteCatalog.plShadePressed
     }
     
     private func createMenuItem(title: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
@@ -841,7 +843,7 @@ public class PlaylistWindowView: WinampControlView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
         
-        let isKey = window?.isKeyWindow ?? true
+        let isKey = NSApp.isActive && (window?.isKeyWindow ?? false)
         typealias Layout = AppConstants.Playlist.Layout
         
         if isShadeMode {
@@ -1069,6 +1071,19 @@ public class PlaylistWindowView: WinampControlView {
             ? NSRect(x: bounds.width - gripSize, y: 0, width: gripSize, height: AppConstants.Playlist.Layout.shadeHeight)
             : NSRect(x: bounds.width - gripSize, y: bounds.height - gripSize, width: gripSize, height: gripSize)
         addCursorRect(resizeRect, cursor: .resizeUpDown)
+        
+        if !isShadeMode {
+            let topH = AppConstants.Playlist.Layout.topBarHeight
+            let botH = AppConstants.Playlist.Layout.bottomBarHeight
+            let trackHeight = max(0, bounds.height - topH - botH)
+            let scrollTrackRect = NSRect(
+                x: bounds.width - AppConstants.Playlist.Layout.rightBorderWidth,
+                y: topH,
+                width: AppConstants.Playlist.Layout.rightBorderWidth,
+                height: trackHeight
+            )
+            addCursorRect(scrollTrackRect, cursor: .resizeUpDown)
+        }
     }
     
     public override func mouseDown(with event: NSEvent) {
@@ -1102,16 +1117,72 @@ public class PlaylistWindowView: WinampControlView {
             return
         }
         
-        // 4. Scrollbar track click
-        let scrollTrackRect = NSRect(x: bounds.width - AppConstants.Playlist.Layout.rightBorderWidth, y: topH, width: 14, height: bounds.height - topH - botH)
+        // 4. Scrollbar track click and interactive dragging
+        let scrollTrackRect = NSRect(
+            x: bounds.width - AppConstants.Playlist.Layout.rightBorderWidth,
+            y: topH,
+            width: AppConstants.Playlist.Layout.rightBorderWidth,
+            height: bounds.height - topH - botH
+        )
         if scrollTrackRect.contains(local) {
             let rowH = AppConstants.Playlist.trackRowHeight
-            let visibleRows = Int((bounds.height - topH - botH) / rowH)
-            if playlist.tracks.count > visibleRows {
-                let ratio = (local.y - topH) / scrollTrackRect.height
-                let maxScroll = playlist.tracks.count - visibleRows
-                scrollOffset = max(0, min(maxScroll, Int(round(ratio * CGFloat(maxScroll)))))
-                needsDisplay = true
+            let trackHeight = bounds.height - topH - botH
+            let visibleRows = Int(trackHeight / rowH)
+            
+            guard playlist.tracks.count > visibleRows else { return }
+            
+            let maxScroll = playlist.tracks.count - visibleRows
+            let thumbH = AppConstants.Playlist.Layout.scrollbarThumbHeight
+            let travelRange = max(1.0, trackHeight - thumbH)
+            let currentThumbY = topH + (CGFloat(scrollOffset) / CGFloat(maxScroll)) * travelRange
+            let thumbRect = NSRect(
+                x: bounds.width - AppConstants.Playlist.Layout.rightBorderWidth,
+                y: currentThumbY,
+                width: AppConstants.Playlist.Layout.rightBorderWidth,
+                height: thumbH
+            )
+            
+            let thumbClickOffsetY: CGFloat
+            if thumbRect.contains(local) {
+                // Clicked directly on thumb: keep relative grab point
+                thumbClickOffsetY = local.y - currentThumbY
+            } else {
+                // Clicked on track: jump thumb center to click location
+                let targetThumbY = local.y - thumbH / 2.0
+                let clampedThumbY = max(topH, min(topH + travelRange, targetThumbY))
+                let norm = (clampedThumbY - topH) / travelRange
+                let newOffset = max(0, min(maxScroll, Int(round(norm * CGFloat(maxScroll)))))
+                if newOffset != scrollOffset {
+                    scrollOffset = newOffset
+                }
+                thumbClickOffsetY = thumbH / 2.0
+            }
+            
+            isDraggingScrollThumb = true
+            needsDisplay = true
+            
+            guard let win = self.window else { return }
+            var keepTracking = true
+            while keepTracking {
+                guard let nextEvent = win.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) else { continue }
+                switch nextEvent.type {
+                case .leftMouseDragged:
+                    let currentPoint = convert(nextEvent.locationInWindow, from: nil)
+                    let targetThumbY = currentPoint.y - thumbClickOffsetY
+                    let clampedThumbY = max(topH, min(topH + travelRange, targetThumbY))
+                    let norm = (clampedThumbY - topH) / travelRange
+                    let newOffset = max(0, min(maxScroll, Int(round(norm * CGFloat(maxScroll)))))
+                    if newOffset != scrollOffset {
+                        scrollOffset = newOffset
+                        needsDisplay = true
+                    }
+                case .leftMouseUp:
+                    keepTracking = false
+                    isDraggingScrollThumb = false
+                    needsDisplay = true
+                default:
+                    break
+                }
             }
             return
         }

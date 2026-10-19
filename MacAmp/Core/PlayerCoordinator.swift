@@ -411,6 +411,33 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                 self.updateWindowMasks()
             }
             .store(in: &cancellables)
+            
+        // Observe window focus & application active state changes to update active titlebars
+        NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateTitleBarFocus() }
+            .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateTitleBarFocus() }
+            .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateTitleBarFocus() }
+            .store(in: &cancellables)
+            
+        NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateTitleBarFocus() }
+            .store(in: &cancellables)
+    }
+    
+    public func updateTitleBarFocus() {
+        mainView?.needsDisplay = true
+        eqView?.needsDisplay = true
+        plView?.needsDisplay = true
     }
     
     public func refreshAllViews() {

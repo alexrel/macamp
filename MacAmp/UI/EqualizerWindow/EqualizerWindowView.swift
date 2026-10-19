@@ -373,7 +373,7 @@ public class EqualizerWindowView: WinampControlView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
         
-        let isKey = window?.isKeyWindow ?? true
+        let isKey = NSApp.isActive && (window?.isKeyWindow ?? false)
         
         if isShadeMode {
             // Draw EQ shade strip background (EQ_EX.BMP 275x14)

@@ -27,6 +27,23 @@ public class WinampWindow: NSWindow {
     public override var canBecomeKey: Bool { true }
     public override var canBecomeMain: Bool { true }
     
+    public override func becomeKey() {
+        super.becomeKey()
+        PlayerCoordinator.shared.updateTitleBarFocus()
+    }
+    
+    public override func resignKey() {
+        super.resignKey()
+        PlayerCoordinator.shared.updateTitleBarFocus()
+    }
+    
+    public override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown && !isKeyWindow {
+            makeKey()
+        }
+        super.sendEvent(event)
+    }
+    
     // MARK: - Dragging Support
     private var dragStartMouse: NSPoint = .zero
     private var dragStartOrigins: [WindowID: NSPoint] = [:]
