@@ -536,6 +536,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                         self.applyAutoEQ(for: track.url)
                     }
                 }
+            } catch is CancellationError {
+                // Superseded by a newer load (e.g. rapid Next presses) — nothing to report.
             } catch {
                 print("Failed to load track \(track.url): \(error)")
                 await MainActor.run {
@@ -592,6 +594,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                         self.applyAutoEQ(for: track.url)
                     }
                 }
+            } catch is CancellationError {
+                // Superseded by a newer load.
             } catch {
                 print("Failed to preload paused track \(track.url): \(error)")
             }

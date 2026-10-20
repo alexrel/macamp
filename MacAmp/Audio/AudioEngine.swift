@@ -42,6 +42,8 @@ public class AudioEngine {
     private var startFrameOffset: AVAudioFramePosition = 0
     private var currentTrackTime: TimeInterval = 0
     private var playbackGeneration: Int = 0
+    /// Incremented on every load(); lets a superseded concurrent load bail out after its await.
+    private var loadGeneration: Int = 0
     
     public private(set) var status: PlayerStatus = .stopped {
         didSet {
@@ -214,6 +216,22 @@ public class AudioEngine {
     
     // MARK: - Track Loading
     public func load(url: URL) async throws -> TrackMetadata {
+        loadGeneration += 1
+        let loadToken = loadGeneration
+        
+        // Loading a new track always ends the previous one; otherwise a paused segment of the
+        // old file would be resumed by play() instead of the new track.
+        playbackGeneration += 1
+        playerNode.stop()
+        streamPlayer?.pause()
+        playbackTimer?.invalidate()
+        playbackTimer = nil
+        startFrameOffset = 0
+        currentTrackTime = 0
+        if status != .stopped {
+            status = .stopped
+        }
+        
         if let old = currentSecurityScopedURL {
             old.stopAccessingSecurityScopedResource()
             currentSecurityScopedURL = nil
@@ -233,6 +251,7 @@ public class AudioEngine {
             
             // Resolve direct stream endpoint if URL is a .pls or .m3u
             let streamURL = await ICYStreamSession.resolveStreamURL(from: url)
+            guard loadToken == loadGeneration else { throw CancellationError() }
             
             let playerItem = AVPlayerItem(url: streamURL)
             let player = AVPlayer(playerItem: playerItem)
@@ -285,8 +304,6 @@ public class AudioEngine {
         
         let localURL = url
         let file = try AVAudioFile(forReading: localURL)
-        self.audioFile = file
-        self.sampleRate = file.processingFormat.sampleRate
         
         var duration: TimeInterval = 0
         if file.processingFormat.sampleRate > 0 && file.length > 0 {
@@ -295,9 +312,13 @@ public class AudioEngine {
         
         // Extract metadata and duration asynchronously using unified TrackItem resolver
         let (resolvedDur, artist, title) = await TrackItem.resolveMetadataAsync(from: localURL)
+        guard loadToken == loadGeneration else { throw CancellationError() }
         if resolvedDur > 0 {
             duration = resolvedDur
         }
+        
+        self.audioFile = file
+        self.sampleRate = file.processingFormat.sampleRate
         
         let finalTitle = (title != localURL.deletingPathExtension().lastPathComponent) ? title : (url.lastPathComponent.isEmpty ? (url.host ?? url.absoluteString) : url.lastPathComponent)
         let finalArtist = (artist != "Unknown Artist") ? artist : (url.isFileURL ? "Unknown Artist" : "Internet Stream")
@@ -307,8 +328,6 @@ public class AudioEngine {
         let approxBitrate = duration > 0 ? Int((Double(file.length * 2 * Int64(channels)) / duration) * 8 / 1000) : 128
         
         self.fileDuration = duration
-        self.startFrameOffset = 0
-        self.currentTrackTime = 0
         
         let meta = TrackMetadata(
             url: url,
@@ -399,8 +418,9 @@ public class AudioEngine {
             return
         }
         
+        // Keep playbackGeneration unchanged: the scheduled segment stays valid across pause/resume,
+        // and its completion handler must still advance to the next track.
         currentTrackTime = currentTime
-        playbackGeneration += 1
         playerNode.pause()
         status = .paused
         playbackTimer?.invalidate()
