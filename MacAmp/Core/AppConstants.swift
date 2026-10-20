@@ -274,5 +274,12 @@ public enum AppConstants {
         public static let deleteKey: UInt16 = 51
         public static let f3: UInt16 = 99
         public static let escape: UInt16 = 53
+        public static let enterKey: UInt16 = 76      // keypad Enter
+        public static let forwardDelete: UInt16 = 117
+        public static let home: UInt16 = 115
+        public static let end: UInt16 = 119
+        public static let pageUp: UInt16 = 116
+        public static let pageDown: UInt16 = 121
+        public static let digit3: UInt16 = 20
     }
 }

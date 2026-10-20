@@ -162,7 +162,12 @@ run_tests() {
            -framework Cocoa -framework AVFoundation -framework AppKit -framework WebKit -framework Carbon \
            $obj_files scripts/run_all_tests.swift -o "$BUILD_DIR/run_all_tests"
     
-    "$BUILD_DIR/run_all_tests"
+    # Run against a throwaway home directory: tests save session/playlist/skins through
+    # PersistenceManager and must never touch the user's real ~/Library/Application Support/MacAmp.
+    local test_home
+    test_home=$(mktemp -d -t macamp-test-home)
+    CFFIXED_USER_HOME="$test_home" MACAMP_TEST_HOME="$test_home" "$BUILD_DIR/run_all_tests"
+    rm -rf "$test_home"
     log_ok "All MacAmp tests passed successfully!"
 }
 

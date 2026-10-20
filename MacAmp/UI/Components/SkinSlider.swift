@@ -21,6 +21,13 @@ public class SkinSlider: WinampControlView {
                 self.value = clamped
                 return
             }
+            // Playback updates the seek bar 10x/s; skip redraws that wouldn't move the thumb by a point
+            let range = maxValue - minValue
+            let steps = Double(max(bounds.width, bounds.height))
+            if range > 0, steps > 0,
+               round((oldValue - minValue) / range * steps) == round((value - minValue) / range * steps) {
+                return
+            }
             needsDisplay = true
         }
     }

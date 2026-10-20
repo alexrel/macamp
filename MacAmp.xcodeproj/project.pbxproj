@@ -57,6 +57,8 @@
 		AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */ = {isa = PBXBuildFile; fileRef = AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */; };
 		BDC069482B887D910009C001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDC069472B887D910009C001 /* Assets.xcassets */; };
 		BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDC0694A2B887D910009C001 /* Preview Assets.xcassets */; };
+		AAEE792FED080B14A71932A6 /* TextEncoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAEF3EA851E4615920CAD18C /* TextEncoding.swift */; };
+		AA44A560CFB8767ABE74192C /* StreamDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF62A9AAAA8BC001D825328 /* StreamDecoder.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -112,6 +114,8 @@
 		BDC069472B887D910009C001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BDC0694A2B887D910009C001 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		BDC0694C2B887D910009C001 /* MacAmp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MacAmp.entitlements; sourceTree = "<group>"; };
+		AAEF3EA851E4615920CAD18C /* TextEncoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEncoding.swift; sourceTree = "<group>"; };
+		AAF62A9AAAA8BC001D825328 /* StreamDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamDecoder.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -176,7 +180,8 @@
 				AA36A1D975E52D59DCA57075 /* GlobalHotkeysController.swift */,
 				AA2EE4C01E58DA5839980F70 /* MediaKeyController.swift */,
 				AAC2BB3C6AE0885E199BF702 /* PlayerCoordinator.swift */,
-			);
+							AAEF3EA851E4615920CAD18C /* TextEncoding.swift */,
+);
 			path = "Core";
 			sourceTree = "<group>";
 		};
@@ -201,7 +206,8 @@
 				AA05E180143679538AA8E2C1 /* EqualizerPresets.swift */,
 				AA962E83A0FAE25570805F4F /* FFTAnalyzer.swift */,
 				AA68B6DF33DD1F5006AFF6A9 /* ICYStreamSession.swift */,
-			);
+							AAF62A9AAAA8BC001D825328 /* StreamDecoder.swift */,
+);
 			path = "Audio";
 			sourceTree = "<group>";
 		};
@@ -477,7 +483,9 @@
 				AA836AC777451C59AB95C33A /* StatusBarManager.swift in Sources */,
 				AA7915404346F35EF3A845E4 /* WinampWindow.swift in Sources */,
 				AA18E74F7E8CB5528B921B69 /* WindowLayoutManager.swift in Sources */,
-			);
+							AAEE792FED080B14A71932A6 /* TextEncoding.swift in Sources */,
+				AA44A560CFB8767ABE74192C /* StreamDecoder.swift in Sources */,
+);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */

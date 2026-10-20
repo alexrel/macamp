@@ -13,20 +13,40 @@ public class VisualizerView: WinampControlView {
     
     public var onToggleMode: (() -> Void)?
     
+    // Plain stored arrays (no observers) so per-frame updates write in place without reallocating
+    private var spectrumStorage: [Float] = Array(repeating: 0.0, count: AppConstants.Visualizer.numSpectrumBars)
+    private var waveformStorage: [Float] = Array(repeating: 0.0, count: AppConstants.Visualizer.numWaveformPoints)
+    
     /// 19 spectral frequency bins (0.0 ... 1.0)
-    public var spectrumAmplitudes: [Float] = Array(repeating: 0.0, count: AppConstants.Visualizer.numSpectrumBars) {
-        didSet {
+    public var spectrumAmplitudes: [Float] {
+        get { spectrumStorage }
+        set {
+            spectrumStorage = newValue
             updatePeaks()
             needsDisplay = true
         }
     }
     
     /// 76 waveform sample points (-1.0 ... 1.0)
-    public var waveformPoints: [Float] = Array(repeating: 0.0, count: AppConstants.Visualizer.numWaveformPoints) {
-        didSet {
+    public var waveformPoints: [Float] {
+        get { waveformStorage }
+        set {
+            waveformStorage = newValue
             if mode == .oscilloscope {
                 needsDisplay = true
             }
+        }
+    }
+    
+    /// Pulls the latest analysis frame from the audio tap. Redraws only when something visible changed
+    /// (new amplitudes, or peaks still falling), so a steady or silent signal costs no drawing.
+    public func update(from frame: VisualizerFrameBuffer) {
+        let changed = frame.read(spectrum: &spectrumStorage, waveform: &waveformStorage)
+        let peaksFalling = showPeaks && mode == .spectrum && zip(peakHeights, spectrumStorage).contains { $0 > $1 }
+        guard changed || peaksFalling else { return }
+        updatePeaks()
+        if mode != .off {
+            needsDisplay = true
         }
     }
     
@@ -39,6 +59,14 @@ public class VisualizerView: WinampControlView {
     
     public required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+    
+    /// Empties the display, including peak dots (used when playback pauses/stops and analysis is switched off).
+    public func clear() {
+        for i in spectrumStorage.indices { spectrumStorage[i] = 0 }
+        for i in waveformStorage.indices { waveformStorage[i] = 0 }
+        for i in peakHeights.indices { peakHeights[i] = 0 }
+        needsDisplay = true
     }
     
     private func updatePeaks() {

@@ -6,6 +6,9 @@ import AppKit
 /// Renders using TEXT.BMP (5x6 bitmap font).
 /// When text exceeds marquee width (152px), it pauses for 2.5s at start,
 /// then smoothly scrolls at 2px per tick (0.12s interval) with a looping trailing copy.
+///
+/// The scroll timer only exists while it is needed: text wider than the marquee, scrolling enabled,
+/// and `isScrollingActive` (playing and window visible). Otherwise the marquee costs no CPU.
 public class MarqueeView: WinampControlView {
     /// Persistent song title or default text.
     public var text: String = "MACAMP 2.91 (CLASSIC)" {
@@ -21,6 +24,15 @@ public class MarqueeView: WinampControlView {
     /// Currently displayed text in ticker (temporary status message or song title).
     public private(set) var currentDisplayText: String = "MACAMP 2.91 (CLASSIC)"
     
+    /// Set by PlayerCoordinator: false while paused/stopped or when the window is hidden/minimized.
+    public var isScrollingActive: Bool = true {
+        didSet { if oldValue != isScrollingActive { updateScrollTimer() } }
+    }
+    
+    /// Text width cache, keyed on everything the width depends on
+    private var cachedWidthKey: String?
+    private var cachedWidth: CGFloat = 0
+    
     private var temporaryMessage: String?
     private var temporaryTimer: Timer?
     private var scrollOffset: CGFloat = 0.0
@@ -30,7 +42,7 @@ public class MarqueeView: WinampControlView {
     
     public init() {
         super.init(frame: AppConstants.MainWindow.Layout.marquee)
-        startScrollTimer()
+        updateScrollTimer()
     }
     
     public required init?(coder: NSCoder) {
@@ -49,6 +61,7 @@ public class MarqueeView: WinampControlView {
         temporaryTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
             guard let self else { return }
             self.temporaryMessage = nil
+            self.temporaryTimer = nil
             self.currentDisplayText = self.text
             self.resetScroll()
             self.needsDisplay = true
@@ -59,38 +72,58 @@ public class MarqueeView: WinampControlView {
         scrollOffset = 0.0
         isPausedAtStart = true
         pauseTicksRemaining = Int(AppConstants.Marquee.pauseDuration / AppConstants.Marquee.scrollInterval)
+        updateScrollTimer()
     }
     
-    private func startScrollTimer() {
-        scrollTimer = Timer.scheduledTimer(withTimeInterval: AppConstants.Marquee.scrollInterval, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            self.tick()
+    /// Re-evaluates whether the scroll timer should run (call after text, font or preference changes).
+    public func updateScrollTimer() {
+        let needsScrolling = isScrollingActive
+            && PersistenceManager.shared.state.isMarqueeScrollEnabled
+            && currentTextWidth() > bounds.width
+        if needsScrolling {
+            guard scrollTimer == nil else { return }
+            let timer = Timer(timeInterval: AppConstants.Marquee.scrollInterval, repeats: true) { [weak self] _ in
+                self?.tick()
+            }
+            timer.tolerance = 0.01
+            RunLoop.main.add(timer, forMode: .common)
+            scrollTimer = timer
+        } else {
+            scrollTimer?.invalidate()
+            scrollTimer = nil
+            if scrollOffset != 0 && !isScrollingActive {
+                // Frozen mid-scroll looks broken; show the start of the text while idle
+                scrollOffset = 0
+                needsDisplay = true
+            }
         }
     }
     
+    public var isScrollTimerRunning: Bool { scrollTimer != nil }
+    
+    /// Pixel width of the current text; measured once per text/font change instead of on every tick.
     private func currentTextWidth() -> CGFloat {
         let state = PersistenceManager.shared.state
-        if state.marqueeFontMode == .desktop {
-            let font = NSFont(name: state.desktopFontFamily, size: CGFloat(state.desktopFontSize))
-                ?? NSFont.monospacedSystemFont(ofSize: CGFloat(state.desktopFontSize), weight: .regular)
-            let attrs: [NSAttributedString.Key: Any] = [.font: font]
-            return NSString(string: currentDisplayText).size(withAttributes: attrs).width
-        } else {
+        guard state.marqueeFontMode == .desktop else {
             return CGFloat(currentDisplayText.count) * AppConstants.Font.charWidth
         }
+        let key = "\(state.desktopFontFamily)|\(state.desktopFontSize)|\(currentDisplayText)"
+        if key == cachedWidthKey { return cachedWidth }
+        let font = NSFont(name: state.desktopFontFamily, size: CGFloat(state.desktopFontSize))
+            ?? NSFont.monospacedSystemFont(ofSize: CGFloat(state.desktopFontSize), weight: .regular)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        cachedWidth = NSString(string: currentDisplayText).size(withAttributes: attrs).width
+        cachedWidthKey = key
+        return cachedWidth
     }
     
     private func tick() {
-        guard PersistenceManager.shared.state.isMarqueeScrollEnabled else {
-            scrollOffset = 0
-            needsDisplay = true
-            return
-        }
-        
         let totalTextWidth = currentTextWidth()
-        guard totalTextWidth > bounds.width else {
+        guard PersistenceManager.shared.state.isMarqueeScrollEnabled, totalTextWidth > bounds.width else {
+            // Text now fits (or scrolling was disabled in preferences): stop ticking
             scrollOffset = 0
             needsDisplay = true
+            updateScrollTimer()
             return
         }
         

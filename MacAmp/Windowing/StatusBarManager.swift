@@ -103,7 +103,7 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
         let isPlaying = (coord.audioEngine.status == .playing)
         
         if let track = coord.playlist.currentTrack {
-            let name = track.artist.isEmpty ? track.title : "\(track.artist) - \(track.title)"
+            let name = track.displayName
             let prefix = isPlaying ? "▶ " : "❚❚ "
             let displayName = name.isEmpty ? track.url.lastPathComponent : name
             titleItem?.title = prefix + displayName

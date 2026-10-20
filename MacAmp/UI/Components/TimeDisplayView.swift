@@ -17,7 +17,19 @@ import AppKit
 ///   When blink is off, digits disappear while the green colon remains steadily visible.
 public class TimeDisplayView: WinampControlView {
     public var currentTime: TimeInterval = 0 {
-        didSet { needsDisplay = true }
+        didSet {
+            // Updated 10x/s while playing; only the change of a displayed second needs a redraw
+            if displayedSeconds(for: oldValue) != displayedSeconds(for: currentTime) {
+                needsDisplay = true
+            }
+        }
+    }
+    
+    private func displayedSeconds(for time: TimeInterval) -> Int {
+        if mode == .remaining && totalDuration > 0 {
+            return -max(0, Int(totalDuration - time))
+        }
+        return max(0, Int(time))
     }
     public var totalDuration: TimeInterval = 0 {
         didSet { needsDisplay = true }

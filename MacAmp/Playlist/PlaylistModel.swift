@@ -9,7 +9,7 @@ public struct TrackItem: Codable, Identifiable, Equatable {
     public let artist: String
     public let duration: TimeInterval
     
-    public init(id: UUID = UUID(), url: URL, title: String, artist: String = "Unknown Artist", duration: TimeInterval = 0) {
+    public init(id: UUID = UUID(), url: URL, title: String, artist: String = "", duration: TimeInterval = 0) {
         self.id = id
         self.url = url
         self.title = title
@@ -80,47 +80,51 @@ public struct TrackItem: Codable, Identifiable, Equatable {
         return 0
     }
     
+    /// "Artist - Title", or just the title when the artist is unknown (Winamp shows untagged files by file name).
+    public static func displayName(artist: String, title: String) -> String {
+        (artist.isEmpty || artist == legacyUnknownArtist) ? title : "\(artist) - \(title)"
+    }
+    
+    public var displayName: String { TrackItem.displayName(artist: artist, title: title) }
+    
+    /// Placeholder older versions stored for untagged files; treated as "no artist".
+    public static let legacyUnknownArtist = "Unknown Artist"
+    
+    /// Reads title/artist tags. Without tags the artist stays empty and the title is the file name,
+    /// like Winamp: no guessing from separators, because file names don't follow one order
+    /// ("Song - Artist - Cover [id]", "Song ｜ Artist ｜ Cover [id]", "Artist - Song", ...).
     public static func resolveArtistAndTitle(from url: URL) -> (artist: String, title: String) {
-        var artist = "Unknown Artist"
-        var title = url.deletingPathExtension().lastPathComponent
+        var artist = ""
+        let fileBaseName = url.deletingPathExtension().lastPathComponent
+        var title = fileBaseName
         
         let asset = AVURLAsset(url: url)
         for item in asset.commonMetadata {
             if item.commonKey == .commonKeyTitle, let val = item.stringValue, !val.trimmingCharacters(in: .whitespaces).isEmpty {
-                title = val.trimmingCharacters(in: .whitespaces)
+                title = TextEncoding.repairCyrillic(val.trimmingCharacters(in: .whitespaces))
             } else if item.commonKey == .commonKeyArtist, let val = item.stringValue, !val.trimmingCharacters(in: .whitespaces).isEmpty {
-                artist = val.trimmingCharacters(in: .whitespaces)
+                artist = TextEncoding.repairCyrillic(val.trimmingCharacters(in: .whitespaces))
             }
         }
         
-        if artist == "Unknown Artist" || title == url.deletingPathExtension().lastPathComponent {
+        if artist.isEmpty || title == fileBaseName {
             for item in asset.metadata {
                 let keyStr = (item.key as? String) ?? item.commonKey?.rawValue ?? item.identifier?.rawValue ?? ""
-                if (keyStr == "TIT2" || keyStr.contains("TIT2") || keyStr.hasSuffix("©nam")) && title == url.deletingPathExtension().lastPathComponent {
+                if (keyStr == "TIT2" || keyStr.contains("TIT2") || keyStr.hasSuffix("©nam")) && title == fileBaseName {
                     if let val = item.stringValue, !val.trimmingCharacters(in: .whitespaces).isEmpty {
-                        title = val.trimmingCharacters(in: .whitespaces)
+                        title = TextEncoding.repairCyrillic(val.trimmingCharacters(in: .whitespaces))
                     }
-                } else if (keyStr == "TPE1" || keyStr.contains("TPE1") || keyStr.hasSuffix("©ART")) && artist == "Unknown Artist" {
+                } else if (keyStr == "TPE1" || keyStr.contains("TPE1") || keyStr.hasSuffix("©ART")) && artist.isEmpty {
                     if let val = item.stringValue, !val.trimmingCharacters(in: .whitespaces).isEmpty {
-                        artist = val.trimmingCharacters(in: .whitespaces)
+                        artist = TextEncoding.repairCyrillic(val.trimmingCharacters(in: .whitespaces))
                     }
                 }
             }
         }
         
-        if artist == "Unknown Artist" {
-            let baseName = url.deletingPathExtension().lastPathComponent
-            if baseName.contains(" - ") {
-                let parts = baseName.components(separatedBy: " - ")
-                if parts.count >= 2 {
-                    let guessedArtist = parts[0].trimmingCharacters(in: .whitespaces)
-                    let guessedTitle = parts.dropFirst().joined(separator: " - ").trimmingCharacters(in: .whitespaces)
-                    if !guessedArtist.isEmpty && !guessedTitle.isEmpty {
-                        artist = guessedArtist
-                        title = guessedTitle
-                    }
-                }
-            }
+        if title == fileBaseName {
+            // Names extracted from old ZIP/CD rips may themselves be CP1251 mojibake
+            title = TextEncoding.repairCyrillic(fileBaseName)
         }
         
         return (artist, title)
@@ -149,10 +153,10 @@ public struct TrackItem: Codable, Identifiable, Equatable {
                 let keyStr = (item.key as? String) ?? item.commonKey?.rawValue ?? item.identifier?.rawValue ?? ""
                 if (item.commonKey == .commonKeyTitle || keyStr == "TIT2" || keyStr.hasSuffix("©nam")),
                    let val = try? await item.load(.stringValue), !val.trimmingCharacters(in: .whitespaces).isEmpty {
-                    title = val.trimmingCharacters(in: .whitespaces)
+                    title = TextEncoding.repairCyrillic(val.trimmingCharacters(in: .whitespaces))
                 } else if (item.commonKey == .commonKeyArtist || keyStr == "TPE1" || keyStr.hasSuffix("©ART")),
                           let val = try? await item.load(.stringValue), !val.trimmingCharacters(in: .whitespaces).isEmpty {
-                    artist = val.trimmingCharacters(in: .whitespaces)
+                    artist = TextEncoding.repairCyrillic(val.trimmingCharacters(in: .whitespaces))
                 }
             }
         }
@@ -175,7 +179,7 @@ public struct TrackItem: Codable, Identifiable, Equatable {
                 prefix = "\(index). "
             }
         }
-        var name = (artist.isEmpty ? "" : "\(artist) - ") + title
+        var name = displayName
         if state.playlistShowExtensions && !url.pathExtension.isEmpty {
             name += ".\(url.pathExtension)"
         }
@@ -185,14 +189,21 @@ public struct TrackItem: Codable, Identifiable, Equatable {
 
 public class PlaylistModel: ObservableObject {
     @Published public private(set) var tracks: [TrackItem] = []
-    @Published public var currentIndex: Int? = nil
+    @Published public var currentIndex: Int? = nil {
+        didSet { if !isUpdatingShuffle { alignShuffleToCurrent() } }
+    }
     @Published public var selectedIndices: Set<Int> = []
     
-    @Published public var isShuffle: Bool = false
+    @Published public var isShuffle: Bool = false {
+        didSet { if isShuffle && !oldValue { rebuildShuffleOrder() } }
+    }
     @Published public var isRepeat: Bool = false
     
-    private var shuffleOrder: [Int] = []
+    /// Shuffle play order stored by track ID, so sorting/moving/removing tracks never invalidates it.
+    /// Entries before `shufflePosition` are history (Previous), entries after it are still unplayed.
+    private var shuffleOrder: [UUID] = []
     private var shufflePosition: Int = 0
+    private var isUpdatingShuffle = false
     
     public init() {}
     
@@ -245,19 +256,19 @@ public class PlaylistModel: ObservableObject {
     // MARK: - Mutating Methods
     public func add(track: TrackItem) {
         tracks.append(track)
-        updateShuffleOrder()
         if currentIndex == nil {
             currentIndex = 0
         }
+        syncShuffleOrder()
         prefetchMetadata(for: [track.id])
     }
     
     public func add(tracks newTracks: [TrackItem]) {
         tracks.append(contentsOf: newTracks)
-        updateShuffleOrder()
         if currentIndex == nil && !tracks.isEmpty {
             currentIndex = 0
         }
+        syncShuffleOrder()
         prefetchMetadata(for: newTracks.map { $0.id })
     }
     
@@ -275,7 +286,7 @@ public class PlaylistModel: ObservableObject {
         guard index >= 0, index < tracks.count else { return }
         let old = tracks[index]
         let newDuration = (duration != nil && duration! > 0) ? duration! : old.duration
-        let newArtist = (artist != nil && !artist!.isEmpty && artist != "Unknown Artist") ? artist! : old.artist
+        let newArtist = (artist != nil && !artist!.isEmpty && artist != TrackItem.legacyUnknownArtist) ? artist! : old.artist
         let newTitle = (title != nil && !title!.isEmpty) ? title! : old.title
         
         guard newDuration != old.duration || newArtist != old.artist || newTitle != old.title else { return }
@@ -289,13 +300,41 @@ public class PlaylistModel: ObservableObject {
         )
     }
     
+    /// Re-reads tags of playlists saved by older versions, which stored "Unknown Artist" for untagged files
+    /// and split file names on " - " (often putting the song name into the artist field).
+    /// Runs off the main thread; returns immediately.
+    public func migrateLegacyFileNameMetadata(completion: (() -> Void)? = nil) {
+        let suspects = tracks.filter { track in
+            guard track.url.isFileURL else { return false }
+            let base = track.url.deletingPathExtension().lastPathComponent
+            return track.artist == TrackItem.legacyUnknownArtist || "\(track.artist) - \(track.title)" == base
+        }
+        guard !suspects.isEmpty else {
+            completion?()
+            return
+        }
+        Task.detached(priority: .utility) { [weak self] in
+            let resolved = suspects.map { ($0.id, TrackItem.resolveArtistAndTitle(from: $0.url)) }
+            await MainActor.run {
+                guard let self else { return }
+                for (id, meta) in resolved {
+                    guard let idx = self.tracks.firstIndex(where: { $0.id == id }) else { continue }
+                    let old = self.tracks[idx]
+                    self.tracks[idx] = TrackItem(id: old.id, url: old.url, title: meta.title, artist: meta.artist, duration: old.duration)
+                }
+                PersistenceManager.shared.savePlaylist(self.tracks)
+                completion?()
+            }
+        }
+    }
+    
     public func setTrack(at index: Int, _ track: TrackItem) {
         guard index >= 0, index < tracks.count else { return }
         tracks[index] = track
     }
     
     public func prefetchMetadata(for ids: [UUID]) {
-        let targets = tracks.filter { ids.contains($0.id) && ($0.duration <= 0 || $0.artist == "Unknown Artist") }
+        let targets = tracks.filter { ids.contains($0.id) && $0.duration <= 0 }
         guard !targets.isEmpty else { return }
         
         Task { [weak self] in
@@ -325,7 +364,7 @@ public class PlaylistModel: ObservableObject {
                 currentIndex = current - 1
             }
         }
-        updateShuffleOrder()
+        syncShuffleOrder()
     }
     
     public func removeSelected() {
@@ -341,7 +380,7 @@ public class PlaylistModel: ObservableObject {
         tracks = tracks.enumerated().filter { selectedIndices.contains($0.offset) }.map { $0.element }
         selectedIndices.removeAll()
         currentIndex = tracks.isEmpty ? nil : 0
-        updateShuffleOrder()
+        syncShuffleOrder()
     }
     
     public func clear() {
@@ -349,6 +388,7 @@ public class PlaylistModel: ObservableObject {
         selectedIndices.removeAll()
         currentIndex = nil
         shuffleOrder.removeAll()
+        shufflePosition = 0
     }
     
     /// Reorders the specified tracks and inserts them at destinationIndex
@@ -386,7 +426,7 @@ public class PlaylistModel: ObservableObject {
             self.currentIndex = newIdx
         }
         
-        updateShuffleOrder()
+        syncShuffleOrder()
         PersistenceManager.shared.savePlaylist(tracks)
     }
     
@@ -414,7 +454,7 @@ public class PlaylistModel: ObservableObject {
             currentIndex = tracks.isEmpty ? nil : tracks.count - 1
         }
         selectedIndices.removeAll()
-        updateShuffleOrder()
+        syncShuffleOrder()
         return beforeCount - tracks.count
     }
     
@@ -434,19 +474,19 @@ public class PlaylistModel: ObservableObject {
             currentIndex = tracks.isEmpty ? nil : tracks.count - 1
         }
         selectedIndices.removeAll()
-        updateShuffleOrder()
+        syncShuffleOrder()
         return removed
     }
     
     // MARK: - Sorting
     public func sortByTitle() {
         tracks.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        updateShuffleOrder()
+        syncShuffleOrder()
     }
     
     public func sortByFilename() {
         tracks.sort { $0.url.lastPathComponent.localizedCaseInsensitiveCompare($1.url.lastPathComponent) == .orderedAscending }
-        updateShuffleOrder()
+        syncShuffleOrder()
     }
     
     public func reverse() {
@@ -454,13 +494,13 @@ public class PlaylistModel: ObservableObject {
         if let current = currentIndex {
             currentIndex = (tracks.count - 1) - current
         }
-        updateShuffleOrder()
+        syncShuffleOrder()
     }
     
     public func randomize() {
         tracks.shuffle()
         currentIndex = tracks.isEmpty ? nil : 0
-        updateShuffleOrder()
+        rebuildShuffleOrder()
     }
     
     // MARK: - Navigation
@@ -468,18 +508,20 @@ public class PlaylistModel: ObservableObject {
         guard !tracks.isEmpty else { return nil }
         
         if isShuffle {
+            if shuffleOrder.count != tracks.count { syncShuffleOrder() }
             guard !shuffleOrder.isEmpty else { return nil }
-            shufflePosition += 1
-            if shufflePosition >= shuffleOrder.count {
-                if isRepeat {
-                    shufflePosition = 0
-                } else {
-                    return nil
+            if shufflePosition + 1 >= shuffleOrder.count {
+                guard isRepeat else { return nil }
+                // New pass: fresh order that does not start with the track that just finished
+                rebuildShuffleOrder(keepCurrentFirst: false)
+                if shuffleOrder.count > 1, shuffleOrder.first == currentTrack?.id {
+                    shuffleOrder.swapAt(0, Int.random(in: 1..<shuffleOrder.count))
                 }
+                shufflePosition = 0
+            } else {
+                shufflePosition += 1
             }
-            let nextIdx = shuffleOrder[shufflePosition]
-            currentIndex = nextIdx
-            return tracks[nextIdx]
+            return selectShuffleEntry()
         } else {
             guard let cur = currentIndex else {
                 currentIndex = 0
@@ -501,11 +543,10 @@ public class PlaylistModel: ObservableObject {
         guard !tracks.isEmpty else { return nil }
         
         if isShuffle {
+            if shuffleOrder.count != tracks.count { syncShuffleOrder() }
             guard !shuffleOrder.isEmpty else { return nil }
             shufflePosition = max(0, shufflePosition - 1)
-            let prevIdx = shuffleOrder[shufflePosition]
-            currentIndex = prevIdx
-            return tracks[prevIdx]
+            return selectShuffleEntry()
         } else {
             guard let cur = currentIndex else {
                 currentIndex = 0
@@ -523,12 +564,64 @@ public class PlaylistModel: ObservableObject {
         }
     }
     
-    private func updateShuffleOrder() {
-        shuffleOrder = Array(0..<tracks.count).shuffled()
-        if let cur = currentIndex, let pos = shuffleOrder.firstIndex(of: cur) {
-            shufflePosition = pos
-        } else {
-            shufflePosition = 0
+    // MARK: - Shuffle Order
+    
+    /// Makes the entry at `shufflePosition` the current track.
+    private func selectShuffleEntry() -> TrackItem? {
+        let id = shuffleOrder[shufflePosition]
+        guard let idx = tracks.firstIndex(where: { $0.id == id }) else { return nil }
+        isUpdatingShuffle = true
+        currentIndex = idx
+        isUpdatingShuffle = false
+        return tracks[idx]
+    }
+    
+    /// Builds a new random order. By default the current track goes first so every other track is still ahead.
+    private func rebuildShuffleOrder(keepCurrentFirst: Bool = true) {
+        let currentID = currentTrack?.id
+        var ids = tracks.map(\.id).shuffled()
+        if keepCurrentFirst, let currentID, let pos = ids.firstIndex(of: currentID) {
+            ids.remove(at: pos)
+            ids.insert(currentID, at: 0)
         }
+        shuffleOrder = ids
+        shufflePosition = 0
+    }
+    
+    /// Reconciles the order with the track list after a mutation: drops removed tracks,
+    /// inserts new ones at random places among the unplayed entries, and re-aligns to the current track.
+    private func syncShuffleOrder() {
+        guard !shuffleOrder.isEmpty else {
+            rebuildShuffleOrder()
+            return
+        }
+        let liveIDs = Set(tracks.map(\.id))
+        var order = shuffleOrder.filter { liveIDs.contains($0) }
+        // New position = surviving entries that were before the old position
+        let pos = shuffleOrder.prefix(shufflePosition).filter { liveIDs.contains($0) }.count
+        let known = Set(order)
+        for track in tracks where !known.contains(track.id) {
+            let lower = min(pos + 1, order.count)
+            order.insert(track.id, at: Int.random(in: lower...order.count))
+        }
+        shuffleOrder = order
+        shufflePosition = min(pos, max(0, order.count - 1))
+        alignShuffleToCurrent()
+    }
+    
+    /// Called when the current track is chosen directly (double-click, Jump to File, restore).
+    /// Moves that track right after the current shuffle position so history and the unplayed
+    /// remainder stay intact.
+    private func alignShuffleToCurrent() {
+        // During a mutation the order is stale; syncShuffleOrder() re-aligns once it has reconciled it
+        guard let currentID = currentTrack?.id, !shuffleOrder.isEmpty, shuffleOrder.count == tracks.count else { return }
+        if shufflePosition < shuffleOrder.count, shuffleOrder[shufflePosition] == currentID { return }
+        guard let oldPos = shuffleOrder.firstIndex(of: currentID) else { return }
+        shuffleOrder.remove(at: oldPos)
+        var target = shufflePosition + 1
+        if oldPos < target { target -= 1 }
+        target = min(max(0, target), shuffleOrder.count)
+        shuffleOrder.insert(currentID, at: target)
+        shufflePosition = target
     }
 }

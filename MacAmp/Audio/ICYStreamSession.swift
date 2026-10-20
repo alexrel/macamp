@@ -1,9 +1,8 @@
 import Foundation
-import Accelerate
 
 /// A streaming network session that connects to SHOUTcast and Icecast servers,
 /// requests and parses live ICY metadata (station name, bitrate, live song titles),
-/// and generates real-time spectral and waveform data for the Winamp visualizer.
+/// and hands the remaining compressed audio bytes to `onAudioData` for decoding.
 public class ICYStreamSession: NSObject, URLSessionDataDelegate {
     
     // MARK: - Properties
@@ -17,13 +16,15 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
     public private(set) var sampleRate: Int = 44
     public private(set) var currentStreamTitle: String = ""
     public var metaInt: Int { metaInterval }
+    /// HTTP Content-Type of the stream (e.g. "audio/mpeg", "audio/aacp"); known before the first audio bytes.
+    public private(set) var contentType: String?
     
     // Testing Hooks
     public func feedHeadersForTesting(_ headers: [AnyHashable: Any]) {
         parseHeaders(headers)
     }
     public func feedDataForTesting(_ data: Data) {
-        urlSession(URLSession.shared, dataTask: URLSessionDataTask(), didReceive: data)
+        consume(data)
     }
     
     // ICY Parsing State
@@ -33,14 +34,20 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
     private var metaLengthExpected: Int = 0
     private var metaBuffer = Data()
     
-    // Spectral & Waveform Generation
-    private var audioSampleBuffer: [Float] = []
-    private var lastVisUpdate: TimeInterval = 0
-    
     // Callbacks
     public var onMetadataUpdate: ((_ artist: String, _ title: String, _ bitrate: Int?, _ sampleRate: Int?) -> Void)?
-    public var onSpectralData: (([Float]) -> Void)?
-    public var onWaveformData: (([Float]) -> Void)?
+    /// Compressed audio bytes with ICY metadata blocks stripped. Called on the session's serial delegate queue.
+    public var onAudioData: ((Data) -> Void)?
+    /// Connection ended (server closed, network error, HTTP error). Not called after `stop()`. Called on the delegate queue.
+    public var onFinished: ((Error?) -> Void)?
+    
+    /// Serial queue for all URLSession callbacks, so audio chunks arrive (and are decoded) strictly in order.
+    private let delegateQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        queue.name = "MacAmp.ICYStreamSession"
+        return queue
+    }()
     
     // MARK: - Init & Lifecycle
     public init(url: URL) {
@@ -60,7 +67,7 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
         config.timeoutIntervalForResource = 0 // Continuous streaming
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         
-        let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+        let session = URLSession(configuration: config, delegate: self, delegateQueue: delegateQueue)
         self.session = session
         
         var request = URLRequest(url: streamURL)
@@ -81,24 +88,42 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
         
         audioByteCounter = 0
         metaLengthExpected = 0
+        isReadingMetaLength = false
         metaBuffer.removeAll()
-        audioSampleBuffer.removeAll()
     }
     
     // MARK: - URLSessionDataDelegate
     public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         if let http = response as? HTTPURLResponse {
+            guard (200..<300).contains(http.statusCode) else {
+                completionHandler(.cancel)
+                onFinished?(URLError(.badServerResponse, userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"]))
+                return
+            }
             parseHeaders(http.allHeaderFields)
         }
+        contentType = response.mimeType ?? contentType
         completionHandler(.allow)
     }
     
+    public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        // Cancellation comes from stop(); don't report it as a failure
+        if let urlError = error as? URLError, urlError.code == .cancelled { return }
+        guard task === dataTask else { return }
+        onFinished?(error)
+    }
+    
     public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        consume(data)
+    }
+    
+    /// Splits incoming bytes into audio (forwarded to `onAudioData`) and ICY metadata blocks.
+    private func consume(_ data: Data) {
         guard !data.isEmpty else { return }
         
         if metaInterval <= 0 {
             // No ICY metadata in this stream: all bytes are audio
-            processAudioChunk(data)
+            onAudioData?(data)
             return
         }
         
@@ -139,8 +164,7 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
                 let take = min(needed, available)
                 
                 if take > 0 {
-                    let audioChunk = data.subdata(in: offset..<(offset + take))
-                    processAudioChunk(audioChunk)
+                    onAudioData?(data.subdata(in: offset..<(offset + take)))
                     audioByteCounter += take
                     offset += take
                 }
@@ -171,6 +195,8 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
                 name = val
             } else if key == "icy-genre" {
                 gen = val
+            } else if key == "content-type" {
+                contentType = val
             }
         }
         
@@ -190,9 +216,8 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
     
     // MARK: - Metadata Payload Parsing
     private func parseMetadataPayload(_ data: Data) {
-        guard let rawString = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
-            return
-        }
+        // Many Russian stations send StreamTitle in CP1251 without declaring it
+        let rawString = TextEncoding.decode(data)
         
         // Typical format: StreamTitle='Artist - Song Title';StreamUrl='';
         guard let titleRange = rawString.range(of: "StreamTitle='") else { return }
@@ -220,65 +245,6 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
         }
     }
     
-    // MARK: - Audio Chunk Analysis (Visualizer Tap)
-    private func processAudioChunk(_ data: Data) {
-        // Sample byte differences to generate real-time music-synchronized waveform & spectrum
-        let now = Date().timeIntervalSince1970
-        guard now - lastVisUpdate >= 0.033 else { return } // ~30-60 fps
-        lastVisUpdate = now
-        
-        let count = data.count
-        guard count >= 128 else { return }
-        
-        // Extract up to 1024 sample values normalized to -1.0 ... 1.0
-        var samples = [Float]()
-        samples.reserveCapacity(512)
-        let strideVal = max(1, count / 512)
-        
-        data.withUnsafeBytes { rawPtr in
-            let bytes = rawPtr.bindMemory(to: UInt8.self)
-            for i in stride(from: 0, to: count - 1, by: strideVal) {
-                let v = Float(Int(bytes[i]) - 128) / 128.0
-                samples.append(v)
-            }
-        }
-        
-        guard samples.count >= 64 else { return }
-        
-        // Generate 19-band spectrum from sample energy
-        var spectrum = [Float](repeating: 0.0, count: AppConstants.Visualizer.numSpectrumBars)
-        let binSize = samples.count / 19
-        for b in 0..<19 {
-            var sum: Float = 0
-            let start = b * binSize
-            let end = min(samples.count, start + binSize)
-            for j in start..<end {
-                sum += abs(samples[j])
-            }
-            let avg = (end > start) ? (sum / Float(end - start)) : 0
-            // Boost high bins slightly to mimic natural audio frequency weighting
-            let freqWeight = 1.0 + Float(b) * 0.05
-            spectrum[b] = min(1.0, avg * 2.2 * freqWeight)
-        }
-        
-        // Generate waveform (75 points for Winamp oscilloscope)
-        var waveform = [Float]()
-        waveform.reserveCapacity(75)
-        let waveStride = max(1, samples.count / 75)
-        for i in stride(from: 0, to: min(samples.count, 75 * waveStride), by: waveStride) {
-            waveform.append(samples[i])
-        }
-        while waveform.count < 75 {
-            waveform.append(0)
-        }
-        
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.onSpectralData?(spectrum)
-            self.onWaveformData?(waveform)
-        }
-    }
-    
     // MARK: - Playlist / Stream URL Resolver
     /// Resolves direct stream audio URLs from .pls or .m3u web playlists
     public static func resolveStreamURL(from url: URL) async -> URL {
@@ -293,10 +259,10 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
         request.timeoutInterval = 10
         request.setValue("WinampMPEG/2.91", forHTTPHeaderField: "User-Agent")
         
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
+        guard let (data, _) = try? await URLSession.shared.data(for: request) else {
             return url
         }
+        let content = TextEncoding.decode(data)
         
         let lines = content.components(separatedBy: .newlines)
         for rawLine in lines {

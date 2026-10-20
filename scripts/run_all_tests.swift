@@ -1,5 +1,7 @@
 import Cocoa
 import Foundation
+import AVFoundation
+import Network
 @testable import MacAmp
 
 func testGroup(_ name: String, _ block: () throws -> Void) {
@@ -25,6 +27,13 @@ func assertEqual<T: Equatable>(_ actual: T, _ expected: T, _ message: String = "
         print("    ❌ Assertion Failed: Expected [\(expected)], got [\(actual)]. \(message) [\(file):\(line)]")
         exit(1)
     }
+}
+
+// Safety: tests write session.json / playlist.json via PersistenceManager. Refuse to run against the real home.
+guard let testHome = ProcessInfo.processInfo.environment["MACAMP_TEST_HOME"],
+      NSHomeDirectory() == testHome else {
+    print("❌ Refusing to run: start the tests via ./build.sh test (isolated CFFIXED_USER_HOME), not directly.")
+    exit(2)
 }
 
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -520,6 +529,600 @@ testGroup("AudioDeviceManager & Output Hotplugging") {
     assertTrue(!vm.availableOutputDevices.isEmpty, "PreferencesViewModel should populate available devices")
     vm.selectOutputDevice(uid: nil)
     assertEqual(vm.selectedAudioOutputDeviceUID, nil, "PreferencesViewModel selects System Default")
+}
+
+
+// MARK: - Playback regression helpers
+func spinRunLoop(until condition: () -> Bool, timeout: TimeInterval) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !condition() && Date() < deadline {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+    }
+    return condition()
+}
+
+func makeTestWAV(named name: String, seconds: Double) throws -> URL {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests", isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let url = dir.appendingPathComponent(name)
+    try? FileManager.default.removeItem(at: url)
+    let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
+    let frames = AVAudioFrameCount(seconds * 44100)
+    let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
+    buffer.frameLength = frames
+    for ch in 0..<Int(format.channelCount) {
+        let data = buffer.floatChannelData![ch]
+        for i in 0..<Int(frames) { data[i] = 0.001 * sinf(Float(i) * 0.05) } // near-silent tone
+    }
+    let file = try AVAudioFile(forWriting: url, settings: format.settings)
+    try file.write(from: buffer)
+    return url
+}
+
+func loadSync(_ engine: AudioEngine, _ url: URL) throws -> TrackMetadata {
+    var result: Result<TrackMetadata, Error>?
+    Task { @MainActor in
+        do { result = .success(try await engine.load(url: url)) } catch { result = .failure(error) }
+    }
+    guard spinRunLoop(until: { result != nil }, timeout: 5) else { throw NSError(domain: "test", code: 1) }
+    return try result!.get()
+}
+
+// 12. Playback regressions: pause/resume auto-advance, track change from pause, stale loads
+testGroup("Playback Regressions (Pause/Resume, Track Change, Stale Loads)") {
+    let engine = AudioEngine.shared
+    let savedFinished = engine.onPlaybackFinished
+    defer { engine.onPlaybackFinished = savedFinished; engine.stop() }
+    
+    // Earlier groups may leave the engine routed to a non-output device; route back to the system default
+    AudioDeviceManager.shared.selectDevice(uid: nil)
+    engine.setOutputDevice(deviceID: AudioDeviceManager.shared.defaultDevice?.id)
+    _ = spinRunLoop(until: { false }, timeout: 0.3)
+    
+    let shortURL = try makeTestWAV(named: "short.wav", seconds: 0.6)
+    let longURL = try makeTestWAV(named: "long.wav", seconds: 6.0)
+    
+    // Bug 1: after pause -> resume, reaching the end of the track must still fire onPlaybackFinished
+    var finishedCount = 0
+    engine.onPlaybackFinished = { finishedCount += 1 }
+    _ = try loadSync(engine, shortURL)
+    engine.play()
+    assertEqual(engine.status, .playing, "Engine plays short track")
+    _ = spinRunLoop(until: { false }, timeout: 0.15)
+    engine.pause()
+    assertEqual(engine.status, .paused, "Engine pauses")
+    _ = spinRunLoop(until: { false }, timeout: 0.1)
+    engine.play()
+    assertEqual(engine.status, .playing, "Engine resumes from pause")
+    assertTrue(spinRunLoop(until: { finishedCount == 1 }, timeout: 3), "Track end after pause/resume must trigger onPlaybackFinished")
+    assertEqual(engine.status, .stopped, "Engine is stopped after the track finished")
+    
+    // Bug 2: loading a new track while paused must discard the paused segment of the old file
+    finishedCount = 0
+    _ = try loadSync(engine, longURL)
+    engine.play()
+    _ = spinRunLoop(until: { false }, timeout: 0.15)
+    engine.pause()
+    assertEqual(engine.status, .paused, "Long track paused")
+    let shortMeta = try loadSync(engine, shortURL)
+    assertEqual(engine.status, .stopped, "load() must end the previously paused track")
+    assertEqual(engine.currentMetadata?.url, shortURL, "Metadata belongs to the newly loaded track")
+    engine.play()
+    assertTrue(engine.currentTime < 0.5, "New track starts from the beginning, not from the old paused position")
+    // The 0.6s track must finish well before the 6s old track would have
+    assertTrue(spinRunLoop(until: { finishedCount == 1 }, timeout: 2.5), "Newly loaded track (not the old paused one) plays and finishes")
+    assertTrue(shortMeta.duration < 1.0, "Short track duration is reported")
+    
+    // Stale concurrent loads: the superseded load must throw CancellationError, the latest one wins
+    var firstResult: Result<TrackMetadata, Error>?
+    var secondResult: Result<TrackMetadata, Error>?
+    Task { @MainActor in
+        do { firstResult = .success(try await engine.load(url: longURL)) } catch { firstResult = .failure(error) }
+    }
+    Task { @MainActor in
+        do { secondResult = .success(try await engine.load(url: shortURL)) } catch { secondResult = .failure(error) }
+    }
+    assertTrue(spinRunLoop(until: { firstResult != nil && secondResult != nil }, timeout: 5), "Both loads complete")
+    if case .failure(let err) = firstResult! {
+        assertTrue(err is CancellationError, "Superseded load fails with CancellationError, got \(err)")
+    } else {
+        assertTrue(false, "Superseded load must not succeed")
+    }
+    assertEqual(engine.currentMetadata?.url, shortURL, "Latest load wins")
+}
+
+// 13. Shuffle order consistency
+testGroup("Playlist Shuffle Order") {
+    func makeTracks(_ n: Int, prefix: String) -> [TrackItem] {
+        (0..<n).map { TrackItem(url: URL(fileURLWithPath: "/tmp/\(prefix)\($0).mp3"), title: "\(prefix)\($0)", artist: "T", duration: 60) }
+    }
+    func playThrough(_ pl: PlaylistModel) -> [UUID] {
+        var played: [UUID] = []
+        while let t = pl.next() { played.append(t.id); if played.count > 1000 { break } }
+        return played
+    }
+    
+    for _ in 0..<20 {
+        // A full pass plays every track exactly once, starting after the current one
+        let pl = PlaylistModel()
+        pl.add(tracks: makeTracks(12, prefix: "a"))
+        pl.isShuffle = true
+        let first = pl.currentTrack!.id
+        let played = [first] + playThrough(pl)
+        assertEqual(played.count, 12, "Shuffle pass length")
+        assertEqual(Set(played).count, 12, "Shuffle pass has no repeats")
+        assertTrue(pl.next() == nil, "Without repeat the pass ends")
+    }
+    
+    for _ in 0..<20 {
+        // Directly choosing a track (double-click / Jump to File) keeps the pass consistent
+        let pl = PlaylistModel()
+        pl.add(tracks: makeTracks(10, prefix: "b"))
+        pl.isShuffle = true
+        var played = [pl.currentTrack!.id]
+        played.append(pl.next()!.id)
+        played.append(pl.next()!.id)
+        let unplayed = (0..<10).filter { !played.contains(pl.tracks[$0].id) }
+        let jumpIdx = unplayed.randomElement()!
+        let beforeJump = pl.currentTrack!.id
+        pl.currentIndex = jumpIdx
+        played.append(pl.tracks[jumpIdx].id)
+        assertEqual(pl.previous()?.id, beforeJump, "Previous after a jump returns to the track played before it")
+        assertEqual(pl.next()?.id, pl.tracks[jumpIdx].id, "Next returns to the jumped-to track")
+        played += playThrough(pl)
+        assertEqual(played.count, 10, "Pass after a jump still covers each track once")
+        assertEqual(Set(played).count, 10, "No repeats after a jump")
+    }
+    
+    for _ in 0..<20 {
+        // Adding and removing tracks mid-pass keeps the remainder valid
+        let pl = PlaylistModel()
+        pl.add(tracks: makeTracks(8, prefix: "c"))
+        pl.isShuffle = true
+        var played = [pl.currentTrack!.id]
+        played.append(pl.next()!.id)
+        let added = makeTracks(4, prefix: "d")
+        pl.add(tracks: added)
+        let unplayedIdx = (0..<pl.tracks.count).filter { !played.contains(pl.tracks[$0].id) }
+        let removeIdx = unplayedIdx.randomElement()!
+        let removedID = pl.tracks[removeIdx].id
+        pl.remove(at: removeIdx)
+        played += playThrough(pl)
+        assertTrue(!played.contains(removedID), "Removed track is never played")
+        assertEqual(Set(played).count, played.count, "No repeats after add/remove")
+        assertEqual(played.count, 11, "Every remaining track (8 + 4 - 1) is played once")
+        assertTrue(Set(added.map(\.id)).subtracting([removedID]).isSubset(of: Set(played)), "Tracks added mid-pass are played")
+    }
+    
+    // Sorting mid-pass must not change which tracks are still pending
+    let pl = PlaylistModel()
+    pl.add(tracks: makeTracks(9, prefix: "e"))
+    pl.isShuffle = true
+    var played = [pl.currentTrack!.id, pl.next()!.id, pl.next()!.id]
+    pl.reverse()
+    played += playThrough(pl)
+    assertEqual(Set(played).count, 9, "Reverse mid-pass keeps the shuffle pass intact")
+    assertEqual(played.count, 9, "Reverse mid-pass: no repeats")
+    
+    // Repeat: a new pass starts with a different track than the one that just ended
+    let rp = PlaylistModel()
+    rp.add(tracks: makeTracks(5, prefix: "f"))
+    rp.isShuffle = true
+    rp.isRepeat = true
+    var last = rp.currentTrack!.id
+    for _ in 0..<4 { last = rp.next()!.id }
+    let wrapped = rp.next()!.id
+    assertTrue(wrapped != last, "New repeat pass does not immediately replay the last track")
+}
+
+// 14. CP1251 Cyrillic auto-detection (ID3 / playlists / stream titles)
+testGroup("CP1251 Cyrillic Auto-Detection") {
+    func mojibake(_ s: String) -> String {
+        String(data: s.data(using: TextEncoding.windows1251)!, encoding: .isoLatin1)!
+    }
+    for original in ["Кино - Группа крови", "Алиса - Трасса Е-95", "ДДТ - Что такое осень", "Ляпис Трубецкой", "DDT - Осень", "Ёлка - Прованс"] {
+        let broken = mojibake(original)
+        assertTrue(broken != original, "Fixture is actually broken: \(broken)")
+        assertEqual(TextEncoding.repairCyrillic(broken), original, "Repairs mojibake '\(broken)'")
+        assertEqual(TextEncoding.repairCyrillic(original), original, "Correct Cyrillic stays unchanged")
+    }
+    assertEqual(TextEncoding.repairCyrillic("Êèíî"), "Кино", "Spec example: Êèíî -> Кино")
+    for western in ["Björk", "Mötley Crüe", "Sigur Rós - Ágætis byrjun", "Beyoncé", "Café del Mar", "Hello World", "", "Motörhead – Ace of Spades"] {
+        assertEqual(TextEncoding.repairCyrillic(western), western, "Western text untouched: '\(western)'")
+    }
+    
+    // Raw bytes: UTF-8, CP1251, and genuine Latin-1
+    assertEqual(TextEncoding.decode("Кино".data(using: .utf8)!), "Кино", "UTF-8 bytes decode as UTF-8")
+    assertEqual(TextEncoding.decode("Группа крови".data(using: TextEncoding.windows1251)!), "Группа крови", "CP1251 bytes decode as Cyrillic")
+    assertEqual(TextEncoding.decode("Björk".data(using: .isoLatin1)!), "Björk", "Latin-1 bytes stay Latin-1 (old ID3v1 behaviour turned this into 'Bjцrk')")
+    
+    // M3U written by an old Windows player in CP1251
+    let m3u = "#EXTM3U\r\n#EXTINF:240,Кино - Звезда по имени Солнце\r\nhttp://example.com/kino.mp3\r\n"
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests", isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let m3uURL = dir.appendingPathComponent("cp1251.m3u")
+    try m3u.data(using: TextEncoding.windows1251)!.write(to: m3uURL)
+    let loaded = PlaylistIO.loadPlaylist(from: m3uURL)
+    assertEqual(loaded.count, 1, "CP1251 M3U parsed")
+    assertEqual(loaded.first?.title, "Кино - Звезда по имени Солнце", "CP1251 M3U title decoded as Cyrillic")
+}
+
+// 15. Playlist Editor keyboard navigation
+testGroup("Playlist Keyboard Navigation") {
+    let pl = PlaylistModel()
+    pl.add(tracks: (0..<30).map { TrackItem(url: URL(fileURLWithPath: "/tmp/k\($0).mp3"), title: "k\($0)", artist: "T", duration: 60) })
+    pl.currentIndex = 0
+    let view = PlaylistWindowView(playlist: pl)
+    view.frame = NSRect(x: 0, y: 0, width: 275, height: 116)
+    view.bounds = view.frame
+    assertTrue(view.acceptsFirstResponder, "Playlist view accepts first responder")
+    var played: TrackItem?
+    view.onPlayTrack = { played = $0 }
+    let K = AppConstants.KeyCodes.self
+    
+    view.handlePlaylistKey(keyCode: K.downArrow, characters: "", flags: [])
+    assertEqual(pl.selectedIndices, [1], "Down from current track selects next row")
+    view.handlePlaylistKey(keyCode: K.downArrow, characters: "", flags: [])
+    view.handlePlaylistKey(keyCode: K.upArrow, characters: "", flags: [])
+    assertEqual(pl.selectedIndices, [1], "Up moves selection back")
+    view.handlePlaylistKey(keyCode: K.downArrow, characters: "", flags: .shift)
+    view.handlePlaylistKey(keyCode: K.downArrow, characters: "", flags: .shift)
+    assertEqual(pl.selectedIndices, [1, 2, 3], "Shift+Down extends selection from the anchor")
+    view.handlePlaylistKey(keyCode: K.upArrow, characters: "", flags: .shift)
+    assertEqual(pl.selectedIndices, [1, 2], "Shift+Up shrinks the range back toward the anchor")
+    
+    view.handlePlaylistKey(keyCode: K.end, characters: "", flags: [])
+    assertEqual(pl.selectedIndices, [29], "End jumps to last track")
+    view.handlePlaylistKey(keyCode: K.downArrow, characters: "", flags: [])
+    assertEqual(pl.selectedIndices, [29], "Down at the end stays on last track")
+    view.handlePlaylistKey(keyCode: K.home, characters: "", flags: [])
+    assertEqual(pl.selectedIndices, [0], "Home jumps to first track")
+    view.handlePlaylistKey(keyCode: K.end, characters: "", flags: .shift)
+    assertEqual(pl.selectedIndices.count, 30, "Shift+End selects through the last track")
+    
+    view.handlePlaylistKey(keyCode: K.home, characters: "", flags: [])
+    view.handlePlaylistKey(keyCode: K.downArrow, characters: "", flags: [])
+    view.handlePlaylistKey(keyCode: K.downArrow, characters: "", flags: [])
+    view.handlePlaylistKey(keyCode: K.returnKey, characters: "\r", flags: [])
+    assertEqual(played?.title, "k2", "Enter plays the track under the cursor")
+    assertEqual(pl.currentIndex, 2, "Enter makes it the current track")
+    
+    view.handlePlaylistKey(keyCode: K.deleteKey, characters: "", flags: [])
+    assertEqual(pl.tracks.count, 29, "Delete removes the selected track")
+    assertTrue(!pl.tracks.contains { $0.title == "k2" }, "The removed track is gone")
+    assertEqual(pl.selectedIndices, [2], "After Delete the next track is selected for continued editing")
+    
+    view.handlePlaylistKey(keyCode: 0, characters: "a", flags: .command)
+    assertEqual(pl.selectedIndices.count, 29, "Cmd+A selects all")
+    view.handlePlaylistKey(keyCode: K.home, characters: "", flags: [])
+    view.handlePlaylistKey(keyCode: 0, characters: "a", flags: .control)
+    assertEqual(pl.selectedIndices.count, 29, "Ctrl+A selects all")
+    
+    assertTrue(!view.handlePlaylistKey(keyCode: 6, characters: "z", flags: []), "Unhandled keys (Z = Previous) fall through to global hotkeys")
+    assertTrue(!view.handlePlaylistKey(keyCode: 35, characters: "p", flags: .control), "Ctrl+P falls through to global hotkeys")
+}
+
+// 16. Fade-out / fade-in (§4)
+testGroup("Audio Fade-Out / Fade-In") {
+    let engine = AudioEngine.shared
+    let persistence = PersistenceManager.shared
+    let savedFade = persistence.state.audioFadeOutDurationMs
+    let savedFinished = engine.onPlaybackFinished
+    defer {
+        persistence.state.audioFadeOutDurationMs = savedFade
+        engine.onPlaybackFinished = savedFinished
+        engine.stop()
+    }
+    persistence.state.audioFadeOutDurationMs = 200
+    let longURL = try makeTestWAV(named: "fade-long.wav", seconds: 6.0)
+    
+    _ = try loadSync(engine, longURL)
+    engine.play()
+    assertTrue(spinRunLoop(until: { engine.fadeGain >= 0.999 }, timeout: 0.5), "Play fades in to full gain quickly (anti-click)")
+    _ = spinRunLoop(until: { false }, timeout: 0.3)
+    
+    engine.pause()
+    assertEqual(engine.status, .paused, "Pause takes effect immediately for the UI")
+    _ = spinRunLoop(until: { false }, timeout: 0.08)
+    assertTrue(engine.fadeGain > 0.05 && engine.fadeGain < 0.999, "Gain is mid-fade 80ms into a 200ms fade-out (got \(engine.fadeGain))")
+    assertTrue(spinRunLoop(until: { engine.fadeGain <= 0.0001 }, timeout: 0.5), "Fade-out reaches silence")
+    _ = spinRunLoop(until: { false }, timeout: 0.05)
+    let pausedAt = engine.currentTime
+    _ = spinRunLoop(until: { false }, timeout: 0.3)
+    assertEqual(engine.currentTime, pausedAt, "Position is frozen once the fade-out finished")
+    
+    engine.play()
+    assertEqual(engine.status, .playing, "Resume after fade")
+    assertTrue(spinRunLoop(until: { engine.fadeGain >= 0.999 }, timeout: 0.5), "Resume fades back in")
+    assertTrue(spinRunLoop(until: { engine.currentTime > pausedAt + 0.1 }, timeout: 1.0), "Playback continues from the paused position")
+    
+    // Pause and resume within the fade window: playback simply continues
+    engine.pause()
+    _ = spinRunLoop(until: { false }, timeout: 0.05)
+    engine.play()
+    let t0 = engine.currentTime
+    assertTrue(spinRunLoop(until: { engine.currentTime > t0 + 0.2 }, timeout: 1.0), "Resume during fade-out keeps playing")
+    
+    engine.stop()
+    assertEqual(engine.status, .stopped, "Stop takes effect immediately for the UI")
+    assertTrue(spinRunLoop(until: { engine.fadeGain <= 0.0001 }, timeout: 0.5), "Stop fades out")
+    
+    // Track ends during the pause fade-out: resume must advance to the next track instead of hanging
+    var finished = 0
+    engine.onPlaybackFinished = { finished += 1 }
+    let shortURL = try makeTestWAV(named: "fade-short.wav", seconds: 0.5)
+    _ = try loadSync(engine, shortURL)
+    engine.play()
+    _ = spinRunLoop(until: { engine.currentTime >= 0.4 }, timeout: 1.0)
+    engine.pause()
+    _ = spinRunLoop(until: { false }, timeout: 0.35)
+    assertEqual(finished, 0, "No auto-advance while paused")
+    engine.play()
+    assertTrue(spinRunLoop(until: { finished == 1 }, timeout: 1.0), "Resuming a track that ended during the fade advances to the next one")
+    
+    // Fade disabled: pause is immediate
+    persistence.state.audioFadeOutDurationMs = 0
+    _ = try loadSync(engine, longURL)
+    engine.play()
+    _ = spinRunLoop(until: { false }, timeout: 0.1)
+    engine.pause()
+    assertTrue(engine.fadeGain <= 0.0001, "With 0 ms fade the pause is immediate")
+}
+
+// 17. Resource usage gating (§1)
+testGroup("CPU Gating: Visualizer Tap, Marquee Timer, Analyzer") {
+    let engine = AudioEngine.shared
+    defer { engine.stop(); engine.isAnalysisEnabled = true }
+    let url = try makeTestWAV(named: "gating.wav", seconds: 4.0)
+    
+    engine.isAnalysisEnabled = true
+    _ = try loadSync(engine, url)
+    assertTrue(!engine.isAnalysisTapInstalled, "No FFT tap while stopped")
+    engine.play()
+    assertTrue(engine.isAnalysisTapInstalled, "FFT tap installed while playing with the visualizer visible")
+    var frames = 0
+    engine.onVisualizerFrame = { _ in frames += 1 }
+    _ = spinRunLoop(until: { false }, timeout: 0.5)
+    assertTrue(frames >= 13 && frames <= 32, "Visualizer runs at ~30-60 fps (got \(frames) frames in 0.5s)")
+    engine.isAnalysisEnabled = false
+    assertTrue(!engine.isAnalysisTapInstalled, "Hidden/minimized windows remove the FFT tap")
+    engine.isAnalysisEnabled = true
+    assertTrue(engine.isAnalysisTapInstalled, "Tap returns when the visualizer is visible again")
+    engine.pause()
+    assertTrue(!engine.isAnalysisTapInstalled, "No FFT tap while paused")
+    engine.onVisualizerFrame = nil
+    
+    // Analyzer: silence is detected without an FFT, and output arrays are reused
+    let analyzer = FFTAnalyzer()
+    let fmt = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
+    let silent = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 1024)!
+    silent.frameLength = 1024
+    var spectrum = [Float](repeating: 1, count: AppConstants.Visualizer.numSpectrumBars)
+    var waveform = [Float](repeating: 1, count: AppConstants.Visualizer.numWaveformPoints)
+    assertTrue(!analyzer.analyze(buffer: silent, spectrum: &spectrum, waveform: &waveform), "Silent buffer reports no signal")
+    assertTrue(spectrum.allSatisfy { $0 == 0 } && waveform.allSatisfy { $0 == 0 }, "Silent buffer zeroes the outputs")
+    let tone = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 1024)!
+    tone.frameLength = 1024
+    for c in 0..<2 { for i in 0..<1024 { tone.floatChannelData![c][i] = 0.5 * sinf(Float(i) * 0.3) } }
+    let spectrumStorage = spectrum.withUnsafeBufferPointer { $0.baseAddress }
+    assertTrue(analyzer.analyze(buffer: tone, spectrum: &spectrum, waveform: &waveform), "Tone reports a signal")
+    assertTrue(spectrum.contains { $0 > 0.3 }, "Tone shows up in the spectrum")
+    assertTrue(spectrum.withUnsafeBufferPointer { $0.baseAddress } == spectrumStorage, "Spectrum array is updated in place (no reallocation)")
+    
+    // Marquee: no timer when the text fits, when paused/hidden, or when scrolling is off
+    let marquee = MarqueeView()
+    marquee.isScrollingActive = true
+    marquee.text = "SHORT"
+    assertTrue(!marquee.isScrollTimerRunning, "Text that fits never starts the scroll timer")
+    marquee.text = "A VERY LONG TRACK TITLE THAT DEFINITELY DOES NOT FIT INTO THE MARQUEE AREA"
+    let scrollEnabled = PersistenceManager.shared.state.isMarqueeScrollEnabled
+    PersistenceManager.shared.state.isMarqueeScrollEnabled = true
+    marquee.updateScrollTimer()
+    assertTrue(marquee.isScrollTimerRunning, "Long text scrolls while playing and visible")
+    marquee.isScrollingActive = false
+    assertTrue(!marquee.isScrollTimerRunning, "Paused / hidden: scroll timer stops")
+    marquee.isScrollingActive = true
+    PersistenceManager.shared.state.isMarqueeScrollEnabled = false
+    marquee.updateScrollTimer()
+    assertTrue(!marquee.isScrollTimerRunning, "Scrolling disabled in preferences: no timer")
+    PersistenceManager.shared.state.isMarqueeScrollEnabled = scrollEnabled
+}
+
+// 18. Internet radio through the engine (§5): ICY demux, decode, EQ path, reconnect
+final class TestRadioServer {
+    let listener: NWListener
+    private(set) var connections = 0
+    private let body: Data
+    private let queue = DispatchQueue(label: "test.radio")
+    var port: UInt16 { listener.port?.rawValue ?? 0 }
+    
+    init(audio: Data, metaInt: Int, title: String) throws {
+        // Interleave ICY metadata after every metaInt audio bytes
+        var out = Data()
+        var offset = 0
+        var first = true
+        while offset < audio.count {
+            let end = min(audio.count, offset + metaInt)
+            out.append(audio[offset..<end])
+            offset = end
+            if end - (end - metaInt) == metaInt && offset <= audio.count {
+                var meta = first ? Data("StreamTitle='\(title)';".utf8) : Data()
+                first = false
+                let blocks = (meta.count + 15) / 16
+                meta.append(Data(count: blocks * 16 - meta.count))
+                out.append(UInt8(blocks))
+                out.append(meta)
+            }
+        }
+        body = out
+        listener = try NWListener(using: .tcp, on: .any)
+        listener.newConnectionHandler = { [weak self] conn in self?.serve(conn) }
+        listener.start(queue: queue)
+        let ready = DispatchSemaphore(value: 0)
+        listener.stateUpdateHandler = { state in if case .ready = state { ready.signal() } }
+        _ = ready.wait(timeout: .now() + 2)
+    }
+    
+    private func serve(_ conn: NWConnection) {
+        connections += 1
+        conn.start(queue: queue)
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [body, queue] _, _, _, _ in
+          // Answer a moment later so the client has pressed Play before the burst ends
+          queue.asyncAfter(deadline: .now() + 0.4) {
+            let header = "HTTP/1.0 200 OK\r\nContent-Type: audio/aac\r\nicy-metaint: 4096\r\nicy-name: Test Radio\r\nicy-genre: Rock\r\n\r\n"
+            conn.send(content: Data(header.utf8) + body, completion: .contentProcessed { _ in
+                // Drop the connection after the burst, like a flaky server
+                conn.cancel()
+            })
+          }
+        }
+    }
+    
+    func stop() { listener.cancel() }
+}
+
+func makeTestADTS(seconds: Double) throws -> Data {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests", isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let url = dir.appendingPathComponent("radio.aac")
+    try? FileManager.default.removeItem(at: url)
+    do {
+        let fmt = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
+        let settings: [String: Any] = [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44100, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 128000]
+        let file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        let frames = AVAudioFrameCount(seconds * 44100)
+        let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: frames)!
+        buf.frameLength = frames
+        for c in 0..<2 { for i in 0..<Int(frames) { buf.floatChannelData![c][i] = 0.002 * sinf(Float(i) * 0.05) } }
+        try file.write(from: buf)
+    } // file closed here
+    return try Data(contentsOf: url)
+}
+
+testGroup("Internet Radio via AVAudioEngine (Decoder, ICY, Reconnect)") {
+    // Decoder alone: ADTS AAC bytes in arbitrary chunks -> PCM of the right length
+    let adts = try makeTestADTS(seconds: 3.0)
+    assertTrue(adts.count > 2_000, "ADTS fixture encoded (\(adts.count) bytes)")
+    let decoder = try StreamDecoder(contentType: "audio/aacp")
+    var decodedFrames: AVAudioFrameCount = 0
+    var format: AVAudioFormat?
+    decoder.onFormatReady = { format = $0 }
+    decoder.onBuffer = { decodedFrames += $0.frameLength }
+    var offset = 0
+    while offset < adts.count {
+        let end = min(adts.count, offset + 1371) // odd chunk size, like network reads
+        try decoder.feed(adts.subdata(in: offset..<end))
+        offset = end
+    }
+    assertEqual(format?.sampleRate, 44100, "Decoder reports stream sample rate")
+    assertEqual(format?.channelCount, 2, "Decoder reports stereo")
+    let decodedSeconds = Double(decodedFrames) / 44100
+    assertTrue(decodedSeconds > 2.7 && decodedSeconds < 3.2, "Decoded ~3s of PCM (got \(decodedSeconds))")
+    assertTrue(!StreamDecoder.canDecode(contentType: "application/ogg"), "Ogg goes to the AVPlayer fallback")
+    assertTrue(StreamDecoder.canDecode(contentType: "audio/mpeg"), "MP3 decoded in-engine")
+    
+    // ICY demux: audio bytes forwarded without metadata blocks
+    let icy = ICYStreamSession(url: URL(string: "http://127.0.0.1/")!)
+    icy.feedHeadersForTesting(["icy-metaint": "16"])
+    var forwarded = Data()
+    icy.onAudioData = { forwarded.append($0) }
+    var wire = Data(repeating: 0xAA, count: 16)
+    wire.append(1); wire.append(Data("StreamTitle='x';".utf8))
+    wire.append(Data(repeating: 0xBB, count: 10))
+    icy.feedDataForTesting(wire)
+    assertEqual(forwarded, Data(repeating: 0xAA, count: 16) + Data(repeating: 0xBB, count: 10), "ICY metadata stripped from the audio byte stream")
+    
+    // End to end: local ICY server -> engine (EQ/DSP graph) -> tap, then reconnect after the server drops us
+    let engine = AudioEngine.shared
+    let savedDelay = AudioEngine.reconnectDelay
+    AudioEngine.reconnectDelay = 0.3
+    var events: [String] = []
+    engine.onStreamEvent = { events.append($0) }
+    var waveformSeen = false
+    engine.onVisualizerFrame = { frame in
+        var s = [Float](repeating: 0, count: 19), w = [Float](repeating: 0, count: 76)
+        frame.read(spectrum: &s, waveform: &w)
+        if w.contains(where: { abs($0) > 0.0001 }) { waveformSeen = true }
+    }
+    var titles: [String] = []
+    let savedMeta = engine.onMetadataUpdate
+    engine.onMetadataUpdate = { _, title, _, _ in titles.append(title) }
+    defer {
+        engine.stop()
+        AudioEngine.reconnectDelay = savedDelay
+        engine.onStreamEvent = nil
+        engine.onVisualizerFrame = nil
+        engine.onMetadataUpdate = savedMeta
+    }
+    
+    let server = try TestRadioServer(audio: adts, metaInt: 4096, title: "Кино - Кукушка")
+    defer { server.stop() }
+    assertTrue(server.port > 0, "Test radio server listening")
+    _ = try loadSync(engine, URL(string: "http://127.0.0.1:\(server.port)/stream")!)
+    assertTrue(engine.isStreaming, "Engine is in stream mode")
+    engine.play()
+    assertTrue(spinRunLoop(until: { engine.streamBufferedSeconds > 0.5 }, timeout: 5), "Decoded radio audio is queued on the engine's stream node")
+    assertTrue(engine.isStreamDecodedInEngine, "Stream is decoded in-engine (EQ/DSP/visualizer apply), not via AVPlayer")
+    assertTrue(spinRunLoop(until: { waveformSeen }, timeout: 3), "Visualizer tap sees the real radio signal")
+    assertTrue(spinRunLoop(until: { titles.contains("Кукушка") }, timeout: 3), "ICY StreamTitle parsed (artist/title split)")
+    
+    // Server dropped the connection after the burst -> reconnect
+    assertTrue(spinRunLoop(until: { server.connections >= 2 }, timeout: 6), "Engine reconnects after the server drops the stream (connections: \(server.connections))")
+    assertTrue(events.contains { $0.hasPrefix("Reconnecting (1/3)") }, "User sees 'Reconnecting (1/3)...' (events: \(events))")
+    assertEqual(engine.status, .playing, "Status stays playing across a reconnect")
+    
+    // Server gone for good -> 3 attempts, then stop with a message
+    server.stop()
+    assertTrue(spinRunLoop(until: { engine.status == .stopped }, timeout: 15), "Engine gives up after the reconnect attempts")
+    assertTrue(events.contains("Stream lost"), "User sees 'Stream lost' (events: \(events))")
+}
+
+// 19. Untagged files: Winamp-style file-name titles, legacy playlist migration, scroll to current track
+testGroup("Untagged File Titles & Playlist Scroll") {
+    let dashName = "Перемен! - Виктор Цой - ИИ Кавер [1uCtGWO6cRs]"
+    let barName = "Электричка ｜ Виктор Цой ｜ AI Cover [OdT90pIZObQ]"
+    let dashURL = try makeTestWAV(named: dashName + ".wav", seconds: 0.2)
+    let barURL = try makeTestWAV(named: barName + ".wav", seconds: 0.2)
+    
+    for (url, name) in [(dashURL, dashName), (barURL, barName)] {
+        let meta = TrackItem.resolveArtistAndTitle(from: url)
+        assertEqual(meta.artist, "", "No tags: no guessed artist for '\(name)'")
+        assertEqual(meta.title, name, "No tags: title is the file name")
+        let item = TrackItem.create(from: url)
+        assertEqual(item.displayName, name, "Playlist shows the plain file name, whatever the separator")
+    }
+    assertEqual(TrackItem.displayName(artist: "Unknown Artist", title: "X"), "X", "Legacy 'Unknown Artist' is never displayed")
+    assertEqual(TrackItem.displayName(artist: "Кино", title: "Кукушка"), "Кино - Кукушка", "Tagged tracks keep 'Artist - Title'")
+    
+    // Playlist saved by an older version: guessed split for '-' names, 'Unknown Artist' for '｜' names
+    let legacy = PlaylistModel()
+    legacy.add(tracks: [
+        TrackItem(url: dashURL, title: "Виктор Цой - ИИ Кавер [1uCtGWO6cRs]", artist: "Перемен!", duration: 0.2),
+        TrackItem(url: barURL, title: barName, artist: "Unknown Artist", duration: 0.2),
+        TrackItem(url: URL(fileURLWithPath: "/tmp/tagged.mp3"), title: "Кукушка", artist: "Кино", duration: 60)
+    ])
+    var migrated = false
+    legacy.migrateLegacyFileNameMetadata { migrated = true }
+    assertTrue(spinRunLoop(until: { migrated }, timeout: 5), "Legacy metadata migration completes")
+    assertEqual(legacy.tracks[0].artist, "", "Guessed artist removed")
+    assertEqual(legacy.tracks[0].title, dashName, "Title restored to the file name")
+    assertEqual(legacy.tracks[1].artist, "", "'Unknown Artist' cleared")
+    assertEqual(legacy.tracks[2].artist, "Кино", "Real tags are left alone")
+    
+    // Paused track deep in the list: the playlist opens scrolled to it
+    let pl = PlaylistModel()
+    pl.add(tracks: (0..<100).map { TrackItem(url: URL(fileURLWithPath: "/tmp/s\($0).mp3"), title: "s\($0)", artist: "T", duration: 60) })
+    let view = PlaylistWindowView(playlist: pl)
+    view.frame = NSRect(x: 0, y: 0, width: 275, height: 232)
+    view.bounds = view.frame
+    assertTrue(view.isTrackVisible(0) && !view.isTrackVisible(60), "Starts at the top")
+    view.scrollToTrack(60, centered: true)
+    assertTrue(view.isTrackVisible(60), "Current track is visible after restore")
+    assertTrue(view.firstVisibleTrackIndex > 50, "...and roughly centered (first visible: \(view.firstVisibleTrackIndex))")
+    view.scrollToTrack(99, centered: true)
+    assertTrue(view.isTrackVisible(99), "Last track: scroll is clamped but the track is visible")
+    view.scrollToTrack(0, centered: false)
+    assertEqual(view.firstVisibleTrackIndex, 0, "Minimal scroll back to the first track")
 }
 
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")

@@ -64,6 +64,7 @@ public class PreferencesViewModel: ObservableObject {
             PersistenceManager.shared.state.marqueeFontMode = marqueeFontMode
             PersistenceManager.shared.saveSession()
             PlayerCoordinator.shared.mainView?.marquee.needsDisplay = true
+            PlayerCoordinator.shared.mainView?.marquee.updateScrollTimer()
         }
     }
     
@@ -72,6 +73,7 @@ public class PreferencesViewModel: ObservableObject {
             PersistenceManager.shared.state.desktopFontFamily = desktopFontFamily
             PersistenceManager.shared.saveSession()
             PlayerCoordinator.shared.mainView?.marquee.needsDisplay = true
+            PlayerCoordinator.shared.mainView?.marquee.updateScrollTimer()
         }
     }
     
@@ -80,6 +82,7 @@ public class PreferencesViewModel: ObservableObject {
             PersistenceManager.shared.state.desktopFontSize = desktopFontSize
             PersistenceManager.shared.saveSession()
             PlayerCoordinator.shared.mainView?.marquee.needsDisplay = true
+            PlayerCoordinator.shared.mainView?.marquee.updateScrollTimer()
         }
     }
     
@@ -88,6 +91,7 @@ public class PreferencesViewModel: ObservableObject {
             PersistenceManager.shared.state.isMarqueeScrollEnabled = isMarqueeScrollEnabled
             PersistenceManager.shared.saveSession()
             PlayerCoordinator.shared.mainView?.marquee.needsDisplay = true
+            PlayerCoordinator.shared.mainView?.marquee.updateScrollTimer()
         }
     }
     

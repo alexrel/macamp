@@ -99,3 +99,23 @@ graph TD
     T3 --> T4["4. Оптимизация фоновых ресурсов (<= 1-2% CPU в игре, 0.0% в паузе)"]
     T4 --> T5["5. Сетевой аудиопоток радио через эквалайзер и FFT"]
 ```
+
+---
+
+## 7. Статус реализации (2026-10-20)
+
+Все пункты покрыты тестами в `scripts/run_all_tests.swift` (`./build.sh test`).
+
+| § | Статус | Где | Тесты |
+|---|--------|-----|-------|
+| 1. CPU / батарея | ✅ | `AudioEngine` (tap только при игре и видимом визуализаторе, движок на паузе засыпает, неактивные TimePitch/Reverb вынимаются из графа), `FFTAnalyzer` (без аллокаций, ~43 FPS), `MarqueeView` (таймер только при переполнении текста и игре, кэш ширины), `TimeDisplayView` / `PlaylistWindowView` / `SkinSlider` (перерисовка только изменившихся областей), `PlayerCoordinator.updateActivityState` (occlusion, Cmd+H, Dock) | «CPU Gating» |
+| 2. CP1251 | ✅ | `Core/TextEncoding.swift`; ID3v1/ID3v2 (`AudioMetadataService`), `TrackItem` (теги и имена файлов), M3U/PLS, ICY StreamTitle | «CP1251 Cyrillic Auto-Detection» |
+| 3. Клавиатура плейлиста | ✅ | `PlaylistWindowView.handlePlaylistKey` (+ PageUp/PageDown) | «Playlist Keyboard Navigation» |
+| 4. Fade-out / fade-in | ✅ | `AudioEngine.fade` на отдельном `sourceMixer` (громкость пользователя не трогается); pause/stop — `audioFadeOutDurationMs`, play — 30 мс, смена трека — до 80 мс | «Audio Fade-Out / Fade-In» |
+| 5. Радио через движок | ✅ | `StreamDecoder` (AudioFileStream + AVAudioConverter, MP3/AAC) → `streamNode`; EQ/DSP/спектр работают; до 3 переподключений через 2 с; Ogg/HLS — fallback на AVPlayer без EQ | «Internet Radio via AVAudioEngine» |
+
+**Замеры (Apple M1, Release-оптимизация, MP3 22 кГц):** воспроизведение с визуализатором ≈ 2,7% CPU процесса (без визуализатора ≈ 2,2%; «голый» AVAudioEngine на этом файле — 1,3%), пауза/стоп ≈ 0,01%. Отрисовка окон в замер воспроизведения не входила.
+
+**Попутно исправлено:** баланс не работал (`pan` на `mainMixerNode` не действует), настройки DSP не применялись после перезапуска, `AVAudioUnitReverb` в bypass тратил ~2% CPU, визуализатор обновлялся ~10 FPS (tap отдаёт блоки по ~100 мс), конец трека определялся по чтению данных, а не по проигрыванию.
+
+**Ограничения:** темп ≠ 1.0 на радио приводит к опустошению/переполнению буфера (живой поток идёт в реальном времени); пауза радио разрывает соединение, Play переподключается.

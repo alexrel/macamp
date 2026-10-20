@@ -176,7 +176,7 @@ private struct JumpTrackRowView: View {
     
     var body: some View {
         HStack(spacing: 6) {
-            let label = "\(displayIndex). \(track.artist.isEmpty ? "" : "\(track.artist) - ")\(track.title)"
+            let label = "\(displayIndex). \(track.displayName)"
             Text(label)
                 .font(.system(size: 11))
                 .foregroundColor(isSelected ? .white : Win32Colors.text)

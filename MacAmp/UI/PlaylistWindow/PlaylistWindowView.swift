@@ -197,17 +197,33 @@ public class PlaylistWindowView: WinampControlView {
     
     // MARK: - Playback & Scroll State
     public var currentTime: TimeInterval = 0 {
-        didSet { needsDisplay = true }
+        didSet {
+            if Int(oldValue) != Int(currentTime) { invalidateMiniTime() }
+        }
     }
     public var status: PlayerStatus = .stopped {
-        didSet { needsDisplay = true }
+        didSet { if oldValue != status { invalidateMiniTime() } }
     }
     public var isBlinkVisible: Bool = true {
-        didSet { needsDisplay = true }
+        didSet { if oldValue != isBlinkVisible { invalidateMiniTime() } }
+    }
+    
+    /// The mini time display in the bottom bar is the only part that depends on time/status/blink.
+    private func invalidateMiniTime() {
+        guard !isShadeMode else {
+            needsDisplay = true
+            return
+        }
+        let botY = bounds.height - AppConstants.Playlist.Layout.bottomBarHeight
+        let origin = CGPoint(x: bounds.width - AppConstants.Playlist.Layout.miniTimeOffsetFromRight,
+                             y: botY + AppConstants.Playlist.Layout.miniTimeYOffsetFromBottom)
+        setNeedsDisplay(NSRect(x: origin.x - 1, y: origin.y - 1, width: 34, height: 9))
     }
     private var scrollOffset: Int = 0
     private var isDraggingScrollThumb: Bool = false
     private var selectionAnchorIndex: Int? = nil
+    /// Row the keyboard cursor is on (last clicked or arrowed-to row); drives arrows, Shift+arrows and Enter.
+    private var cursorIndex: Int? = nil
     private var dropInsertionIndex: Int? = nil
     
     public var isShadeMode: Bool = false {
@@ -877,7 +893,7 @@ public class PlaylistWindowView: WinampControlView {
                 
                 let maxTitleWidth = max(0, durX - 10.0 - 5.0)
                 let maxChars = Int(maxTitleWidth / AppConstants.Font.charWidth)
-                let rawTitle = "\(trackIdx). \(track.artist) - \(track.title)"
+                let rawTitle = "\(trackIdx). \(track.displayName)"
                 let titleStr = (rawTitle.count > maxChars) ? (String(rawTitle.prefix(max(0, maxChars - 1))) + "…") : rawTitle
                 
                 BitmapFont.draw(string: titleStr, in: context, at: CGPoint(x: 5, y: 4))
@@ -967,7 +983,9 @@ public class PlaylistWindowView: WinampControlView {
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineBreakMode = .byTruncatingTail
         
-        for i in 0..<visibleRows {
+        // Time ticks only invalidate the mini time rect in the bottom bar: skip laying out track text then
+        let rowsToDraw = dirtyRect.intersects(listRect) ? visibleRows : 0
+        for i in 0..<rowsToDraw {
             let trackIndex = scrollOffset + i
             guard trackIndex < playlist.tracks.count else { break }
             let track = playlist.tracks[trackIndex]
@@ -1063,6 +1081,150 @@ public class PlaylistWindowView: WinampControlView {
         )
     }
     
+    // MARK: - Keyboard Navigation (Playlist Editor hotkeys)
+    
+    public override func keyDown(with event: NSEvent) {
+        let flags = event.modifierFlags.intersection([.shift, .control, .option, .command])
+        if handlePlaylistKey(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers ?? "", flags: flags) {
+            return
+        }
+        // Everything else (Z/X/C/V/B, Ctrl+P, ...) goes to the window-level Winamp hotkeys
+        super.keyDown(with: event)
+    }
+    
+    /// Handles a playlist-specific key. Returns false when the key should fall through to the global hotkeys.
+    @discardableResult
+    public func handlePlaylistKey(keyCode: UInt16, characters: String, flags: NSEvent.ModifierFlags) -> Bool {
+        let chars = characters.lowercased()
+        let count = playlist.tracks.count
+        let extend = flags.contains(.shift)
+        
+        switch keyCode {
+        case AppConstants.KeyCodes.deleteKey, AppConstants.KeyCodes.forwardDelete:
+            guard let first = playlist.selectedIndices.min() else { return true }
+            playlist.removeSelected()
+            if playlist.tracks.isEmpty {
+                cursorIndex = nil
+                selectionAnchorIndex = nil
+            } else {
+                let next = min(first, playlist.tracks.count - 1)
+                moveCursor(to: next, extendSelection: false)
+            }
+            clampScrollOffset()
+            needsDisplay = true
+            return true
+        case AppConstants.KeyCodes.returnKey, AppConstants.KeyCodes.enterKey:
+            guard let idx = cursorIndex.flatMap({ $0 < count ? $0 : nil }) ?? playlist.selectedIndices.min() ?? playlist.currentIndex,
+                  idx < count else { return true }
+            playlist.currentIndex = idx
+            onPlayTrack?(playlist.tracks[idx])
+            return true
+        case AppConstants.KeyCodes.upArrow:
+            guard count > 0 else { return true }
+            moveCursor(to: max(0, currentCursor() - 1), extendSelection: extend)
+            return true
+        case AppConstants.KeyCodes.downArrow:
+            guard count > 0 else { return true }
+            let cur = currentCursor()
+            moveCursor(to: cur < 0 ? 0 : min(count - 1, cur + 1), extendSelection: extend)
+            return true
+        case AppConstants.KeyCodes.pageUp:
+            guard count > 0 else { return true }
+            moveCursor(to: max(0, currentCursor() - visibleRowCount()), extendSelection: extend)
+            return true
+        case AppConstants.KeyCodes.pageDown:
+            guard count > 0 else { return true }
+            moveCursor(to: min(count - 1, max(0, currentCursor()) + visibleRowCount()), extendSelection: extend)
+            return true
+        case AppConstants.KeyCodes.home:
+            guard count > 0 else { return true }
+            moveCursor(to: 0, extendSelection: extend)
+            return true
+        case AppConstants.KeyCodes.end:
+            guard count > 0 else { return true }
+            moveCursor(to: count - 1, extendSelection: extend)
+            return true
+        case AppConstants.KeyCodes.space:
+            PlayerCoordinator.shared.handlePlayPause()
+            return true
+        default:
+            break
+        }
+        
+        if chars == "a" && (flags.contains(.command) || flags.contains(.control)) {
+            playlist.selectAll()
+            needsDisplay = true
+            return true
+        }
+        if flags.contains(.option) && (chars == "3" || keyCode == AppConstants.KeyCodes.digit3) {
+            let idx = cursorIndex.flatMap({ $0 < count ? $0 : nil }) ?? playlist.selectedIndices.min()
+            PlayerCoordinator.shared.showTrackInfoWindow(trackIndex: idx)
+            return true
+        }
+        // In the Playlist Editor both J and Ctrl+J open Jump to File
+        if chars == "j" && (flags.isEmpty || flags == .control) {
+            PlayerCoordinator.shared.showJumpToFileWindow()
+            return true
+        }
+        return false
+    }
+    
+    private func currentCursor() -> Int {
+        let count = playlist.tracks.count
+        if let c = cursorIndex, c < count { return c }
+        if let sel = playlist.selectedIndices.max() { return sel }
+        if let cur = playlist.currentIndex, cur < count { return cur }
+        return -1
+    }
+    
+    private func moveCursor(to index: Int, extendSelection: Bool) {
+        if extendSelection {
+            let anchor = selectionAnchorIndex ?? max(0, currentCursor())
+            selectionAnchorIndex = anchor
+            playlist.selectedIndices = Set(min(anchor, index)...max(anchor, index))
+        } else {
+            playlist.selectedIndices = [index]
+            selectionAnchorIndex = index
+        }
+        cursorIndex = index
+        scrollToMakeVisible(index)
+        needsDisplay = true
+    }
+    
+    private func visibleRowCount() -> Int {
+        let topH = AppConstants.Playlist.Layout.topBarHeight
+        let botH = AppConstants.Playlist.Layout.bottomBarHeight
+        return max(1, Int(max(0, bounds.height - topH - botH) / AppConstants.Playlist.trackRowHeight))
+    }
+    
+    /// Scrolls the list so `index` is visible: centered (on launch / restore) or with minimal movement.
+    public func scrollToTrack(_ index: Int, centered: Bool) {
+        guard index >= 0, index < playlist.tracks.count else { return }
+        if centered {
+            scrollOffset = max(0, index - visibleRowCount() / 2)
+            clampScrollOffset()
+        } else {
+            scrollToMakeVisible(index)
+        }
+        needsDisplay = true
+    }
+    
+    public func isTrackVisible(_ index: Int) -> Bool {
+        index >= scrollOffset && index < scrollOffset + visibleRowCount()
+    }
+    
+    public var firstVisibleTrackIndex: Int { scrollOffset }
+    
+    private func scrollToMakeVisible(_ index: Int) {
+        let rows = visibleRowCount()
+        if index < scrollOffset {
+            scrollOffset = index
+        } else if index >= scrollOffset + rows {
+            scrollOffset = index - rows + 1
+        }
+        clampScrollOffset()
+    }
+    
     // MARK: - Mouse Interaction & Resizing
     public override func resetCursorRects() {
         super.resetCursorRects()
@@ -1086,7 +1248,10 @@ public class PlaylistWindowView: WinampControlView {
         }
     }
     
+    public override var acceptsFirstResponder: Bool { true }
+    
     public override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
         let local = convert(event.locationInWindow, from: nil)
         let gripSize = AppConstants.Playlist.Layout.resizeGripSize
         let topH = AppConstants.Playlist.Layout.topBarHeight
@@ -1200,6 +1365,7 @@ public class PlaylistWindowView: WinampControlView {
             let clickedRow = Int((local.y - topH) / rowH)
             let trackIndex = scrollOffset + clickedRow
             if trackIndex < playlist.tracks.count {
+                cursorIndex = trackIndex
                 if event.clickCount == 2 {
                     if event.modifierFlags.contains(.option) || local.x >= (listRect.maxX - 45) {
                         // Double-click on duration column or Option+double-click -> Track Info

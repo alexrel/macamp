@@ -100,7 +100,23 @@ public class PersistenceManager {
         self.state = decoded
     }
     
+    private var pendingSave: DispatchWorkItem?
+    
+    /// Coalesces frequent saves (status changes, seeks) into one disk write shortly afterwards.
+    /// `saveSession()` (e.g. on quit) flushes immediately and cancels the pending write.
+    public func scheduleSave(after delay: TimeInterval = 1.0) {
+        pendingSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.pendingSave = nil
+            self?.saveSession()
+        }
+        pendingSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+    
     public func saveSession() {
+        pendingSave?.cancel()
+        pendingSave = nil
         if let data = try? JSONEncoder().encode(state) {
             try? data.write(to: sessionURL)
         }

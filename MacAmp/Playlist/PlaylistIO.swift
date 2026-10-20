@@ -4,9 +4,10 @@ public enum PlaylistIO {
     
     /// Parses an M3U or PLS file from a URL.
     public static func loadPlaylist(from url: URL) -> [TrackItem] {
-        guard let content = (try? String(contentsOf: url, encoding: .utf8)) ?? (try? String(contentsOf: url, encoding: .isoLatin1)) else {
+        guard let data = try? Data(contentsOf: url) else {
             return []
         }
+        let content = TextEncoding.decode(data)
         
         let ext = url.pathExtension.lowercased()
         if ext == "pls" {
@@ -111,10 +112,10 @@ public enum PlaylistIO {
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
         request.setValue("WinampMPEG/2.91", forHTTPHeaderField: "User-Agent")
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
+        guard let (data, _) = try? await URLSession.shared.data(for: request) else {
             return []
         }
+        let content = TextEncoding.decode(data)
         let ext = url.pathExtension.lowercased()
         if ext == "pls" || content.lowercased().contains("[playlist]") {
             return parsePLS(content: content, baseURL: url.deletingLastPathComponent())
@@ -127,7 +128,7 @@ public enum PlaylistIO {
     public static func saveM3U(tracks: [TrackItem], to url: URL) throws {
         var content = "#EXTM3U\n"
         for track in tracks {
-            content += "#EXTINF:\(Int(track.duration)),\(track.artist) - \(track.title)\n"
+            content += "#EXTINF:\(Int(track.duration)),\(track.displayName)\n"
             content += "\(track.url.path)\n"
         }
         try content.write(to: url, atomically: true, encoding: .utf8)

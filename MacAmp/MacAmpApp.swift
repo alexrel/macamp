@@ -68,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Track Title Header
         let titleItem: NSMenuItem
         if let track = coord.playlist.currentTrack {
-            let name = track.artist.isEmpty ? track.title : "\(track.artist) - \(track.title)"
+            let name = track.displayName
             let prefix = isPlaying ? "▶ " : "❚❚ "
             let displayName = name.isEmpty ? track.url.lastPathComponent : name
             titleItem = NSMenuItem(title: prefix + displayName, action: nil, keyEquivalent: "")

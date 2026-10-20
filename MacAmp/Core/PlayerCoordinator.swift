@@ -153,6 +153,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         plView.bounds = NSRect(x: 0, y: 0, width: plRect.width, height: plRect.height)
         plView.autoresizesSubviews = false
         plWindow.contentView = plView
+        plWindow.initialFirstResponder = plView // playlist keyboard navigation works as soon as the window is key
         
         // Clamp and update adjacency graph
         windowManager.clampToScreen()
@@ -162,6 +163,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     // MARK: - Window Display
     private func showWindows() {
         bringAllWindowsToFront()
+        updateActivityState()
     }
     
     // MARK: - Bindings & Events
@@ -175,7 +177,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                 self.persistence.state.lastPlayedTrackIndex = curIdx
                 self.persistence.state.lastPlayedTrackURL = self.playlist.tracks[curIdx].url.absoluteString
             }
-            self.persistence.saveSession()
+            self.persistence.scheduleSave()
             
             self.mainView.timeDisplay.status = status
             self.plView.status = status
@@ -184,6 +186,10 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             if status == .stopped {
                 self.mainView.seekSlider.value = 0.0
             }
+            if status != .playing {
+                self.mainView.visualizer.clear()
+            }
+            self.updateActivityState()
             self.mainView.needsDisplay = true
             self.plView.needsDisplay = true
         }
@@ -218,23 +224,26 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             let seekSec = val * meta.duration
             self.audioEngine.seek(to: seekSec)
             self.persistence.state.lastPlayedTrackTime = seekSec
-            self.persistence.saveSession()
+            self.persistence.scheduleSave()
         }
         
-        audioEngine.onSpectralDataUpdate = { [weak self] bins in
-            self?.mainView.visualizer.spectrumAmplitudes = bins
-            self?.visualizerStudioWindow?.updateSpectrum(bins)
+        audioEngine.onVisualizerFrame = { [weak self] frame in
+            guard let self else { return }
+            self.mainView.visualizer.update(from: frame)
+            if let studio = self.visualizerStudioWindow, studio.isVisible {
+                studio.updateSpectrum(self.mainView.visualizer.spectrumAmplitudes)
+                studio.updateWaveform(self.mainView.visualizer.waveformPoints)
+            }
         }
         
-        audioEngine.onWaveformDataUpdate = { [weak self] wave in
-            self?.mainView.visualizer.waveformPoints = wave
-            self?.visualizerStudioWindow?.updateWaveform(wave)
+        audioEngine.onStreamEvent = { [weak self] message in
+            self?.mainView.marquee.showTemporaryMessage(message, duration: 2.5)
         }
         
         audioEngine.onMetadataUpdate = { [weak self] artist, title, bitrate, sampleRate in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                self.mainView.marquee.text = "\(artist) - \(title)"
+                self.mainView.marquee.text = TrackItem.displayName(artist: artist, title: title)
                 self.mainView.marquee.resetScroll()
                 if let current = self.audioEngine.currentMetadata {
                     self.playlist.updateTrack(url: current.url, duration: 0, artist: artist, title: title)
@@ -373,14 +382,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         mainView.onToggleAlwaysOnTop = { [weak self] in self?.handleToggleAlwaysOnTop() }
         mainView.onTrackInfo = { [weak self] in self?.showTrackInfoWindow() }
         mainView.onToggleDoubleSize = { [weak self] in self?.toggleDoubleSize() }
-        mainView.onToggleVisualizerMode = { [weak self] in
-            guard let self else { return }
-            let next = self.mainView.visualizer.mode.next
-            self.mainView.visualizer.mode = next
-            self.persistence.state.visualizerMode = next
-            let modeName = (next == .spectrum) ? "Spectrum" : (next == .oscilloscope ? "Oscilloscope" : "Off")
-            self.mainView.marquee.showTemporaryMessage("Vis Mode: \(modeName)")
-        }
+        mainView.onToggleVisualizerMode = { [weak self] in self?.cycleVisualizerMode() }
         
         // Time display mode toggle
         mainView.timeDisplay.onToggleMode = { [weak self] in
@@ -391,14 +393,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         }
         
         // Visualizer mode cycle (clicking directly on visualizer view)
-        mainView.visualizer.onToggleMode = { [weak self] in
-            guard let self else { return }
-            let next = self.mainView.visualizer.mode.next
-            self.mainView.visualizer.mode = next
-            self.persistence.state.visualizerMode = next
-            let modeName = (next == .spectrum) ? "Spectrum" : (next == .oscilloscope ? "Oscilloscope" : "Off")
-            self.mainView.marquee.showTemporaryMessage("Vis Mode: \(modeName)")
-        }
+        mainView.visualizer.onToggleMode = { [weak self] in self?.cycleVisualizerMode() }
         
         // Playlist callbacks
         plView.onPlayTrack = { [weak self] track in
@@ -455,6 +450,21 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             .sink { [weak self] _ in self?.updateTitleBarFocus() }
             .store(in: &cancellables)
             
+        // Hidden (Cmd+H), minimized or fully covered windows: stop visualizer, marquee and blink work
+        let activityNotifications: [(NotificationCenter, Notification.Name)] = [
+            (NotificationCenter.default, NSWindow.didChangeOcclusionStateNotification),
+            (NotificationCenter.default, NSWindow.didMiniaturizeNotification),
+            (NotificationCenter.default, NSWindow.didDeminiaturizeNotification),
+            (NotificationCenter.default, NSApplication.didHideNotification),
+            (NotificationCenter.default, NSApplication.didUnhideNotification)
+        ]
+        for (center, name) in activityNotifications {
+            center.publisher(for: name)
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in self?.updateActivityState() }
+                .store(in: &cancellables)
+        }
+        
         // Observe screen configuration changes (monitor connect/disconnect, resolution changes)
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .receive(on: RunLoop.main)
@@ -477,25 +487,58 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         updateWindowMasks()
     }
     
+    // MARK: - Activity Gating (CPU / battery)
+    
+    private func isWindowOnScreen(_ window: NSWindow?) -> Bool {
+        guard let window, window.isVisible, !window.isMiniaturized, !NSApp.isHidden else { return false }
+        return window.occlusionState.contains(.visible)
+    }
+    
+    /// Turns per-frame work on only when someone can see it: spectrum tap (visualizer visible and on),
+    /// marquee scrolling (playing, main window visible) and the pause blink (a time display visible).
+    public func updateActivityState() {
+        guard let mainView else { return }
+        let mainVisible = isWindowOnScreen(mainWindow)
+        let studioVisible = isWindowOnScreen(visualizerStudioWindow)
+        audioEngine.isAnalysisEnabled = (mainVisible && mainView.visualizer.mode != .off) || studioVisible
+        mainView.marquee.isScrollingActive = mainVisible && audioEngine.status == .playing
+        updateBlinkState(for: audioEngine.status)
+    }
+    
+    private func cycleVisualizerMode() {
+        let next = mainView.visualizer.mode.next
+        mainView.visualizer.mode = next
+        persistence.state.visualizerMode = next
+        let modeName = (next == .spectrum) ? "Spectrum" : (next == .oscilloscope ? "Oscilloscope" : "Off")
+        mainView.marquee.showTemporaryMessage("Vis Mode: \(modeName)")
+        updateActivityState()
+    }
+    
     // MARK: - Synchronized Blinking for Pause Mode
     private var blinkTimer: Timer?
     private var isBlinkVisible: Bool = true
     
     private func updateBlinkState(for status: PlayerStatus) {
+        // Blinking only needs a timer while paused and a time display is actually on screen
+        let timeVisible = isWindowOnScreen(mainWindow) || isWindowOnScreen(plWindow)
+        if status == .paused && timeVisible && blinkTimer != nil { return }
         blinkTimer?.invalidate()
         blinkTimer = nil
         
-        if status == .paused {
+        if status == .paused && timeVisible {
             isBlinkVisible = true
             mainView.timeDisplay.isBlinkVisible = true
             plView.isBlinkVisible = true
             
-            blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
                 guard let self else { return }
                 self.isBlinkVisible.toggle()
                 self.mainView.timeDisplay.isBlinkVisible = self.isBlinkVisible
                 self.plView.isBlinkVisible = self.isBlinkVisible
             }
+            timer.tolerance = 0.05
+            RunLoop.main.add(timer, forMode: .common)
+            blinkTimer = timer
         } else {
             isBlinkVisible = true
             mainView.timeDisplay.isBlinkVisible = true
@@ -504,6 +547,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     }
     
     // MARK: - Playback Handling
+    /// Track whose audio was last loaded (playing/paused); used to decide whether the playlist follows track changes.
+    private var lastLoadedTrackID: UUID?
+    
     public func loadAndPlay(track: TrackItem) {
         if !track.url.isFileURL {
             mainView.marquee.text = "[Connecting...] \(track.title)"
@@ -515,14 +561,23 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                 let meta = try await audioEngine.load(url: track.url)
                 await MainActor.run {
                     if let idx = self.playlist.tracks.firstIndex(where: { $0.id == track.id }) {
+                        // Follow the playing track, unless the user has scrolled away from the previous one
+                        // (playlist.next() already moved currentIndex, so use the track that was actually playing)
+                        let wasFollowing = self.lastLoadedTrackID
+                            .flatMap { id in self.playlist.tracks.firstIndex(where: { $0.id == id }) }
+                            .map { self.plView.isTrackVisible($0) } ?? true
                         self.playlist.currentIndex = idx
+                        self.lastLoadedTrackID = track.id
+                        if wasFollowing {
+                            self.plView.scrollToTrack(idx, centered: false)
+                        }
                         self.persistence.state.lastPlayedTrackIndex = idx
                         self.persistence.state.lastPlayedTrackURL = track.url.absoluteString
                         self.persistence.state.lastPlayedTrackTime = 0.0
                         self.persistence.saveSession()
                     }
                     self.playlist.updateTrack(url: track.url, duration: meta.duration, artist: meta.artist, title: meta.title)
-                    self.mainView.marquee.text = "\(meta.artist) - \(meta.title)"
+                    self.mainView.marquee.text = TrackItem.displayName(artist: meta.artist, title: meta.title)
                     self.mainView.marquee.resetScroll()
                     self.mainView.timeDisplay.totalDuration = meta.duration
                     self.mainView.timeDisplay.status = .playing
@@ -541,7 +596,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             } catch {
                 print("Failed to load track \(track.url): \(error)")
                 await MainActor.run {
-                    self.mainView.marquee.showTemporaryMessage("Stream Error")
+                    self.mainView.marquee.showTemporaryMessage(track.url.isFileURL ? "Cannot open file" : "Stream Error")
                 }
             }
         }
@@ -550,7 +605,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     /// Primes audio engine and displays in paused state at a specific position without playing out loud.
     public func preparePausedPlayback(track: TrackItem, at savedTime: TimeInterval) {
         if !track.url.isFileURL {
-            mainView.marquee.text = "\(track.artist) - \(track.title)"
+            mainView.marquee.text = track.displayName
             mainView.marquee.resetScroll()
             mainView.timeDisplay.totalDuration = track.duration
             mainView.timeDisplay.currentTime = savedTime
@@ -572,7 +627,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                     self.playlist.updateTrack(url: track.url, duration: meta.duration, artist: meta.artist, title: meta.title)
                     self.audioEngine.preparePaused(at: savedTime)
                     
-                    self.mainView.marquee.text = "\(meta.artist) - \(meta.title)"
+                    self.mainView.marquee.text = TrackItem.displayName(artist: meta.artist, title: meta.title)
                     self.mainView.marquee.resetScroll()
                     self.mainView.timeDisplay.totalDuration = meta.duration
                     self.mainView.timeDisplay.currentTime = savedTime
@@ -950,6 +1005,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         } else {
             win.makeKeyAndOrderFront(nil)
         }
+        updateActivityState()
     }
     
     /// Brings all currently visible MacAmp windows to the front in proper z-order (Playlist -> Equalizer -> MainWindow)
@@ -1400,7 +1456,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     public func seek(to time: TimeInterval) {
         audioEngine.seek(to: time)
         persistence.state.lastPlayedTrackTime = time
-        persistence.saveSession()
+        persistence.scheduleSave()
         MediaKeyController.shared.updateNowPlayingInfo()
     }
     
@@ -1412,8 +1468,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         mainView.timeDisplay.status = .stopped
         mainView.seekSlider.isThumbHidden = true
         mainView.seekSlider.value = 0.0
-        mainView.visualizer.spectrumAmplitudes = Array(repeating: 0.0, count: AppConstants.Visualizer.numSpectrumBars)
-        mainView.visualizer.waveformPoints = Array(repeating: 0.0, count: AppConstants.Visualizer.numWaveformPoints)
+        mainView.visualizer.clear()
         mainView.needsDisplay = true
         MediaKeyController.shared.updateNowPlayingInfo()
         StatusBarManager.shared.updateStatus()
@@ -1572,6 +1627,10 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             }
         }
         
+        // DSP effects (Preferences view model only applies them on change, so restore here)
+        audioEngine.applyDSP(enabled: s.isDspEnabled, pitchSemitones: s.dspPitchSemitones, rate: s.dspPlaybackRate,
+                             reverbMix: s.dspReverbMix, reverbPreset: s.dspReverbPreset)
+        
         // Window Visibility
         mainView.eqToggle.isOn = s.isEqWindowVisible
         if !s.isEqWindowVisible { eqWindow.orderOut(nil) }
@@ -1626,11 +1685,20 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             
             playlist.currentIndex = targetIndex
             playlist.selectedIndices = [targetIndex]
+            plView.scrollToTrack(targetIndex, centered: true)
+            lastLoadedTrackID = playlist.tracks[targetIndex].id
+            
+            // Playlists saved by older versions guessed artists from file names; re-read them once in the background
+            playlist.migrateLegacyFileNameMetadata { [weak self] in
+                guard let self, let current = self.playlist.currentTrack, self.audioEngine.status != .playing else { return }
+                self.mainView.marquee.text = current.displayName
+                self.plView.needsDisplay = true
+            }
             
             let track = playlist.tracks[targetIndex]
             if s.lastPlaybackState == .paused || (s.lastPlaybackState == .playing && s.lastPlayedTrackTime > 0) {
                 // Immediately prime UI for paused state
-                mainView.marquee.text = "\(track.artist) - \(track.title)"
+                mainView.marquee.text = track.displayName
                 mainView.marquee.resetScroll()
                 mainView.timeDisplay.totalDuration = track.duration
                 mainView.timeDisplay.currentTime = s.lastPlayedTrackTime
@@ -1644,7 +1712,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                 preparePausedPlayback(track: track, at: s.lastPlayedTrackTime)
             } else {
                 // Stopped state
-                mainView.marquee.text = "\(track.artist) - \(track.title)"
+                mainView.marquee.text = track.displayName
                 mainView.marquee.resetScroll()
                 mainView.timeDisplay.totalDuration = track.duration
                 mainView.timeDisplay.currentTime = 0.0
