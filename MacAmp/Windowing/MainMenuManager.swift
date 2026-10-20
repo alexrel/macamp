@@ -7,6 +7,7 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
     private var playbackMenu: NSMenu?
     private var windowMenu: NSMenu?
     private var skinsSubmenu: NSMenu?
+    private var audioOutputSubmenu: NSMenu?
     
     private var alwaysOnTopItem: NSMenuItem?
     private var doubleSizeItem: NSMenuItem?
@@ -180,6 +181,12 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         self.skinsSubmenu = skinsSub
         optsMenu.addItem(skinsItem)
         
+        let outputItem = NSMenuItem(title: "Audio Output", action: nil, keyEquivalent: "")
+        let outputSub = NSMenu(title: "Audio Output")
+        outputItem.submenu = outputSub
+        self.audioOutputSubmenu = outputSub
+        optsMenu.addItem(outputItem)
+        
         optsMenu.addItem(NSMenuItem.separator())
         
         let aotItem = NSMenuItem(title: "Always On Top", action: #selector(PlayerCoordinator.handleToggleAlwaysOnTop), keyEquivalent: "t")
@@ -295,6 +302,49 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
             let openFolderItem = NSMenuItem(title: "Open Skins Folder", action: #selector(PlayerCoordinator.handleOpenSkinsFolder), keyEquivalent: "")
             openFolderItem.target = coord
             skinsMenu.addItem(openFolderItem)
+        }
+        
+        // Rebuild dynamic audio output menu
+        if let outMenu = audioOutputSubmenu {
+            outMenu.removeAllItems()
+            
+            let defaultName = AudioDeviceManager.shared.defaultDevice?.name ?? "System Output"
+            let isDefaultActive = (AudioDeviceManager.shared.selectedDeviceUID == nil)
+            
+            let defItem = NSMenuItem(
+                title: "System Default (\(defaultName))",
+                action: #selector(PlayerCoordinator.handleSelectDefaultAudioOutput),
+                keyEquivalent: ""
+            )
+            defItem.target = coord
+            defItem.state = isDefaultActive ? .on : .off
+            outMenu.addItem(defItem)
+            
+            let devices = AudioDeviceManager.shared.availableDevices
+            if !devices.isEmpty {
+                outMenu.addItem(NSMenuItem.separator())
+                for dev in devices {
+                    let isSelected = (AudioDeviceManager.shared.selectedDeviceUID == dev.uid)
+                    let item = NSMenuItem(
+                        title: dev.displayName,
+                        action: #selector(PlayerCoordinator.handleAudioOutputDeviceSelected(_:)),
+                        keyEquivalent: ""
+                    )
+                    item.target = coord
+                    item.representedObject = dev.uid
+                    item.state = isSelected ? .on : .off
+                    outMenu.addItem(item)
+                }
+            }
+            
+            outMenu.addItem(NSMenuItem.separator())
+            let prefItem = NSMenuItem(
+                title: "Audio Preferences...",
+                action: #selector(PlayerCoordinator.handleOpenAudioPreferences),
+                keyEquivalent: ""
+            )
+            prefItem.target = coord
+            outMenu.addItem(prefItem)
         }
     }
 }

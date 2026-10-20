@@ -465,4 +465,61 @@ testGroup("ClutterBar 100% (O, A, I, D, V) Controls") {
     assertEqual(VisualizerMode.off.next, .spectrum, "Off -> Spectrum")
 }
 
+// 9. AudioDeviceManager & Output Hotplugging Tests
+testGroup("AudioDeviceManager & Output Hotplugging") {
+    let mgr = AudioDeviceManager.shared
+    mgr.refreshDevices()
+    
+    // 1. Devices list & default device detection
+    assertTrue(!mgr.availableDevices.isEmpty, "Should find at least 1 output device on macOS")
+    assertTrue(mgr.defaultDevice != nil, "Default output device should be detected")
+    
+    // 2. Transport type mapping
+    assertEqual(AudioDeviceTransportType.from(rawTransport: 1651274862), .builtIn, "'bltn' should map to .builtIn")
+    assertEqual(AudioDeviceTransportType.from(rawTransport: 1651275109), .bluetooth, "'blue' should map to .bluetooth")
+    assertEqual(AudioDeviceTransportType.from(rawTransport: 1651271009), .bluetooth, "'blea' should map to .bluetooth")
+    assertEqual(AudioDeviceTransportType.from(rawTransport: 1751412073), .hdmi, "'hdmi' should map to .hdmi")
+    assertEqual(AudioDeviceTransportType.from(rawTransport: 1685090932), .hdmi, "'dprt' should map to .hdmi")
+    assertEqual(AudioDeviceTransportType.from(rawTransport: 1970496032), .usb, "'usb ' should map to .usb")
+    assertEqual(AudioDeviceTransportType.from(rawTransport: 1634300528), .airplay, "'airp' should map to .airplay")
+    assertEqual(AudioDeviceTransportType.from(rawTransport: 1986622068), .virtual, "'virt' should map to .virtual")
+    
+    // 3. Selection & persistence
+    mgr.selectDevice(uid: nil)
+    assertEqual(mgr.selectedDeviceUID, nil, "System Default selected (nil UID)")
+    assertEqual(PersistenceManager.shared.state.selectedAudioOutputDeviceUID, nil, "Persistence reflects System Default")
+    assertEqual(mgr.activeDevice?.id, mgr.defaultDevice?.id, "Active device matches default device")
+    
+    if let first = mgr.availableDevices.first {
+        mgr.selectDevice(uid: first.uid)
+        assertEqual(mgr.selectedDeviceUID, first.uid, "Selected device UID matches")
+        assertEqual(PersistenceManager.shared.state.selectedAudioOutputDeviceUID, first.uid, "Persistence updated with chosen UID")
+        assertEqual(mgr.activeDevice?.uid, first.uid, "Active device reflects selected device")
+        
+        // Reset back to default
+        mgr.selectDevice(uid: nil)
+        assertEqual(mgr.selectedDeviceUID, nil, "Reset back to nil")
+    }
+    
+    // 4. AudioEngine routing & route change resilience
+    let engine = AudioEngine.shared
+    let success = engine.setOutputDevice(deviceID: nil)
+    assertTrue(success, "AudioEngine setOutputDevice(nil) should succeed")
+    
+    // Post route change notification to verify resilience
+    NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: nil)
+    assertEqual(engine.status, .stopped, "Engine remains in valid stopped state after route notification")
+    
+    // 5. Preferences View Model & Tree Item integration
+    assertTrue(PrefTreeItem.allCases.contains(.output), "PrefTreeItem should include .output")
+    assertEqual(PrefTreeItem.output.sectionHeader, "Audio", "Output sectionHeader must be 'Audio'")
+    
+    let vm = PreferencesViewModel()
+    vm.selectedTreeItem = .output
+    assertEqual(vm.selectedCategory, .audio, "Category for .output should be .audio")
+    assertTrue(!vm.availableOutputDevices.isEmpty, "PreferencesViewModel should populate available devices")
+    vm.selectOutputDevice(uid: nil)
+    assertEqual(vm.selectedAudioOutputDeviceUID, nil, "PreferencesViewModel selects System Default")
+}
+
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")

@@ -51,6 +51,7 @@ public struct AppState: Codable {
     public var audioFadeOutDurationMs: Double = 200.0
     public var autoGenreEQ: Bool = false
     public var isGlobalHotkeysEnabled: Bool = true
+    public var selectedAudioOutputDeviceUID: String? = nil
     
     // Preferences - DSP & Effects
     public var isDspEnabled: Bool = false

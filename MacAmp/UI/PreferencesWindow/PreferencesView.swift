@@ -17,6 +17,7 @@ public enum PrefTreeItem: String, CaseIterable, Identifiable {
     case visualization = "Visualization"
     case hotkeys = "Global Hotkeys"
     case audio = "Playback & Fading"
+    case output = "Output Devices"
     case dsp = "DSP / Effects"
     case equalizer = "Equalizer"
     case playlist = "Track Display"
@@ -27,7 +28,7 @@ public enum PrefTreeItem: String, CaseIterable, Identifiable {
     public var sectionHeader: String {
         switch self {
         case .display, .titles, .visualization, .hotkeys: return "Options"
-        case .audio, .dsp, .equalizer: return "Audio"
+        case .audio, .output, .dsp, .equalizer: return "Audio"
         case .playlist: return "Playlist"
         case .skins: return "Skins"
         }
@@ -223,6 +224,10 @@ public class PreferencesViewModel: ObservableObject {
         }
     }
     
+    // Audio Output Devices
+    @Published public var availableOutputDevices: [AudioOutputDevice] = []
+    @Published public var selectedAudioOutputDeviceUID: String? = nil
+    
     public init() {
         let state = PersistenceManager.shared.state
         self.isAlwaysOnTop = state.isAlwaysOnTop
@@ -248,7 +253,32 @@ public class PreferencesViewModel: ObservableObject {
         self.visualizerMode = state.visualizerMode
         self.visualizerShowPeaks = state.visualizerShowPeaks
         
+        self.availableOutputDevices = AudioDeviceManager.shared.availableDevices
+        self.selectedAudioOutputDeviceUID = AudioDeviceManager.shared.selectedDeviceUID
+        
+        AudioDeviceManager.shared.onDevicesChanged = { [weak self] devs in
+            DispatchQueue.main.async {
+                self?.availableOutputDevices = devs
+            }
+        }
+        AudioDeviceManager.shared.onActiveDeviceChanged = { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.selectedAudioOutputDeviceUID = AudioDeviceManager.shared.selectedDeviceUID
+            }
+        }
+        
         refreshSkins()
+    }
+    
+    public func selectOutputDevice(uid: String?) {
+        self.selectedAudioOutputDeviceUID = uid
+        AudioDeviceManager.shared.selectDevice(uid: uid)
+    }
+    
+    public func refreshOutputDevices() {
+        AudioDeviceManager.shared.refreshDevices()
+        self.availableOutputDevices = AudioDeviceManager.shared.availableDevices
+        self.selectedAudioOutputDeviceUID = AudioDeviceManager.shared.selectedDeviceUID
     }
     
     public func resetDSP() {
@@ -265,7 +295,7 @@ public class PreferencesViewModel: ObservableObject {
             switch selectedTreeItem {
             case .display, .titles, .visualization, .hotkeys: return .titles
             case .skins: return .skins
-            case .audio, .dsp, .equalizer: return .audio
+            case .audio, .output, .dsp, .equalizer: return .audio
             case .playlist: return .playlist
             }
         }
@@ -402,6 +432,8 @@ public struct PreferencesView: View {
                             hotkeysSection
                         case .audio:
                             audioSection
+                        case .output:
+                            outputSection
                         case .dsp:
                             dspSection
                         case .equalizer:
@@ -687,6 +719,89 @@ public struct PreferencesView: View {
                         .foregroundColor(.secondary)
                 }
             }
+        }
+    }
+    
+    // MARK: - Section: Audio Output Devices
+    private var outputSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Win32GroupBox("Audio Output Device") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Select where MacAmp routes sound (Bluetooth, HDMI, USB DAC, or Built-in):")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        // System Default option
+                        let isDefaultSelected = (viewModel.selectedAudioOutputDeviceUID == nil)
+                        let defaultName = AudioDeviceManager.shared.defaultDevice?.name ?? "Internal Speakers"
+                        let defaultTransport = AudioDeviceManager.shared.defaultDevice?.transportType.rawValue ?? "Built-in"
+                        
+                        Win32RadioButton("System Default (Follow macOS Sound Settings)", isSelected: isDefaultSelected) {
+                            viewModel.selectOutputDevice(uid: nil)
+                        }
+                        
+                        Text("  Currently active: [\(defaultTransport)] \(defaultName)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                            .padding(.leading, 18)
+                        
+                        Divider().padding(.vertical, 2)
+                        
+                        // Specific hardware devices
+                        ForEach(viewModel.availableOutputDevices) { device in
+                            let isSelected = (viewModel.selectedAudioOutputDeviceUID == device.uid)
+                            HStack(spacing: 6) {
+                                Win32RadioButton(device.displayName, isSelected: isSelected) {
+                                    viewModel.selectOutputDevice(uid: device.uid)
+                                }
+                                if device.isDefault {
+                                    Text("(macOS Default)")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .padding(8)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .modifier(Win32SunkenBorder())
+                    
+                    HStack {
+                        Spacer()
+                        Win32Button("Refresh Devices", width: 120, height: 22) {
+                            viewModel.refreshOutputDevices()
+                        }
+                    }
+                }
+            }
+            
+            // Active Device Details
+            if let active = AudioDeviceManager.shared.activeDevice {
+                Win32GroupBox("Active Output Device Details") {
+                    VStack(alignment: .leading, spacing: 5) {
+                        detailRow("Device Name:", active.name)
+                        detailRow("Transport:", active.transportType.rawValue)
+                        detailRow("Channels:", "\(active.channelCount) channels")
+                        detailRow("Sample Rate:", "\(Int(active.sampleRate)) Hz")
+                        detailRow("Status:", "Connected & Ready")
+                    }
+                    .padding(6)
+                }
+            }
+        }
+    }
+    
+    private func detailRow(_ label: String, _ val: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(Win32Colors.text)
+                .frame(width: 90, alignment: .leading)
+            Text(val)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.secondary)
+            Spacer()
         }
     }
     

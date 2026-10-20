@@ -28,6 +28,31 @@ public class PreferencesWindow: NSWindow {
         }
         NSApp.activate(ignoringOtherApps: true)
     }
+    
+    public static func show(treeItem: PrefTreeItem) {
+        if let existing = sharedController {
+            existing.selectTreeItem(treeItem)
+            if let win = existing.window {
+                let playerLevel = PlayerCoordinator.shared.mainWindow?.level ?? .normal
+                win.level = (playerLevel == .floating) ? .modalPanel : .floating
+                win.makeKeyAndOrderFront(nil)
+                win.orderFrontRegardless()
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        
+        let controller = PreferencesWindowController(initialTreeItem: treeItem)
+        sharedController = controller
+        controller.showWindow(nil)
+        if let win = controller.window {
+            let playerLevel = PlayerCoordinator.shared.mainWindow?.level ?? .normal
+            win.level = (playerLevel == .floating) ? .modalPanel : .floating
+            win.makeKeyAndOrderFront(nil)
+            win.orderFrontRegardless()
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
 }
 
 public class PreferencesWindowController: NSWindowController, NSWindowDelegate {
@@ -69,6 +94,16 @@ public class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     public func selectCategory(_ category: PreferencesCategory) {
         viewModel.selectedCategory = category
         viewModel.refreshSkins()
+    }
+    
+    public func selectTreeItem(_ item: PrefTreeItem) {
+        viewModel.selectedTreeItem = item
+        viewModel.refreshSkins()
+    }
+    
+    public convenience init(initialTreeItem: PrefTreeItem) {
+        self.init(initialCategory: .titles)
+        self.viewModel.selectedTreeItem = initialTreeItem
     }
     
     public func windowWillClose(_ notification: Notification) {

@@ -44,6 +44,7 @@
 		AA9EF05B9533115EC4B41E8D /* MediaKeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2EE4C01E58DA5839980F70 /* MediaKeyController.swift */; };
 		AA2BBF0F6C992A5E46B7A987 /* PlayerCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAC2BB3C6AE0885E199BF702 /* PlayerCoordinator.swift */; };
 		AAE0CA665F5ECB5A40A155FB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA5EF6CB8C8A2B5ED39134E5 /* AppState.swift */; };
+		AA23E98EB7712053029F4B2D /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0D4B086012575E24AB9073 /* AudioDeviceManager.swift */; };
 		AA6CEB4C05DBFB5A7397E865 /* AudioEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6886CEEE22F05C6A878759 /* AudioEngine.swift */; };
 		AA00DEAB8724A25242A42B3C /* AudioMetadataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADF92433DF4605233A653D6 /* AudioMetadataService.swift */; };
 		AA1DD7DC105F775895AD4CD4 /* EqualizerPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA05E180143679538AA8E2C1 /* EqualizerPresets.swift */; };
@@ -96,6 +97,7 @@
 		AA2EE4C01E58DA5839980F70 /* MediaKeyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MediaKeyController.swift"; sourceTree = "<group>"; };
 		AAC2BB3C6AE0885E199BF702 /* PlayerCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayerCoordinator.swift"; sourceTree = "<group>"; };
 		AA5EF6CB8C8A2B5ED39134E5 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppState.swift"; sourceTree = "<group>"; };
+		AA0D4B086012575E24AB9073 /* AudioDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioDeviceManager.swift"; sourceTree = "<group>"; };
 		AA6886CEEE22F05C6A878759 /* AudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioEngine.swift"; sourceTree = "<group>"; };
 		AADF92433DF4605233A653D6 /* AudioMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioMetadataService.swift"; sourceTree = "<group>"; };
 		AA05E180143679538AA8E2C1 /* EqualizerPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EqualizerPresets.swift"; sourceTree = "<group>"; };
@@ -193,6 +195,7 @@
 		AA29AE56B9FB965242B544E6 /* Audio */ = {
 			isa = PBXGroup;
 			children = (
+				AA0D4B086012575E24AB9073 /* AudioDeviceManager.swift */,
 				AA6886CEEE22F05C6A878759 /* AudioEngine.swift */,
 				AADF92433DF4605233A653D6 /* AudioMetadataService.swift */,
 				AA05E180143679538AA8E2C1 /* EqualizerPresets.swift */,
@@ -413,6 +416,8 @@
 
 
 
+
+
 				BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */,
 				BDC069482B887D910009C001 /* Assets.xcassets in Resources */,
 			);
@@ -462,6 +467,7 @@
 				AA9EF05B9533115EC4B41E8D /* MediaKeyController.swift in Sources */,
 				AA2BBF0F6C992A5E46B7A987 /* PlayerCoordinator.swift in Sources */,
 				AAE0CA665F5ECB5A40A155FB /* AppState.swift in Sources */,
+				AA23E98EB7712053029F4B2D /* AudioDeviceManager.swift in Sources */,
 				AA6CEB4C05DBFB5A7397E865 /* AudioEngine.swift in Sources */,
 				AA00DEAB8724A25242A42B3C /* AudioMetadataService.swift in Sources */,
 				AA1DD7DC105F775895AD4CD4 /* EqualizerPresets.swift in Sources */,

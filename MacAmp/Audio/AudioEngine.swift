@@ -68,15 +68,103 @@ public class AudioEngine {
     
     // Progress tracking timer
     private var playbackTimer: Timer?
+    private var isTapInstalled: Bool = false
+    public private(set) var currentOutputDeviceID: AudioDeviceID? = nil
     
     private init() {
         setupGraph()
         setupEQ()
         setupDSP()
+        setupNotifications()
+        
+        // Restore custom output device if saved in persistence
+        if let savedUID = PersistenceManager.shared.state.selectedAudioOutputDeviceUID,
+           let found = AudioDeviceManager.shared.availableDevices.first(where: { $0.uid == savedUID }) {
+            setOutputDevice(deviceID: found.id)
+        }
     }
     
     deinit {
+        NotificationCenter.default.removeObserver(self)
         currentSecurityScopedURL?.stopAccessingSecurityScopedResource()
+    }
+    
+    private func setupNotifications() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleEngineConfigurationChange(_:)),
+            name: .AVAudioEngineConfigurationChange,
+            object: engine
+        )
+    }
+    
+    @objc private func handleEngineConfigurationChange(_ notification: Notification) {
+        print("AudioEngine: Received AVAudioEngineConfigurationChangeNotification (Hardware route / device change)")
+        
+        let wasPlaying = (status == .playing)
+        let savedTime = currentTime
+        
+        // Refresh available audio devices in manager
+        AudioDeviceManager.shared.refreshDevices()
+        
+        // Re-apply targeted device if configured, or default
+        if let targetID = AudioDeviceManager.shared.activeOutputDeviceID(), let audioUnit = engine.outputNode.audioUnit {
+            var devID = targetID
+            AudioUnitSetProperty(
+                audioUnit,
+                kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global,
+                0,
+                &devID,
+                UInt32(MemoryLayout<AudioDeviceID>.size)
+            )
+            currentOutputDeviceID = devID
+        }
+        
+        reinstallMixerTap()
+        
+        if !engine.isRunning {
+            do {
+                try engine.start()
+            } catch {
+                print("AudioEngine: Failed to restart AVAudioEngine after route change: \(error)")
+            }
+        }
+        
+        if wasPlaying {
+            if isStreaming {
+                streamPlayer?.play()
+                startStreamTimer()
+            } else if audioFile != nil {
+                seek(to: savedTime)
+                playerNode.play()
+                startTimer()
+            }
+        }
+    }
+    
+    public func reinstallMixerTap() {
+        if isTapInstalled {
+            engine.mainMixerNode.removeTap(onBus: 0)
+            isTapInstalled = false
+        }
+        
+        let tapFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+        guard tapFormat.sampleRate > 0 && tapFormat.channelCount > 0 else { return }
+        
+        engine.mainMixerNode.installTap(onBus: 0, bufferSize: AppConstants.Audio.bufferSize, format: tapFormat) { [weak self] buffer, _ in
+            guard let self = self else { return }
+            guard self.status == .playing else { return }
+            
+            let spectrum = self.fftAnalyzer.analyzeSpectrum(buffer: buffer)
+            let waveform = self.fftAnalyzer.analyzeWaveform(buffer: buffer)
+            
+            DispatchQueue.main.async {
+                self.onSpectralDataUpdate?(spectrum)
+                self.onWaveformDataUpdate?(waveform)
+            }
+        }
+        isTapInstalled = true
     }
     
     private func setupGraph() {
@@ -91,19 +179,7 @@ public class AudioEngine {
         engine.connect(reverbNode, to: engine.mainMixerNode, format: nil)
         
         // Tap on main mixer node for spectrum & oscilloscope
-        let tapFormat = engine.mainMixerNode.outputFormat(forBus: 0)
-        engine.mainMixerNode.installTap(onBus: 0, bufferSize: AppConstants.Audio.bufferSize, format: tapFormat) { [weak self] buffer, _ in
-            guard let self else { return }
-            guard self.status == .playing else { return }
-            
-            let spectrum = self.fftAnalyzer.analyzeSpectrum(buffer: buffer)
-            let waveform = self.fftAnalyzer.analyzeWaveform(buffer: buffer)
-            
-            DispatchQueue.main.async {
-                self.onSpectralDataUpdate?(spectrum)
-                self.onWaveformDataUpdate?(waveform)
-            }
-        }
+        reinstallMixerTap()
         
         do {
             try engine.start()
@@ -560,5 +636,48 @@ public class AudioEngine {
     }
     public var isDspTimePitchBypassed: Bool {
         timePitchNode.bypass
+    }
+    
+    // MARK: - Output Device Selection & Routing
+    @discardableResult
+    public func setOutputDevice(deviceID: AudioDeviceID?) -> Bool {
+        guard let audioUnit = engine.outputNode.audioUnit else { return false }
+        var devID: AudioDeviceID = deviceID ?? 0
+        let err = AudioUnitSetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &devID,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+        guard err == noErr else {
+            print("AudioEngine: AudioUnitSetProperty failed for device \(devID), status: \(err)")
+            return false
+        }
+        
+        currentOutputDeviceID = (devID == 0) ? nil : devID
+        
+        let wasPlaying = (status == .playing)
+        let savedTime = currentTime
+        
+        reinstallMixerTap()
+        
+        if !engine.isRunning {
+            try? engine.start()
+        }
+        
+        if wasPlaying {
+            if isStreaming {
+                streamPlayer?.play()
+                startStreamTimer()
+            } else if audioFile != nil {
+                seek(to: savedTime)
+                playerNode.play()
+                startTimer()
+            }
+        }
+        
+        return true
     }
 }

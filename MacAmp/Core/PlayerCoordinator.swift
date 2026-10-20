@@ -1055,6 +1055,64 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         return skinsMenu
     }
     
+    public func buildAudioOutputSubmenu() -> NSMenu {
+        let menu = NSMenu(title: "Audio Output")
+        
+        let defaultName = AudioDeviceManager.shared.defaultDevice?.name ?? "System Output"
+        let isDefaultActive = (AudioDeviceManager.shared.selectedDeviceUID == nil)
+        
+        let defItem = NSMenuItem(
+            title: "System Default (\(defaultName))",
+            action: #selector(handleSelectDefaultAudioOutput),
+            keyEquivalent: ""
+        )
+        defItem.target = self
+        defItem.state = isDefaultActive ? .on : .off
+        menu.addItem(defItem)
+        
+        let devices = AudioDeviceManager.shared.availableDevices
+        if !devices.isEmpty {
+            menu.addItem(NSMenuItem.separator())
+            for dev in devices {
+                let isSelected = (AudioDeviceManager.shared.selectedDeviceUID == dev.uid)
+                let item = NSMenuItem(
+                    title: dev.displayName,
+                    action: #selector(handleAudioOutputDeviceSelected(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = dev.uid
+                item.state = isSelected ? .on : .off
+                menu.addItem(item)
+            }
+        }
+        
+        menu.addItem(NSMenuItem.separator())
+        let prefItem = NSMenuItem(
+            title: "Audio Preferences...",
+            action: #selector(handleOpenAudioPreferences),
+            keyEquivalent: ""
+        )
+        prefItem.target = self
+        menu.addItem(prefItem)
+        
+        return menu
+    }
+    
+    @objc public func handleAudioOutputDeviceSelected(_ sender: NSMenuItem) {
+        if let uid = sender.representedObject as? String {
+            AudioDeviceManager.shared.selectDevice(uid: uid)
+        }
+    }
+    
+    @objc public func handleSelectDefaultAudioOutput() {
+        AudioDeviceManager.shared.selectDevice(uid: nil)
+    }
+    
+    @objc public func handleOpenAudioPreferences() {
+        PreferencesWindow.show(treeItem: .output)
+    }
+    
     public func buildWinampMenu() -> NSMenu {
         let menu = NSMenu(title: "Winamp Menu")
         
@@ -1120,6 +1178,11 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         let skinsSubItem = NSMenuItem(title: "Skins", action: nil, keyEquivalent: "")
         skinsSubItem.submenu = skinsSubmenu
         optionsMenu.addItem(skinsSubItem)
+        
+        let outputSubmenu = buildAudioOutputSubmenu()
+        let outputSubItem = NSMenuItem(title: "Audio Output", action: nil, keyEquivalent: "")
+        outputSubItem.submenu = outputSubmenu
+        optionsMenu.addItem(outputSubItem)
         optionsMenu.addItem(NSMenuItem.separator())
         
         let topItem = NSMenuItem(title: "Always On Top", action: #selector(handleToggleAlwaysOnTop), keyEquivalent: "")
