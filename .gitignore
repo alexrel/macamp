@@ -55,7 +55,8 @@ fastlane/test_output
 # Artifacts
 webamp-master/
 ClassicSkins/
-docs/
+docs/*
+!docs/*.md
 /skin/
 stuff/
 scratch/
