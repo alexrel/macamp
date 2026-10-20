@@ -231,6 +231,7 @@ public class PlaylistWindowView: WinampControlView {
             updateLayoutForShadeMode()
             layoutButtons()
             clampScrollOffset()
+            applySkinCursorNames()
             window?.invalidateCursorRects(for: self)
             needsDisplay = true
             for sub in subviews {
@@ -620,6 +621,7 @@ public class PlaylistWindowView: WinampControlView {
         menu.autoenablesItems = false
         menu.addItem(createMenuItem(title: "Sort list by title", action: #selector(handleSortTitle)))
         menu.addItem(createMenuItem(title: "Sort list by filename", action: #selector(handleSortFilename)))
+        menu.addItem(createMenuItem(title: "Sort list by path and filename", action: #selector(handleSortPath)))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(createMenuItem(title: "Reverse list", action: #selector(handleReverse)))
         menu.addItem(createMenuItem(title: "Randomize list", action: #selector(handleRandomize)))
@@ -629,7 +631,12 @@ public class PlaylistWindowView: WinampControlView {
     private func showMiscOptionsSubmenu(at button: NSView) {
         let menu = NSMenu(title: "Misc Options")
         menu.autoenablesItems = false
-        menu.addItem(createMenuItem(title: "Jump to file...", action: #selector(handleJumpToFile), keyEquivalent: "j"))
+        menu.addItem(createMenuItem(title: "Generate HTML playlist", action: #selector(handleGenerateHTML)))
+        menu.addItem(createMenuItem(title: "Read extended info on selection", action: #selector(handleReadExtendedInfo)))
+        menu.addItem(NSMenuItem.separator())
+        let jumpItem = createMenuItem(title: "Jump to file...", action: #selector(handleJumpToFile), keyEquivalent: "j")
+        jumpItem.keyEquivalentModifierMask = []
+        menu.addItem(jumpItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(createMenuItem(title: "Scroll to current track", action: #selector(handleScrollToCurrentTrack)))
         menu.addItem(createMenuItem(title: "Clear selection", action: #selector(handleSelectNone)))
@@ -637,22 +644,14 @@ public class PlaylistWindowView: WinampControlView {
     }
     
     public func promptAddURL() {
-        let alert = NSAlert()
-        alert.messageText = "Open URL"
-        alert.informativeText = "Enter an Internet location to open:\n(e.g.: http://www.server.com:8000/stream.mp3)"
-        alert.alertStyle = .informational
-        
-        let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        inputField.placeholderString = "http://"
-        inputField.stringValue = "http://"
-        alert.accessoryView = inputField
-        alert.addButton(withTitle: "Open")
-        alert.addButton(withTitle: "Cancel")
-        
-        alert.window.initialFirstResponder = inputField
-        
-        if alert.runModal() == .alertFirstButtonReturn {
-            var urlString = inputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let entered = Win32Dialog.prompt(
+            title: "Open URL",
+            message: "Enter an Internet location to open:\n(e.g.: http://www.server.com:8000/stream.mp3)",
+            defaultValue: "http://",
+            okTitle: "Open",
+            width: 380
+        ) {
+            var urlString = entered.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !urlString.isEmpty && urlString != "http://" && urlString != "https://" else { return }
             if !urlString.lowercased().hasPrefix("http://") && !urlString.lowercased().hasPrefix("https://") && !urlString.lowercased().hasPrefix("ftp://") {
                 urlString = "http://" + urlString
@@ -825,6 +824,31 @@ public class PlaylistWindowView: WinampControlView {
         needsDisplay = true
     }
     
+    @objc private func handleSortPath() {
+        playlist.sortByPath()
+        needsDisplay = true
+    }
+    
+    /// Writes an HTML page with the playlist and opens it in the default browser, like Winamp did.
+    @objc private func handleGenerateHTML() {
+        let html = PlaylistIO.generateHTML(tracks: playlist.tracks)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("MacAmp Playlist.html")
+        do {
+            try html.write(to: url, atomically: true, encoding: .utf8)
+            NSWorkspace.shared.open(url)
+        } catch {
+            PlayerCoordinator.shared.mainView?.marquee.showTemporaryMessage("Cannot write HTML playlist")
+        }
+    }
+    
+    @objc private func handleReadExtendedInfo() {
+        let indices = playlist.selectedIndices.isEmpty ? Array(playlist.tracks.indices) : playlist.selectedIndices.sorted()
+        PlayerCoordinator.shared.mainView?.marquee.showTemporaryMessage("Reading info for \(indices.count) track(s)...")
+        playlist.refreshMetadata(at: indices) { [weak self] in
+            self?.needsDisplay = true
+        }
+    }
+    
     @objc private func handleReverse() {
         playlist.reverse()
         needsDisplay = true
@@ -837,9 +861,15 @@ public class PlaylistWindowView: WinampControlView {
     
     @objc private func handleSaveList() {
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "m3u")!]
+        panel.allowedContentTypes = [.init(filenameExtension: "m3u")!, .init(filenameExtension: "pls")!]
+        panel.allowsOtherFileTypes = true
+        panel.nameFieldStringValue = "playlist.m3u"
         if panel.runModal() == .OK, let url = panel.url {
-            try? PlaylistIO.saveM3U(tracks: playlist.tracks, to: url)
+            do {
+                try PlaylistIO.save(tracks: playlist.tracks, to: url)
+            } catch {
+                PlayerCoordinator.shared.mainView?.marquee.showTemporaryMessage("Cannot save playlist")
+            }
         }
     }
     
@@ -1081,6 +1111,11 @@ public class PlaylistWindowView: WinampControlView {
         )
     }
     
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applySkinCursorNames()
+    }
+    
     // MARK: - Keyboard Navigation (Playlist Editor hotkeys)
     
     public override func keyDown(with event: NSEvent) {
@@ -1101,6 +1136,16 @@ public class PlaylistWindowView: WinampControlView {
         
         switch keyCode {
         case AppConstants.KeyCodes.deleteKey, AppConstants.KeyCodes.forwardDelete:
+            if flags.contains(.command) || flags.contains(.control) {
+                // Winamp Ctrl+Del: crop — keep only the selection
+                guard !playlist.selectedIndices.isEmpty else { return true }
+                playlist.crop()
+                cursorIndex = nil
+                selectionAnchorIndex = nil
+                clampScrollOffset()
+                needsDisplay = true
+                return true
+            }
             guard let first = playlist.selectedIndices.min() else { return true }
             playlist.removeSelected()
             if playlist.tracks.isEmpty {
@@ -1169,6 +1214,12 @@ public class PlaylistWindowView: WinampControlView {
         return false
     }
     
+    /// Edit ▸ Select All (⌘A) arrives here through the responder chain
+    public override func selectAll(_ sender: Any?) {
+        playlist.selectAll()
+        needsDisplay = true
+    }
+    
     private func currentCursor() -> Int {
         let count = playlist.tracks.count
         if let c = cursorIndex, c < count { return c }
@@ -1226,26 +1277,58 @@ public class PlaylistWindowView: WinampControlView {
     }
     
     // MARK: - Mouse Interaction & Resizing
-    public override func resetCursorRects() {
-        super.resetCursorRects()
+    // MARK: - Skin Cursors (Winamp: PNORMAL, PTBAR, PCLOSE, PWINBUT, PSIZE, PVSCROLL, PWSNORM, PWSSIZE)
+    
+    public func applySkinCursorNames() {
+        closeButton?.skinCursorName = "PCLOSE"
+        shadeButton?.skinCursorName = "PWINBUT"
+        invalidateSkinCursorsRecursively()
+    }
+    
+    private var resizeGripRect: NSRect {
         let gripSize = AppConstants.Playlist.Layout.resizeGripSize
-        let resizeRect = isShadeMode
+        return isShadeMode
             ? NSRect(x: bounds.width - gripSize, y: 0, width: gripSize, height: AppConstants.Playlist.Layout.shadeHeight)
             : NSRect(x: bounds.width - gripSize, y: bounds.height - gripSize, width: gripSize, height: gripSize)
-        addCursorRect(resizeRect, cursor: .resizeUpDown)
-        
-        if !isShadeMode {
-            let topH = AppConstants.Playlist.Layout.topBarHeight
-            let botH = AppConstants.Playlist.Layout.bottomBarHeight
-            let trackHeight = max(0, bounds.height - topH - botH)
-            let scrollTrackRect = NSRect(
-                x: bounds.width - AppConstants.Playlist.Layout.rightBorderWidth,
-                y: topH,
-                width: AppConstants.Playlist.Layout.rightBorderWidth,
-                height: trackHeight
-            )
+    }
+    
+    private var scrollTrackRect: NSRect {
+        let topH = AppConstants.Playlist.Layout.topBarHeight
+        let botH = AppConstants.Playlist.Layout.bottomBarHeight
+        return NSRect(x: bounds.width - AppConstants.Playlist.Layout.rightBorderWidth, y: topH,
+                      width: AppConstants.Playlist.Layout.rightBorderWidth, height: max(0, bounds.height - topH - botH))
+    }
+    
+    /// Non-overlapping zones: title bar, list, scrollbar, bottom bar, resize grip
+    public override func skinCursorZones() -> [(rect: NSRect, name: String)] {
+        let grip = resizeGripRect
+        if isShadeMode {
+            return [(NSRect(x: 0, y: 0, width: grip.minX, height: bounds.height), "PWSNORM"), (grip, "PWSSIZE")]
+        }
+        let topH = AppConstants.Playlist.Layout.topBarHeight
+        let botH = AppConstants.Playlist.Layout.bottomBarHeight
+        let scroll = scrollTrackRect
+        let bottomY = bounds.height - botH
+        return [
+            (NSRect(x: 0, y: 0, width: bounds.width, height: topH), "PTBAR"),
+            (NSRect(x: 0, y: topH, width: scroll.minX, height: scroll.height), "PNORMAL"),
+            (scroll, "PVSCROLL"),
+            (NSRect(x: 0, y: bottomY, width: grip.minX, height: botH), "PNORMAL"),
+            (NSRect(x: grip.minX, y: bottomY, width: grip.width, height: max(0, grip.minY - bottomY)), "PNORMAL"),
+            (grip, "PSIZE")
+        ]
+    }
+    
+    public override func resetCursorRects() {
+        // System cursors where the skin has no PSIZE / PVSCROLL / PWSSIZE of its own
+        let cursors = SkinManager.shared.currentSkin?.cursors ?? [:]
+        if cursors[isShadeMode ? "PWSSIZE" : "PSIZE"] == nil {
+            addCursorRect(resizeGripRect, cursor: .resizeUpDown)
+        }
+        if !isShadeMode && cursors["PVSCROLL"] == nil {
             addCursorRect(scrollTrackRect, cursor: .resizeUpDown)
         }
+        super.resetCursorRects()
     }
     
     public override var acceptsFirstResponder: Bool { true }

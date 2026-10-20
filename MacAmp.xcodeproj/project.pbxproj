@@ -59,6 +59,7 @@
 		BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDC0694A2B887D910009C001 /* Preview Assets.xcassets */; };
 		AAEE792FED080B14A71932A6 /* TextEncoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAEF3EA851E4615920CAD18C /* TextEncoding.swift */; };
 		AA44A560CFB8767ABE74192C /* StreamDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF62A9AAAA8BC001D825328 /* StreamDecoder.swift */; };
+		AA3120102721273206913D7D /* Win32Dialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA6B540ED59888531424241 /* Win32Dialog.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -116,6 +117,7 @@
 		BDC0694C2B887D910009C001 /* MacAmp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MacAmp.entitlements; sourceTree = "<group>"; };
 		AAEF3EA851E4615920CAD18C /* TextEncoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEncoding.swift; sourceTree = "<group>"; };
 		AAF62A9AAAA8BC001D825328 /* StreamDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamDecoder.swift; sourceTree = "<group>"; };
+		AAA6B540ED59888531424241 /* Win32Dialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Win32Dialog.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -266,7 +268,8 @@
 				AAA6E4B1CEB17358BCB77937 /* TimeDisplayView.swift */,
 				AA72A18D3956BE55E2989872 /* VisualizerView.swift */,
 				AAE8CD2D07C26A518F905312 /* Win32Theme.swift */,
-			);
+							AAA6B540ED59888531424241 /* Win32Dialog.swift */,
+);
 			path = "Components";
 			sourceTree = "<group>";
 		};
@@ -485,6 +488,7 @@
 				AA18E74F7E8CB5528B921B69 /* WindowLayoutManager.swift in Sources */,
 							AAEE792FED080B14A71932A6 /* TextEncoding.swift in Sources */,
 				AA44A560CFB8767ABE74192C /* StreamDecoder.swift in Sources */,
+				AA3120102721273206913D7D /* Win32Dialog.swift in Sources */,
 );
 			runOnlyForDeploymentPostprocessing = 0;
 		};

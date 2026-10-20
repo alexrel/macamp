@@ -215,7 +215,7 @@ public class AudioEngine {
             guard tapFormat.sampleRate > 0 && tapFormat.channelCount > 0 else { return }
             let frame = visualizerFrame
             let analyzer = fftAnalyzer
-            var lastWindowWasSilent = false // tap thread only
+            var silentWindows = 0 // tap thread only
             engine.mainMixerNode.installTap(onBus: 0, bufferSize: AppConstants.Audio.bufferSize, format: tapFormat) { [weak self] buffer, _ in
                 guard let channels = buffer.floatChannelData else { return }
                 let window = analyzer.windowSize
@@ -229,9 +229,10 @@ public class AudioEngine {
                                                      startFrame: w * window, frameCount: min(window, frameCount - w * window),
                                                      spectrum: &spectrum, waveform: &waveform)
                     }
-                    // Silence after silence: nothing new to show, skip the main-thread wakeup entirely
-                    if !hasSignal && lastWindowWasSilent { continue }
-                    lastWindowWasSilent = !hasSignal
+                    // Keep delivering ~2 s of silence so falling bars and peaks can finish,
+                    // then skip main-thread wakeups entirely until the signal returns
+                    silentWindows = hasSignal ? 0 : silentWindows + 1
+                    if silentWindows > 90 { continue }
                     // Spread the windows over the buffer's duration so the display moves with the audio
                     DispatchQueue.main.asyncAfter(deadline: .now() + Double(w) * windowDuration) {
                         frame.publish(slot: slot)
@@ -855,8 +856,14 @@ public class AudioEngine {
         stopInternal(fade: true)
     }
 
+    /// Winamp "Stop w/ fadeout" (Shift+V): stops with a long fade instead of the short anti-click one.
+    public func stop(fadeOutDuration: TimeInterval) {
+        stopInternal(fade: true, duration: fadeOutDuration)
+    }
+
     /// - Parameter fade: fade out before silencing the node (user Stop), or cut immediately (track ended, errors).
-    private func stopInternal(fade shouldFade: Bool) {
+    /// - Parameter duration: fade length; defaults to the "Fade out on Pause/Stop" preference.
+    private func stopInternal(fade shouldFade: Bool, duration: TimeInterval? = nil) {
         let wasPlaying = (status == .playing)
         playbackGeneration += 1
         let gen = playbackGeneration
@@ -864,8 +871,9 @@ public class AudioEngine {
         playbackTimer?.invalidate()
         playbackTimer = nil
 
+        let fadeDuration = (shouldFade && wasPlaying) ? (duration ?? fadeOutDuration) : 0
+
         if isStreaming {
-            let fadeDuration = (shouldFade && wasPlaying) ? fadeOutDuration : 0
             let nodeToken = streamNodeToken
             // Network and state go away now; the already-queued audio fades out on its own
             reconnectWorkItem?.cancel()
@@ -894,7 +902,6 @@ public class AudioEngine {
         currentTrackTime = 0
         onTimeUpdate?(0)
 
-        let fadeDuration = (shouldFade && wasPlaying) ? fadeOutDuration : 0
         fade(to: 0, duration: fadeDuration) { [weak self] _ in
             // Skip if play()/seek()/load() already took over the node
             guard let self, self.playbackGeneration == gen else { return }

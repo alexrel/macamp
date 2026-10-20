@@ -47,6 +47,7 @@ public class EqualizerWindowView: WinampControlView {
     public var isShadeMode: Bool = false {
         didSet {
             updateLayoutForShadeMode()
+            applySkinCursorNames()
             needsDisplay = true
             for sub in subviews {
                 sub.needsDisplay = true
@@ -205,6 +206,32 @@ public class EqualizerWindowView: WinampControlView {
         addSubview(eqShadeBalanceSlider)
     }
     
+    // MARK: - Skin Cursors (Winamp: EQNORMAL, EQTITLE, EQCLOSE, EQSLID)
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applySkinCursorNames()
+    }
+    
+    public func applySkinCursorNames() {
+        closeButton?.skinCursorName = "EQCLOSE"
+        preampSlider?.skinCursorName = "EQSLID"
+        for slider in bandSliders { slider.skinCursorName = "EQSLID" }
+        eqShadeVolumeSlider?.skinCursorName = "VOLBAL"
+        eqShadeBalanceSlider?.skinCursorName = "VOLBAL"
+        invalidateSkinCursorsRecursively()
+    }
+    
+    public override func skinCursorZones() -> [(rect: NSRect, name: String)] {
+        if isShadeMode {
+            return [(bounds, "EQTITLE")]
+        }
+        let titleH: CGFloat = 14
+        return [
+            (NSRect(x: 0, y: 0, width: bounds.width, height: titleH), "EQTITLE"),
+            (NSRect(x: 0, y: titleH, width: bounds.width, height: bounds.height - titleH), "EQNORMAL")
+        ]
+    }
+    
     // MARK: - Shade Mode Switching
     private func updateLayoutForShadeMode() {
         let isFull = !isShadeMode
@@ -301,18 +328,11 @@ public class EqualizerWindowView: WinampControlView {
     }
     
     @objc private func handleSavePreset() {
-        let alert = NSAlert()
-        alert.messageText = "Save EQ Preset"
-        alert.informativeText = "Enter a name for the new equalizer preset:"
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
-        input.stringValue = "Custom Preset"
-        alert.accessoryView = input
-        
-        if alert.runModal() == .alertFirstButtonReturn {
-            let name = input.stringValue.trimmingCharacters(in: .whitespaces)
+        if let entered = Win32Dialog.prompt(title: "Save EQ Preset",
+                                            message: "Enter a name for the new equalizer preset:",
+                                            defaultValue: "Custom Preset",
+                                            okTitle: "Save") {
+            let name = entered.trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty else { return }
             let preset = currentEQPreset(named: name)
             EqualizerPresetsManager.shared.saveUserPreset(preset)

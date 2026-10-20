@@ -15,6 +15,8 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
     private var plToggleItem: NSMenuItem?
     private var repeatItem: NSMenuItem?
     private var shuffleItem: NSMenuItem?
+    private var stopAfterCurrentItem: NSMenuItem?
+    private var manualAdvanceItem: NSMenuItem?
     
     public override init() {
         super.init()
@@ -97,6 +99,20 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         fileMenuItem.submenu = fileMenu
         mainMenu.addItem(fileMenuItem)
         
+        // Standard Edit menu: text fields (Track Info, Jump to File, Preferences) need ⌘C/⌘V/⌘X/⌘A/⌘Z
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redoItem = editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redoItem.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+        
         // 3. Playback Menu
         let pbMenuItem = NSMenuItem()
         let pbMenu = NSMenu(title: "Playback")
@@ -104,36 +120,59 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         self.playbackMenu = pbMenu
         
         let prevItem = NSMenuItem(title: "Previous", action: #selector(PlayerCoordinator.handlePrev), keyEquivalent: "z")
+        prevItem.keyEquivalentModifierMask = [] // Winamp single-letter key; ⌘-letters stay free for Edit
         prevItem.target = coord
         pbMenu.addItem(prevItem)
         
         let playItem = NSMenuItem(title: "Play", action: #selector(PlayerCoordinator.handlePlay), keyEquivalent: "x")
+        playItem.keyEquivalentModifierMask = [] // Winamp single-letter key; ⌘-letters stay free for Edit
         playItem.target = coord
         pbMenu.addItem(playItem)
         
         let pauseItem = NSMenuItem(title: "Pause", action: #selector(PlayerCoordinator.handlePause), keyEquivalent: "c")
+        pauseItem.keyEquivalentModifierMask = [] // Winamp single-letter key; ⌘-letters stay free for Edit
         pauseItem.target = coord
         pbMenu.addItem(pauseItem)
         
         let stopItem = NSMenuItem(title: "Stop", action: #selector(PlayerCoordinator.handleStop), keyEquivalent: "v")
+        stopItem.keyEquivalentModifierMask = [] // Winamp single-letter key; ⌘-letters stay free for Edit
         stopItem.target = coord
         pbMenu.addItem(stopItem)
         
+        let fadeStopItem = NSMenuItem(title: "Stop w/ fadeout", action: #selector(PlayerCoordinator.handleStopWithFadeout), keyEquivalent: "v")
+        fadeStopItem.keyEquivalentModifierMask = [.shift]
+        fadeStopItem.target = coord
+        pbMenu.addItem(fadeStopItem)
+        
+        let stopAfterItem = NSMenuItem(title: "Stop after current", action: #selector(PlayerCoordinator.handleToggleStopAfterCurrent), keyEquivalent: "v")
+        stopAfterItem.keyEquivalentModifierMask = [.control]
+        stopAfterItem.target = coord
+        pbMenu.addItem(stopAfterItem)
+        self.stopAfterCurrentItem = stopAfterItem
+        
         let nextItem = NSMenuItem(title: "Next", action: #selector(PlayerCoordinator.handleNext), keyEquivalent: "b")
+        nextItem.keyEquivalentModifierMask = [] // Winamp single-letter key; ⌘-letters stay free for Edit
         nextItem.target = coord
         pbMenu.addItem(nextItem)
         
         pbMenu.addItem(NSMenuItem.separator())
         
         let repItem = NSMenuItem(title: "Repeat", action: #selector(PlayerCoordinator.handleToggleRepeat), keyEquivalent: "r")
+        repItem.keyEquivalentModifierMask = [] // Winamp single-letter key; ⌘-letters stay free for Edit
         repItem.target = coord
         pbMenu.addItem(repItem)
         self.repeatItem = repItem
         
         let shufItem = NSMenuItem(title: "Shuffle", action: #selector(PlayerCoordinator.handleToggleShuffle), keyEquivalent: "s")
+        shufItem.keyEquivalentModifierMask = [] // Winamp single-letter key; ⌘-letters stay free for Edit
         shufItem.target = coord
         pbMenu.addItem(shufItem)
         self.shuffleItem = shufItem
+        
+        let manualItem = NSMenuItem(title: "Manual playlist advance", action: #selector(PlayerCoordinator.handleToggleManualAdvance), keyEquivalent: "")
+        manualItem.target = coord
+        pbMenu.addItem(manualItem)
+        self.manualAdvanceItem = manualItem
         
         pbMenu.addItem(NSMenuItem.separator())
         
@@ -270,6 +309,8 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         plToggleItem?.state = coord.mainView?.plToggle.isOn == true ? .on : .off
         repeatItem?.state = coord.playlist.isRepeat ? .on : .off
         shuffleItem?.state = coord.playlist.isShuffle ? .on : .off
+        stopAfterCurrentItem?.state = coord.stopAfterCurrent ? .on : .off
+        manualAdvanceItem?.state = coord.persistence.state.manualPlaylistAdvance ? .on : .off
         
         // Rebuild dynamic skins menu
         if let skinsMenu = skinsSubmenu {

@@ -108,29 +108,40 @@ public struct Win32Button: View {
     public let title: String
     public var width: CGFloat? = 75
     public var height: CGFloat = 23
+    /// Default (Enter) button: Win32 draws it with an extra black outline
+    public var isDefault: Bool = false
     public let action: () -> Void
     
     @State private var isPressed: Bool = false
+    @Environment(\.isEnabled) private var isEnabled
     
-    public init(_ title: String, width: CGFloat? = 75, height: CGFloat = 23, action: @escaping () -> Void) {
+    public init(_ title: String, width: CGFloat? = 75, height: CGFloat = 23, isDefault: Bool = false, action: @escaping () -> Void) {
         self.title = title
         self.width = width
         self.height = height
+        self.isDefault = isDefault
         self.action = action
     }
     
     public var body: some View {
-        Button(action: action) {
+        let button = Button(action: action) {
             Text(title)
                 .font(.system(size: 11))
-                .foregroundColor(Win32Colors.text)
+                .foregroundColor(isEnabled ? Win32Colors.text : Win32Colors.textDisabled)
+                .shadow(color: isEnabled ? .clear : Win32Colors.borderLight, radius: 0, x: 1, y: 1) // etched disabled text
                 .padding(.horizontal, 8)
                 .frame(width: width, height: height)
                 .background(Win32Colors.dialogBg)
                 .win32Raised(isPressed: isPressed)
+                .overlay(Rectangle().stroke(Color.black, lineWidth: isDefault ? 1 : 0))
         }
         .buttonStyle(Win32ButtonStyle(isPressed: $isPressed))
         .focusable(false)
+        if isDefault {
+            button.keyboardShortcut(.defaultAction)
+        } else {
+            button
+        }
     }
 }
 
@@ -360,13 +371,144 @@ public struct Win32TextField: View {
         self.height = height
     }
     
+    @Environment(\.isEnabled) private var isEnabled
+    
     public var body: some View {
         TextField(placeholder, text: $text)
             .font(.system(size: 11))
+            .foregroundColor(isEnabled ? Win32Colors.text : Win32Colors.textDisabled)
             .textFieldStyle(.plain)
             .padding(.horizontal, 4)
             .frame(height: height)
-            .background(Color.white)
+            .background(isEnabled ? Color.white : Win32Colors.dialogBg) // disabled edit boxes are gray in Win32
             .win32Sunken()
+    }
+}
+
+// MARK: - Win32 Drop-down List (ComboBox, CBS_DROPDOWNLIST)
+/// White sunken box with the current value and a raised ▼ button; opens a plain menu.
+public struct Win32ComboBox<Value: Hashable>: View {
+    @Binding public var selection: Value
+    public let options: [(value: Value, title: String)]
+    public var width: CGFloat?
+    
+    @Environment(\.isEnabled) private var isEnabled
+    
+    public init(selection: Binding<Value>, options: [(value: Value, title: String)], width: CGFloat? = nil) {
+        self._selection = selection
+        self.options = options
+        self.width = width
+    }
+    
+    private var currentTitle: String {
+        options.first(where: { $0.value == selection })?.title ?? ""
+    }
+    
+    public var body: some View {
+        Button(action: showMenu) {
+            HStack(spacing: 0) {
+                Text(currentTitle)
+                    .font(.system(size: 11))
+                    .foregroundColor(isEnabled ? Win32Colors.text : Win32Colors.textDisabled)
+                    .lineLimit(1)
+                    .padding(.horizontal, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("▼")
+                    .font(.system(size: 7))
+                    .foregroundColor(isEnabled ? Win32Colors.text : Win32Colors.textDisabled)
+                    .frame(width: 16, height: 16)
+                    .background(Win32Colors.dialogBg)
+                    .win32Raised()
+                    .padding(.trailing, 2)
+            }
+            .frame(width: width, height: 20)
+            .background(isEnabled ? Color.white : Win32Colors.dialogBg)
+            .win32Sunken()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+    }
+    
+    private func showMenu() {
+        let menu = NSMenu()
+        var selectedItem: NSMenuItem?
+        for option in options {
+            let item = Win32ClosureMenuItem(title: option.title) { selection = option.value }
+            if option.value == selection {
+                item.state = .on
+                selectedItem = item
+            }
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: selectedItem, at: NSEvent.mouseLocation, in: nil)
+    }
+}
+
+/// NSMenuItem that runs a closure (used by Win32 drop-down lists).
+final class Win32ClosureMenuItem: NSMenuItem {
+    private let handler: () -> Void
+    
+    init(title: String, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(run), keyEquivalent: "")
+        self.target = self
+    }
+    
+    required init(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    @objc private func run() { handler() }
+}
+
+// MARK: - Win32 Trackbar (slider)
+/// Sunken groove with a raised rectangular thumb, as in Win32 trackbar controls.
+public struct Win32Slider: View {
+    @Binding public var value: Double
+    public let range: ClosedRange<Double>
+    public var step: Double
+    
+    @Environment(\.isEnabled) private var isEnabled
+    private let thumbWidth: CGFloat = 11
+    private let thumbHeight: CGFloat = 21
+    
+    public init(value: Binding<Double>, in range: ClosedRange<Double>, step: Double = 0) {
+        self._value = value
+        self.range = range
+        self.step = step
+    }
+    
+    public var body: some View {
+        GeometryReader { geo in
+            let travel = max(1, geo.size.width - thumbWidth)
+            let span = range.upperBound - range.lowerBound
+            let fraction = span > 0 ? (value - range.lowerBound) / span : 0
+            ZStack(alignment: .leading) {
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(height: 4)
+                    .win32Sunken()
+                    .padding(.horizontal, thumbWidth / 2)
+                Rectangle()
+                    .fill(Win32Colors.dialogBg)
+                    .frame(width: thumbWidth, height: thumbHeight)
+                    .win32Raised()
+                    .offset(x: CGFloat(fraction) * travel)
+            }
+            .frame(height: geo.size.height)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                guard isEnabled, span > 0 else { return }
+                let f = min(1, max(0, Double((drag.location.x - thumbWidth / 2) / travel)))
+                var newValue = range.lowerBound + f * span
+                if step > 0 {
+                    newValue = (newValue / step).rounded() * step
+                }
+                value = min(range.upperBound, max(range.lowerBound, newValue))
+            })
+        }
+        .frame(height: thumbHeight)
+        .opacity(isEnabled ? 1 : 0.6)
     }
 }

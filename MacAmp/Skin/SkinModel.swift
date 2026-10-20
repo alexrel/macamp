@@ -56,6 +56,8 @@ public class Skin {
     public var playlistStyle: PlaylistStyle = PlaylistStyle()
     public var visualizerColors: VisualizerColors = VisualizerColors()
     public var region: SkinRegion?
+    /// Skin cursors (*.CUR), keyed by upper-case file stem: "TITLEBAR", "POSBAR", "PSIZE", ...
+    public var cursors: [String: NSCursor] = [:]
     
     public init(name: String) {
         self.name = name

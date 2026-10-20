@@ -315,17 +315,21 @@ public class PlaylistModel: ObservableObject {
         }
         Task.detached(priority: .utility) { [weak self] in
             let resolved = suspects.map { ($0.id, TrackItem.resolveArtistAndTitle(from: $0.url)) }
+            guard let model = self else { return }
             await MainActor.run {
-                guard let self else { return }
-                for (id, meta) in resolved {
-                    guard let idx = self.tracks.firstIndex(where: { $0.id == id }) else { continue }
-                    let old = self.tracks[idx]
-                    self.tracks[idx] = TrackItem(id: old.id, url: old.url, title: meta.title, artist: meta.artist, duration: old.duration)
-                }
-                PersistenceManager.shared.savePlaylist(self.tracks)
+                model.applyMigratedMetadata(resolved)
                 completion?()
             }
         }
+    }
+    
+    private func applyMigratedMetadata(_ resolved: [(UUID, (artist: String, title: String))]) {
+        for (id, meta) in resolved {
+            guard let idx = tracks.firstIndex(where: { $0.id == id }) else { continue }
+            let old = tracks[idx]
+            tracks[idx] = TrackItem(id: old.id, url: old.url, title: meta.title, artist: meta.artist, duration: old.duration)
+        }
+        PersistenceManager.shared.savePlaylist(tracks)
     }
     
     public func setTrack(at index: Int, _ track: TrackItem) {
@@ -482,6 +486,41 @@ public class PlaylistModel: ObservableObject {
     public func sortByTitle() {
         tracks.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
         syncShuffleOrder()
+    }
+    
+    /// Winamp "Sort list by path and filename"
+    public func sortByPath() {
+        let currentID = currentTrack?.id
+        tracks.sort { $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending }
+        if let currentID, let idx = tracks.firstIndex(where: { $0.id == currentID }) { currentIndex = idx }
+        syncShuffleOrder()
+    }
+    
+    /// Winamp "Read extended info on selection": re-reads tags and durations of the given tracks in the background.
+    public func refreshMetadata(at indices: [Int], completion: (() -> Void)? = nil) {
+        let targets = indices.filter { $0 >= 0 && $0 < tracks.count }.map { tracks[$0] }.filter { $0.url.isFileURL }
+        guard !targets.isEmpty else {
+            completion?()
+            return
+        }
+        Task.detached(priority: .utility) { [weak self] in
+            var resolved: [(UUID, (artist: String, title: String))] = []
+            var durations: [UUID: TimeInterval] = [:]
+            for track in targets {
+                resolved.append((track.id, TrackItem.resolveArtistAndTitle(from: track.url)))
+                durations[track.id] = TrackItem.resolveDuration(from: track.url)
+            }
+            guard let model = self else { return }
+            let finalResolved = resolved
+            let finalDurations = durations
+            await MainActor.run {
+                model.applyMigratedMetadata(finalResolved)
+                for (id, duration) in finalDurations where duration > 0 {
+                    model.updateTrack(id: id, duration: duration)
+                }
+                completion?()
+            }
+        }
     }
     
     public func sortByFilename() {

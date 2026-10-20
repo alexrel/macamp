@@ -85,6 +85,39 @@ open class WinampControlView: NSView {
         PlayerCoordinator.shared.showMainContextMenu(at: NSEvent.mouseLocation)
     }
     
+    // MARK: Skin cursors
+    
+    /// Skin cursor (CUR file stem, e.g. "CLOSE") shown over this whole control. Ignored if the skin has none.
+    public var skinCursorName: String? {
+        didSet { if oldValue != skinCursorName { window?.invalidateCursorRects(for: self) } }
+    }
+    
+    /// Additional cursor zones inside this view (used by window backgrounds for title bars, resize grips...).
+    open func skinCursorZones() -> [(rect: NSRect, name: String)] { [] }
+    
+    open override func resetCursorRects() {
+        super.resetCursorRects()
+        let cursors = SkinManager.shared.currentSkin?.cursors ?? [:]
+        guard !cursors.isEmpty else { return }
+        if let name = skinCursorName, let cursor = cursors[name] {
+            addCursorRect(bounds, cursor: cursor)
+        }
+        // Later rects win where they overlap, so zones refine the whole-view cursor
+        for zone in skinCursorZones() {
+            if let cursor = cursors[zone.name] {
+                addCursorRect(zone.rect, cursor: cursor)
+            }
+        }
+    }
+    
+    /// Re-applies cursor rects for this view and all subviews (after skin or layout changes).
+    public func invalidateSkinCursorsRecursively() {
+        window?.invalidateCursorRects(for: self)
+        for case let sub as WinampControlView in subviews {
+            sub.invalidateSkinCursorsRecursively()
+        }
+    }
+    
     open override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
     }

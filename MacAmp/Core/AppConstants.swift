@@ -231,6 +231,8 @@ public enum AppConstants {
         public static let barSpacing: Int = 1
         
         public static let numWaveformPoints: Int = 76
+        /// "Thin bands": one 1 px bar per visualizer column; 4 thin bands make one thick bar
+        public static let numThinBands: Int = 76
         
         /// Falloff speeds
         public static let peakFalloffRate: Float = 0.35

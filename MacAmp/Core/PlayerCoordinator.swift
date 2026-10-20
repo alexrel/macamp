@@ -256,7 +256,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         }
         
         audioEngine.onPlaybackFinished = { [weak self] in
-            self?.playNext()
+            self?.handleTrackFinished()
         }
         
         // 2. Transport actions
@@ -394,6 +394,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         
         // Visualizer mode cycle (clicking directly on visualizer view)
         mainView.visualizer.onToggleMode = { [weak self] in self?.cycleVisualizerMode() }
+        mainView.visualizer.menuProvider = { [weak self] in self?.buildVisualizationMenu() ?? NSMenu() }
         
         // Playlist callbacks
         plView.onPlayTrack = { [weak self] track in
@@ -426,6 +427,10 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                 self.eqView.setNeedsDisplayRecursively()
                 self.plView.setNeedsDisplayRecursively()
                 self.updateWindowMasks()
+                // New skin, new cursors
+                self.mainView.invalidateSkinCursorsRecursively()
+                self.eqView.invalidateSkinCursorsRecursively()
+                self.plView.invalidateSkinCursorsRecursively()
             }
             .store(in: &cancellables)
             
@@ -507,11 +512,84 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     
     private func cycleVisualizerMode() {
         let next = mainView.visualizer.mode.next
-        mainView.visualizer.mode = next
-        persistence.state.visualizerMode = next
+        setVisualizerMode(next)
         let modeName = (next == .spectrum) ? "Spectrum" : (next == .oscilloscope ? "Oscilloscope" : "Off")
         mainView.marquee.showTemporaryMessage("Vis Mode: \(modeName)")
+    }
+    
+    // MARK: - Visualization Options
+    
+    public func setVisualizerMode(_ mode: VisualizerMode) {
+        mainView.visualizer.mode = mode
+        persistence.state.visualizerMode = mode
+        persistence.scheduleSave()
         updateActivityState()
+    }
+    
+    public func setVisualizerShowPeaks(_ show: Bool) {
+        mainView.visualizer.showPeaks = show
+        persistence.state.visualizerShowPeaks = show
+        persistence.scheduleSave()
+    }
+    
+    public func updateVisualizerOptions(_ change: (inout VisualizerOptions) -> Void) {
+        var options = persistence.state.visualizerOptions
+        change(&options)
+        persistence.state.visualizerOptions = options
+        mainView.visualizer.options = options
+        persistence.scheduleSave()
+    }
+    
+    /// Winamp 2.x "Visualization" menu: right-click on the visualizer and Options ▸ Visualization.
+    public func buildVisualizationMenu() -> NSMenu {
+        let menu = NSMenu(title: "Visualization")
+        let vis = mainView.visualizer
+        let options = vis.options
+        
+        func item(_ title: String, checked: Bool, _ action: @escaping () -> Void) -> NSMenuItem {
+            let menuItem = Win32ClosureMenuItem(title: title, handler: action)
+            menuItem.state = checked ? .on : .off
+            return menuItem
+        }
+        func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
+            let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let sub = NSMenu(title: title)
+            items.forEach { sub.addItem($0) }
+            parent.submenu = sub
+            return parent
+        }
+        
+        menu.addItem(item("Spectrum analyzer", checked: vis.mode == .spectrum) { [weak self] in self?.setVisualizerMode(.spectrum) })
+        menu.addItem(item("Oscilloscope", checked: vis.mode == .oscilloscope) { [weak self] in self?.setVisualizerMode(.oscilloscope) })
+        menu.addItem(item("Off", checked: vis.mode == .off) { [weak self] in self?.setVisualizerMode(.off) })
+        menu.addItem(.separator())
+        
+        var analyzerItems: [NSMenuItem] = AnalyzerStyle.allCases.map { style in
+            item(style.title, checked: options.analyzerStyle == style) { [weak self] in self?.updateVisualizerOptions { $0.analyzerStyle = style } }
+        }
+        analyzerItems.append(.separator())
+        analyzerItems.append(item("Peaks", checked: vis.showPeaks) { [weak self] in self?.setVisualizerShowPeaks(!vis.showPeaks) })
+        analyzerItems.append(.separator())
+        analyzerItems += AnalyzerBands.allCases.reversed().map { bands in
+            item(bands.title, checked: options.bands == bands) { [weak self] in self?.updateVisualizerOptions { $0.bands = bands } }
+        }
+        menu.addItem(submenu("Analyzer options", analyzerItems))
+        
+        menu.addItem(submenu("Oscilloscope options", ScopeStyle.allCases.map { style in
+            item(style.title, checked: options.scopeStyle == style) { [weak self] in self?.updateVisualizerOptions { $0.scopeStyle = style } }
+        }))
+        menu.addItem(submenu("Analyzer falloff", VisualizerFalloff.allCases.map { speed in
+            item(speed.title, checked: options.barFalloff == speed) { [weak self] in self?.updateVisualizerOptions { $0.barFalloff = speed } }
+        }))
+        menu.addItem(submenu("Peaks falloff", VisualizerFalloff.allCases.map { speed in
+            item(speed.title, checked: options.peakFalloff == speed) { [weak self] in self?.updateVisualizerOptions { $0.peakFalloff = speed } }
+        }))
+        menu.addItem(.separator())
+        let studio = item("Visualizer Studio...", checked: visualizerStudioWindow?.isVisible == true) { [weak self] in self?.toggleVisualizerStudio() }
+        studio.keyEquivalent = "k"
+        studio.keyEquivalentModifierMask = [.control, .shift]
+        menu.addItem(studio)
+        return menu
     }
     
     // MARK: - Synchronized Blinking for Pause Mode
@@ -680,6 +758,64 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             eqView.applyPreset(match)
             mainView.marquee.showTemporaryMessage("EQ Auto: \(match.name)")
         }
+    }
+    
+    // MARK: - End of Track (Stop after current / Manual playlist advance)
+    
+    /// Winamp Ctrl+V: stop when the current track ends (one-shot).
+    public private(set) var stopAfterCurrent = false
+    public static let fadeOutStopDuration: TimeInterval = 3.0
+    
+    public enum TrackEndAction: Equatable {
+        case stop, replayCurrent, advance
+    }
+    
+    /// What Winamp does when a track ends: "Stop after current" wins (one-shot); with
+    /// "Manual playlist advance" it stays on the track (replaying it if Repeat is on); otherwise next track.
+    public static func actionAfterTrackEnd(stopAfterCurrent: Bool, manualAdvance: Bool, isRepeat: Bool) -> TrackEndAction {
+        if stopAfterCurrent { return .stop }
+        if manualAdvance { return isRepeat ? .replayCurrent : .stop }
+        return .advance
+    }
+    
+    func handleTrackFinished() {
+        let action = PlayerCoordinator.actionAfterTrackEnd(stopAfterCurrent: stopAfterCurrent,
+                                                           manualAdvance: persistence.state.manualPlaylistAdvance,
+                                                           isRepeat: playlist.isRepeat)
+        if stopAfterCurrent {
+            stopAfterCurrent = false
+            MainMenuManager.shared.updateStates()
+        }
+        switch action {
+        case .stop:
+            handleStop()
+        case .replayCurrent:
+            if let current = playlist.currentTrack { loadAndPlay(track: current) } else { handleStop() }
+        case .advance:
+            playNext()
+        }
+    }
+    
+    @objc public func handleStopWithFadeout() {
+        guard audioEngine.status == .playing else {
+            handleStop()
+            return
+        }
+        audioEngine.stop(fadeOutDuration: PlayerCoordinator.fadeOutStopDuration)
+        handleStop() // engine is already stopped; this updates UI, persistence and Now Playing
+    }
+    
+    @objc public func handleToggleStopAfterCurrent() {
+        stopAfterCurrent.toggle()
+        mainView.marquee.showTemporaryMessage(stopAfterCurrent ? "Stop after current: ON" : "Stop after current: OFF")
+        MainMenuManager.shared.updateStates()
+    }
+    
+    @objc public func handleToggleManualAdvance() {
+        persistence.state.manualPlaylistAdvance.toggle()
+        persistence.scheduleSave()
+        mainView.marquee.showTemporaryMessage(persistence.state.manualPlaylistAdvance ? "Manual playlist advance: ON" : "Manual playlist advance: OFF")
+        MainMenuManager.shared.updateStates()
     }
     
     public func playNext() {
@@ -1234,6 +1370,11 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         optionsMenu.addItem(prefsItem)
         optionsMenu.addItem(NSMenuItem.separator())
         
+        let visItem = NSMenuItem(title: "Visualization", action: nil, keyEquivalent: "")
+        visItem.submenu = buildVisualizationMenu()
+        optionsMenu.addItem(visItem)
+        optionsMenu.addItem(NSMenuItem.separator())
+        
         let skinsSubmenu = buildSkinsSubmenu()
         let skinsSubItem = NSMenuItem(title: "Skins", action: nil, keyEquivalent: "")
         skinsSubItem.submenu = skinsSubmenu
@@ -1268,35 +1409,58 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         // 7. Playback submenu
         let pbMenu = NSMenu(title: "Playback")
         let prevItem = NSMenuItem(title: "Previous", action: #selector(handlePrev), keyEquivalent: "z")
+        prevItem.keyEquivalentModifierMask = [] // Winamp: plain letter
         prevItem.target = self
         pbMenu.addItem(prevItem)
         
         let playItem = NSMenuItem(title: "Play", action: #selector(handlePlay), keyEquivalent: "x")
+        playItem.keyEquivalentModifierMask = [] // Winamp: plain letter
         playItem.target = self
         pbMenu.addItem(playItem)
         
         let pauseItem = NSMenuItem(title: "Pause", action: #selector(handlePause), keyEquivalent: "c")
+        pauseItem.keyEquivalentModifierMask = [] // Winamp: plain letter
         pauseItem.target = self
         pbMenu.addItem(pauseItem)
         
         let stopItem = NSMenuItem(title: "Stop", action: #selector(handleStop), keyEquivalent: "v")
+        stopItem.keyEquivalentModifierMask = [] // Winamp: plain letter
         stopItem.target = self
         pbMenu.addItem(stopItem)
         
+        let fadeStopItem = NSMenuItem(title: "Stop w/ fadeout", action: #selector(handleStopWithFadeout), keyEquivalent: "v")
+        fadeStopItem.keyEquivalentModifierMask = [.shift]
+        fadeStopItem.target = self
+        pbMenu.addItem(fadeStopItem)
+        
+        let stopAfterItem = NSMenuItem(title: "Stop after current", action: #selector(handleToggleStopAfterCurrent), keyEquivalent: "v")
+        stopAfterItem.keyEquivalentModifierMask = [.control]
+        stopAfterItem.state = stopAfterCurrent ? .on : .off
+        stopAfterItem.target = self
+        pbMenu.addItem(stopAfterItem)
+        
         let nextItem = NSMenuItem(title: "Next", action: #selector(handleNext), keyEquivalent: "b")
+        nextItem.keyEquivalentModifierMask = [] // Winamp: plain letter
         nextItem.target = self
         pbMenu.addItem(nextItem)
         pbMenu.addItem(NSMenuItem.separator())
         
         let repItem = NSMenuItem(title: "Repeat", action: #selector(handleToggleRepeat), keyEquivalent: "r")
+        repItem.keyEquivalentModifierMask = [] // Winamp: plain letter
         repItem.target = self
         repItem.state = playlist.isRepeat ? .on : .off
         pbMenu.addItem(repItem)
         
         let shufItem = NSMenuItem(title: "Shuffle", action: #selector(handleToggleShuffle), keyEquivalent: "s")
+        shufItem.keyEquivalentModifierMask = [] // Winamp: plain letter
         shufItem.target = self
         shufItem.state = playlist.isShuffle ? .on : .off
         pbMenu.addItem(shufItem)
+        
+        let manualItem = NSMenuItem(title: "Manual playlist advance", action: #selector(handleToggleManualAdvance), keyEquivalent: "")
+        manualItem.state = persistence.state.manualPlaylistAdvance ? .on : .off
+        manualItem.target = self
+        pbMenu.addItem(manualItem)
         pbMenu.addItem(NSMenuItem.separator())
         
         let jumpTimeItem = NSMenuItem(title: "Jump to time...", action: #selector(handleJumpToTime), keyEquivalent: "j")
@@ -1394,14 +1558,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         guard let url = sender.representedObject as? URL else { return }
         let skinName = url.deletingPathExtension().lastPathComponent
         
-        let alert = NSAlert()
-        alert.messageText = "Delete Skin"
-        alert.informativeText = "Are you sure you want to delete the skin \"\(skinName)\"?"
-        alert.addButton(withTitle: "Delete")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-        
-        if alert.runModal() == .alertFirstButtonReturn {
+        if Win32Dialog.confirm(title: "Delete Skin",
+                               message: "Are you sure you want to delete the skin \"\(skinName)\"?",
+                               confirmTitle: "Delete") {
             skinManager.deleteSkin(at: url)
         }
     }

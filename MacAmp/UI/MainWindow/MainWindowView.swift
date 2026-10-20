@@ -46,6 +46,7 @@ public class MainWindowView: WinampControlView {
     public var isShadeMode: Bool = false {
         didSet {
             updateLayoutForShadeMode()
+            applySkinCursorNames()
             needsDisplay = true
             for sub in subviews {
                 sub.needsDisplay = true
@@ -262,6 +263,37 @@ public class MainWindowView: WinampControlView {
         )
         repeatToggle.frame = Layout.repeatToggle
         addSubview(repeatToggle)
+    }
+    
+    // MARK: - Skin Cursors (Winamp: NORMAL, TITLEBAR, CLOSE, MIN, WINBUT, MAINMENU, POSBAR, VOLBAL, SONGNAME, WS* in shade)
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applySkinCursorNames()
+    }
+    
+    /// Assigns each control its skin cursor for the current (normal / windowshade) layout.
+    public func applySkinCursorNames() {
+        let ws = isShadeMode
+        closeButton?.skinCursorName = ws ? "WSCLOSE" : "CLOSE"
+        minimizeButton?.skinCursorName = ws ? "WSMIN" : "MIN"
+        shadeButton?.skinCursorName = ws ? "WSWINBUT" : "WINBUT"
+        optionsButton?.skinCursorName = "MAINMENU"
+        seekSlider?.skinCursorName = ws ? "WSPOSBAR" : "POSBAR"
+        volumeSlider?.skinCursorName = "VOLBAL"
+        balanceSlider?.skinCursorName = "VOLBAL"
+        marquee.skinCursorName = "SONGNAME"
+        invalidateSkinCursorsRecursively()
+    }
+    
+    public override func skinCursorZones() -> [(rect: NSRect, name: String)] {
+        if isShadeMode {
+            return [(bounds, "WSNORMAL")]
+        }
+        let titleH: CGFloat = 14
+        return [
+            (NSRect(x: 0, y: 0, width: bounds.width, height: titleH), "TITLEBAR"),
+            (NSRect(x: 0, y: titleH, width: bounds.width, height: bounds.height - titleH), "NORMAL")
+        ]
     }
     
     // MARK: - Shade Mode Switching

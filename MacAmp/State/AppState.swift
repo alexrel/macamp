@@ -14,6 +14,18 @@ public struct AppState: Codable {
     
     public var visualizerMode: VisualizerMode = .spectrum
     public var visualizerShowPeaks: Bool = true
+    /// Winamp "Manual playlist advance": don't start the next track when one ends (Optional for decode compatibility)
+    public var manualPlaylistAdvanceStorage: Bool? = nil
+    public var manualPlaylistAdvance: Bool {
+        get { manualPlaylistAdvanceStorage ?? false }
+        set { manualPlaylistAdvanceStorage = newValue }
+    }
+    /// Optional so session.json files written before this field existed still decode
+    public var visualizerOptionsStorage: VisualizerOptions? = nil
+    public var visualizerOptions: VisualizerOptions {
+        get { visualizerOptionsStorage ?? VisualizerOptions() }
+        set { visualizerOptionsStorage = newValue }
+    }
     public var timeDisplayMode: TimeDisplayMode = .elapsed
     public var scaleFactor: ScaleFactor = .x1
     

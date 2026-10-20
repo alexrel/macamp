@@ -130,77 +130,66 @@ public struct TrackInfoView: View {
     @ObservedObject public var viewModel: TrackInfoViewModel
     public var onClose: (() -> Void)?
     
-    // Classic Retro Dialog Palette
-    private let winampGray = Color(red: 0.88, green: 0.86, blue: 0.83)
-    private let darkBorder = Color(red: 0.55, green: 0.55, blue: 0.55)
+    /// Width of the right-aligned field labels
+    private let labelWidth: CGFloat = 80
     
     public init(viewModel: TrackInfoViewModel, onClose: (() -> Void)? = nil) {
         self.viewModel = viewModel
         self.onClose = onClose
     }
     
+    // Classic Win32 dialog, like Winamp 2.9's "MPEG file info box + ID3 tag editor"
     public var body: some View {
-        VStack(spacing: 10) {
-            // 1. Technical Audio Stream Information Box
+        VStack(alignment: .leading, spacing: 8) {
             techInfoSection
                 .fixedSize(horizontal: false, vertical: true)
             
-            // 2. Tab Strip (ID3v2, ID3v1, Artwork)
-            Picker("", selection: $viewModel.selectedTab) {
-                ForEach(TrackInfoViewModel.InfoTab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
+            // Property-sheet style tabs with a raised page underneath
+            VStack(spacing: 0) {
+                Win32TabHeader(tabs: TrackInfoViewModel.InfoTab.allCases, selectedTab: $viewModel.selectedTab)
+                ZStack(alignment: .topLeading) {
+                    switch viewModel.selectedTab {
+                    case .id3v2:
+                        id3v2Section
+                    case .id3v1:
+                        id3v1Section
+                    case .artwork:
+                        artworkSection
+                    }
                 }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 2)
-            .fixedSize(horizontal: false, vertical: true)
-            
-            // 3. Active Tab Content
-            ZStack {
-                switch viewModel.selectedTab {
-                case .id3v2:
-                    id3v2Section
-                case .id3v1:
-                    id3v1Section
-                case .artwork:
-                    artworkSection
-                }
+                .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .win32Raised()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             
-            // 4. Status message
             if let msg = viewModel.statusMessage {
                 Text(msg)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(viewModel.isErrorMessage ? .red : .primary)
+                    .font(.system(size: 11))
+                    .foregroundColor(viewModel.isErrorMessage ? .red : Win32Colors.text)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 4)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             
-            // 5. Bottom Navigation & Action Buttons
             bottomButtonBar
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(14)
+        .padding(10)
         .frame(minWidth: 520, maxWidth: .infinity, minHeight: 490, maxHeight: .infinity)
-        .background(winampGray)
+        .background(Win32Colors.dialogBg)
     }
     
     // MARK: - Section 1: Audio Technical Info
     private var techInfoSection: some View {
-        GroupBox(
-            label: Text("Audio Stream Information")
-                .font(.system(size: 11, weight: .bold))
-                .padding(.leading, 8)
-        ) {
+        Win32GroupBox("MPEG Audio Stream Information") {
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
+                HStack(spacing: 4) {
                     Text("File:")
                         .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(Win32Colors.text)
                     Text(viewModel.metadata.url.lastPathComponent)
                         .font(.system(size: 11))
+                        .foregroundColor(Win32Colors.text)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer()
@@ -211,21 +200,17 @@ public struct TrackInfoView: View {
                     }
                 }
                 
-                Divider()
-                
                 HStack(alignment: .top, spacing: 18) {
                     VStack(alignment: .leading, spacing: 3) {
                         infoRow(label: "Payload:", value: "\(viewModel.metadata.techInfo.fileSize) bytes")
                         infoRow(label: "Header at:", value: "\(viewModel.metadata.techInfo.headerOffset) bytes")
                         infoRow(label: "Length:", value: viewModel.metadata.techInfo.formattedDuration)
                     }
-                    
                     VStack(alignment: .leading, spacing: 3) {
                         infoRow(label: "Format:", value: viewModel.metadata.techInfo.formatDescription)
                         infoRow(label: "Bitrate:", value: "\(viewModel.metadata.techInfo.bitrate) kbps")
                         infoRow(label: "Rate:", value: "\(Int(viewModel.metadata.techInfo.sampleRate)) Hz")
                     }
-                    
                     VStack(alignment: .leading, spacing: 3) {
                         infoRow(label: "Mode:", value: viewModel.metadata.techInfo.channelMode)
                         infoRow(label: "CRCs:", value: viewModel.metadata.techInfo.hasCRC ? "Yes" : "No")
@@ -233,81 +218,53 @@ public struct TrackInfoView: View {
                     }
                 }
             }
-            .padding(6)
         }
     }
     
     private func infoRow(label: String, value: String) -> some View {
         HStack(spacing: 4) {
             Text(label)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundColor(.secondary)
+                .font(.system(size: 11))
+                .foregroundColor(Win32Colors.text)
             Text(value)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(.primary)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(Win32Colors.text)
         }
     }
     
     // MARK: - Section 2: ID3v2 Tag Editor
     private var id3v2Section: some View {
-        GroupBox(
-            label: Toggle("Include ID3v2 Tag", isOn: $viewModel.metadata.id3v2.hasTag)
-                .font(.system(size: 11, weight: .bold))
-                .padding(.leading, 8)
-        ) {
+        VStack(alignment: .leading, spacing: 6) {
+            Win32Checkbox("Include ID3v2 tag", isOn: $viewModel.metadata.id3v2.hasTag)
+            
             ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 7) {
+                VStack(spacing: 6) {
                     labeledInput(label: "Title:", text: $viewModel.metadata.id3v2.title)
                     labeledInput(label: "Artist:", text: $viewModel.metadata.id3v2.artist)
                     labeledInput(label: "Album:", text: $viewModel.metadata.id3v2.album)
                     
-                    HStack(spacing: 8) {
-                        Text("Year:")
-                            .font(.system(size: 11, weight: .medium))
-                            .frame(width: 88, alignment: .trailing)
-                        TextField("", text: $viewModel.metadata.id3v2.year)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11))
-                            .frame(width: 65)
-                        
-                        Text("Track #:")
-                            .font(.system(size: 11, weight: .medium))
-                            .padding(.leading, 6)
-                        TextField("", text: $viewModel.metadata.id3v2.trackNumber)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11))
-                            .frame(width: 60)
-                        
-                        Text("Disc #:")
-                            .font(.system(size: 11, weight: .medium))
-                            .padding(.leading, 6)
-                        TextField("", text: $viewModel.metadata.id3v2.discNumber)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11))
-                            .frame(width: 60)
-                        
+                    HStack(spacing: 6) {
+                        fieldLabel("Year:")
+                        Win32TextField(text: $viewModel.metadata.id3v2.year).frame(width: 60)
+                        Text("Track #:").font(.system(size: 11)).foregroundColor(Win32Colors.text).padding(.leading, 8)
+                        Win32TextField(text: $viewModel.metadata.id3v2.trackNumber).frame(width: 50)
+                        Text("Disc #:").font(.system(size: 11)).foregroundColor(Win32Colors.text).padding(.leading, 8)
+                        Win32TextField(text: $viewModel.metadata.id3v2.discNumber).frame(width: 50)
                         Spacer()
                     }
                     
-                    HStack(spacing: 8) {
-                        Text("Genre:")
-                            .font(.system(size: 11, weight: .medium))
-                            .frame(width: 88, alignment: .trailing)
-                        TextField("", text: $viewModel.metadata.id3v2.genre)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11))
-                        
-                        Menu {
-                            ForEach(ID3Genre.allGenres, id: \.self) { g in
-                                Button(g) {
-                                    viewModel.metadata.id3v2.genre = g
-                                }
-                            }
-                        } label: {
-                            Text("Standard ▼")
-                                .font(.system(size: 11))
-                        }
-                        .frame(width: 105)
+                    HStack(spacing: 6) {
+                        fieldLabel("Genre:")
+                        Win32TextField(text: $viewModel.metadata.id3v2.genre)
+                        Win32ComboBox(
+                            selection: Binding(
+                                get: { viewModel.metadata.id3v2.genre },
+                                set: { viewModel.metadata.id3v2.genre = $0 }
+                            ),
+                            options: [(value: viewModel.metadata.id3v2.genre, title: "Standard...")] +
+                                ID3Genre.allGenres.map { (value: $0, title: $0) },
+                            width: 110
+                        )
                     }
                     
                     labeledInput(label: "Composer:", text: $viewModel.metadata.id3v2.composer)
@@ -315,267 +272,148 @@ public struct TrackInfoView: View {
                     labeledInput(label: "Copyright:", text: $viewModel.metadata.id3v2.copyright)
                     labeledInput(label: "Encoded by:", text: $viewModel.metadata.id3v2.encodedBy)
                     labeledInput(label: "URL:", text: $viewModel.metadata.id3v2.url)
-                    
-                    HStack(alignment: .top, spacing: 8) {
-                        Text("Comment:")
-                            .font(.system(size: 11, weight: .medium))
-                            .frame(width: 88, alignment: .trailing)
-                            .padding(.top, 4)
-                        TextField("", text: $viewModel.metadata.id3v2.comment)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11))
-                    }
+                    labeledInput(label: "Comment:", text: $viewModel.metadata.id3v2.comment)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.vertical, 2)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .opacity(viewModel.metadata.id3v2.hasTag ? 1.0 : 0.4)
             .disabled(!viewModel.metadata.id3v2.hasTag)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     // MARK: - Section 3: ID3v1 Tag Editor
     private var id3v1Section: some View {
-        GroupBox(
-            label: Toggle("Include ID3v1 Tag", isOn: $viewModel.metadata.id3v1.hasTag)
-                .font(.system(size: 11, weight: .bold))
-                .padding(.leading, 8)
-        ) {
-            VStack(spacing: 8) {
-                labeledInput(label: "Title (30):", text: $viewModel.metadata.id3v1.title, maxLen: 30)
-                labeledInput(label: "Artist (30):", text: $viewModel.metadata.id3v1.artist, maxLen: 30)
-                labeledInput(label: "Album (30):", text: $viewModel.metadata.id3v1.album, maxLen: 30)
+        VStack(alignment: .leading, spacing: 6) {
+            Win32Checkbox("Include ID3v1 tag", isOn: $viewModel.metadata.id3v1.hasTag)
+            
+            VStack(spacing: 6) {
+                labeledInput(label: "Title:", text: $viewModel.metadata.id3v1.title, maxLen: 30)
+                labeledInput(label: "Artist:", text: $viewModel.metadata.id3v1.artist, maxLen: 30)
+                labeledInput(label: "Album:", text: $viewModel.metadata.id3v1.album, maxLen: 30)
                 
-                HStack(spacing: 8) {
-                    labeledInput(label: "Year (4):", text: $viewModel.metadata.id3v1.year, width: 65, maxLen: 4)
-                    
-                    Text("Track #:")
-                        .font(.system(size: 11, weight: .medium))
-                        .padding(.leading, 6)
-                    TextField("", value: $viewModel.metadata.id3v1.trackNumber, formatter: NumberFormatter())
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 11))
-                        .frame(width: 50)
-                    
+                HStack(spacing: 6) {
+                    labeledInput(label: "Year:", text: $viewModel.metadata.id3v1.year, width: 60, maxLen: 4)
+                    Text("Track #:").font(.system(size: 11)).foregroundColor(Win32Colors.text).padding(.leading, 8)
+                    Win32NumberField(value: Binding(
+                        get: { Int(viewModel.metadata.id3v1.trackNumber) },
+                        set: { viewModel.metadata.id3v1.trackNumber = UInt8(clamping: $0) }
+                    ), width: 40)
                     Spacer()
                 }
                 
-                HStack(spacing: 8) {
-                    Text("Genre:")
-                        .font(.system(size: 11, weight: .medium))
-                        .frame(width: 88, alignment: .trailing)
-                    
-                    Picker("", selection: $viewModel.metadata.id3v1.genreIndex) {
-                        Text("(None)").tag(UInt8(255))
-                        ForEach(0..<ID3Genre.allGenres.count, id: \.self) { i in
-                            Text(ID3Genre.allGenres[i]).tag(UInt8(i))
-                        }
-                    }
-                    .labelsHidden()
+                HStack(spacing: 6) {
+                    fieldLabel("Genre:")
+                    Win32ComboBox(
+                        selection: $viewModel.metadata.id3v1.genreIndex,
+                        options: [(value: UInt8(255), title: "(None)")] +
+                            ID3Genre.allGenres.indices.map { (value: UInt8($0), title: ID3Genre.allGenres[$0]) },
+                        width: 200
+                    )
+                    Spacer()
                 }
                 
-                labeledInput(label: "Comment (28):", text: $viewModel.metadata.id3v1.comment, maxLen: 28)
-                
-                Spacer()
+                labeledInput(label: "Comment:", text: $viewModel.metadata.id3v1.comment, maxLen: 28)
                 
                 HStack {
-                    Button("Sync with ID3v2 ➜") {
+                    Spacer().frame(width: labelWidth + 6)
+                    Win32Button("Copy to ID3v2", width: 120) {
                         viewModel.copyFromID3v1()
                     }
-                    .font(.system(size: 11))
-                    .padding(.leading, 88 + 8)
-                    
                     Spacer()
                 }
+                .padding(.top, 4)
+                
+                Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .opacity(viewModel.metadata.id3v1.hasTag ? 1.0 : 0.4)
             .disabled(!viewModel.metadata.id3v1.hasTag)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     // MARK: - Section 4: Artwork / Cover Art
     private var artworkSection: some View {
-        GroupBox(
-            label: Text("Album Cover Artwork")
-                .font(.system(size: 11, weight: .bold))
-                .padding(.leading, 8)
-        ) {
-            HStack(alignment: .top, spacing: 20) {
-                // Cover preview box
-                ZStack {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.black.opacity(0.06))
-                        .frame(width: 150, height: 150)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
-                                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                        )
-                    
-                    if let art = viewModel.metadata.artwork, let nsImg = art.image {
-                        Image(nsImage: nsImg)
-                            .resizable()
-                            .interpolation(.high)
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxWidth: 144, maxHeight: 144)
-                            .cornerRadius(2)
+        HStack(alignment: .top, spacing: 16) {
+            ZStack {
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(width: 152, height: 152)
+                    .win32Sunken()
+                
+                if let art = viewModel.metadata.artwork, let nsImg = art.image {
+                    Image(nsImage: nsImg)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: 146, maxHeight: 146)
+                } else {
+                    Text("(no picture)")
+                        .font(.system(size: 11))
+                        .foregroundColor(Win32Colors.textDisabled)
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let art = viewModel.metadata.artwork {
+                        artworkRow("Format:", art.mimeType)
+                        artworkRow("File size:", formatArtworkSize(art.imageData.count))
+                        if let nsImg = art.image {
+                            artworkRow("Dimensions:", "\(Int(nsImg.size.width)) × \(Int(nsImg.size.height))")
+                        }
                     } else {
-                        VStack(spacing: 5) {
-                            Image(systemName: "photo")
-                                .font(.system(size: 32))
-                                .foregroundColor(.secondary.opacity(0.6))
-                            Text("No Artwork")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.secondary)
-                            Text("Embedded cover absent")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
-                        }
+                        Text("No picture embedded in the ID3 tag.")
+                            .font(.system(size: 11))
+                            .foregroundColor(Win32Colors.text)
                     }
                 }
-                .padding(.top, 4)
+                .frame(height: 50, alignment: .topLeading)
                 
-                // Artwork Details and Actions
-                VStack(alignment: .leading, spacing: 14) {
-                    // Metadata Info Block
-                    VStack(alignment: .leading, spacing: 6) {
-                        if let art = viewModel.metadata.artwork {
-                            HStack(spacing: 6) {
-                                Text("Format:")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 75, alignment: .leading)
-                                Text(art.mimeType)
-                                    .font(.system(size: 11))
-                            }
-                            
-                            HStack(spacing: 6) {
-                                Text("File Size:")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 75, alignment: .leading)
-                                Text(formatArtworkSize(art.imageData.count))
-                                    .font(.system(size: 11))
-                            }
-                            
-                            if let nsImg = art.image {
-                                HStack(spacing: 6) {
-                                    Text("Dimensions:")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundColor(.secondary)
-                                        .frame(width: 75, alignment: .leading)
-                                    Text("\(Int(nsImg.size.width)) × \(Int(nsImg.size.height)) px")
-                                        .font(.system(size: 11))
-                                }
-                            }
-                        } else {
-                            Text("No embedded picture in ID3 tag.")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                                .padding(.top, 4)
-                        }
-                    }
-                    .frame(height: 55, alignment: .topLeading)
-                    
-                    Divider()
-                        .frame(width: 200)
-                    
-                    // Action Buttons (Raised directly under details)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Button(action: { viewModel.loadArtwork() }) {
-                            HStack {
-                                Image(systemName: "folder")
-                                Text("Load Artwork...")
-                            }
-                            .frame(width: 140, alignment: .leading)
-                        }
-                        .font(.system(size: 11))
-                        
-                        Button(action: { viewModel.exportArtwork() }) {
-                            HStack {
-                                Image(systemName: "square.and.arrow.down")
-                                Text("Export Artwork...")
-                            }
-                            .frame(width: 140, alignment: .leading)
-                        }
-                        .font(.system(size: 11))
-                        .disabled(viewModel.metadata.artwork == nil)
-                        
-                        Button(action: { viewModel.removeArtwork() }) {
-                            HStack {
-                                Image(systemName: "trash")
-                                Text("Remove")
-                            }
-                            .frame(width: 140, alignment: .leading)
-                        }
-                        .font(.system(size: 11))
-                        .foregroundColor(.red)
-                        .disabled(viewModel.metadata.artwork == nil)
-                    }
-                    
-                    Spacer()
-                }
-                .padding(.top, 4)
-                
+                Win32Button("Load...", width: 100) { viewModel.loadArtwork() }
+                Win32Button("Export...", width: 100) { viewModel.exportArtwork() }
+                    .disabled(viewModel.metadata.artwork == nil)
+                Win32Button("Remove", width: 100) { viewModel.removeArtwork() }
+                    .disabled(viewModel.metadata.artwork == nil)
                 Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    private func artworkRow(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundColor(Win32Colors.text)
+                .frame(width: 70, alignment: .leading)
+            Text(value)
+                .font(.system(size: 11))
+                .foregroundColor(Win32Colors.text)
+        }
     }
     
     // MARK: - Bottom Controls Bar
     private var bottomButtonBar: some View {
-        HStack(spacing: 8) {
-            // Track navigation
-            Button("◄ Prev") {
-                viewModel.prevTrack()
-            }
-            .font(.system(size: 11))
-            .disabled(viewModel.trackIndex <= 0)
+        HStack(spacing: 6) {
+            Win32Button("◄ Prev", width: 60) { viewModel.prevTrack() }
+                .disabled(viewModel.trackIndex <= 0)
+            Win32Button("Next ►", width: 60) { viewModel.nextTrack() }
+                .disabled(viewModel.trackIndex + 1 >= viewModel.totalTracks)
             
-            Button("Next ►") {
-                viewModel.nextTrack()
-            }
-            .font(.system(size: 11))
-            .disabled(viewModel.trackIndex + 1 >= viewModel.totalTracks)
-            
-            Text("Track \(viewModel.trackIndex + 1) of \(viewModel.totalTracks)")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
+            Text("\(viewModel.trackIndex + 1) of \(viewModel.totalTracks)")
+                .font(.system(size: 11))
+                .foregroundColor(Win32Colors.text)
+                .padding(.leading, 4)
             
             Spacer()
             
-            Button("Copy to ID3v1") {
-                viewModel.copyToID3v1()
-            }
-            .font(.system(size: 11))
-            
-            Button("Undo") {
-                viewModel.undo()
-            }
-            .font(.system(size: 11))
-            
-            Button("Cancel") {
-                onClose?()
-            }
-            .font(.system(size: 11))
-            
-            Button("Update") {
+            Win32Button("Copy to ID3v1", width: 95) { viewModel.copyToID3v1() }
+            Win32Button("Undo", width: 60) { viewModel.undo() }
+            Win32Button("Cancel") { onClose?() }
+            Win32Button("Update", isDefault: true) {
                 if viewModel.save() {
                     onClose?()
                 }
             }
-            .font(.system(size: 11, weight: .bold))
-            .keyboardShortcut(.defaultAction)
             .disabled(viewModel.metadata.isReadOnly)
         }
-        .padding(.top, 4)
     }
     
     // MARK: - Helper Views & Formatting
@@ -588,13 +426,17 @@ public struct TrackInfoView: View {
         return String(format: "%.2f MB", Double(bytes) / (1024.0 * 1024.0))
     }
     
+    private func fieldLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundColor(Win32Colors.text)
+            .frame(width: labelWidth, alignment: .trailing)
+    }
+    
     private func labeledInput(label: String, text: Binding<String>, width: CGFloat? = nil, maxLen: Int? = nil) -> some View {
-        HStack(spacing: 8) {
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .frame(width: 88, alignment: .trailing)
-            
-            TextField("", text: Binding(
+        HStack(spacing: 6) {
+            fieldLabel(label)
+            Win32TextField(text: Binding(
                 get: { text.wrappedValue },
                 set: { val in
                     if let max = maxLen, val.count > max {
@@ -604,8 +446,6 @@ public struct TrackInfoView: View {
                     }
                 }
             ))
-            .textFieldStyle(.roundedBorder)
-            .font(.system(size: 11))
             .frame(width: width)
         }
     }

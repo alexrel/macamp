@@ -34,8 +34,32 @@ public class SkinLoader {
         loadPlaylistStyle(from: skinDir, into: skin)
         loadVisualizerColors(from: skinDir, into: skin)
         loadRegion(from: skinDir, into: skin)
+        loadCursors(from: skinDir, into: skin)
         
         return skin
+    }
+    
+    /// Loads Windows cursor files (*.CUR). Animated *.ANI cursors are not supported and fall back to the arrow.
+    private func loadCursors(from dir: URL, into skin: Skin) {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
+        for file in files where file.pathExtension.uppercased() == "CUR" {
+            guard let data = try? Data(contentsOf: file), let cursor = SkinLoader.makeCursor(fromCUR: data) else { continue }
+            skin.cursors[file.deletingPathExtension().lastPathComponent.uppercased()] = cursor
+        }
+    }
+    
+    /// Decodes a .CUR file (ImageIO reads the bitmap; the hotspot comes from the first ICONDIRENTRY).
+    static func makeCursor(fromCUR data: Data) -> NSCursor? {
+        guard data.count > 22, data[2] == 2, // ICONDIR.type 2 = cursor
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            return nil
+        }
+        let hotX = CGFloat(Int(data[10]) | Int(data[11]) << 8)
+        let hotY = CGFloat(Int(data[12]) | Int(data[13]) << 8)
+        let size = NSSize(width: image.width, height: image.height)
+        let hotSpot = NSPoint(x: min(hotX, size.width - 1), y: min(hotY, size.height - 1))
+        return NSCursor(image: NSImage(cgImage: image, size: size), hotSpot: hotSpot)
     }
     
     /// Resolves the actual folder containing the skin assets.

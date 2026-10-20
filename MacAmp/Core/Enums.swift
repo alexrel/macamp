@@ -44,3 +44,60 @@ public enum ScaleFactor: Int, Codable {
         self == .x1 ? .x2 : .x1
     }
 }
+
+// MARK: - Visualizer Options (Winamp 2.x "Visualization" menu)
+
+public enum AnalyzerStyle: String, Codable, CaseIterable {
+    case normal, fire, line
+    public var title: String {
+        switch self {
+        case .normal: return "Normal style"
+        case .fire: return "Fire style"
+        case .line: return "Line style"
+        }
+    }
+}
+
+public enum AnalyzerBands: String, Codable, CaseIterable {
+    case thick, thin
+    public var title: String { self == .thick ? "Thick bands" : "Thin bands" }
+    /// Bars across the 76 px visualizer
+    public var count: Int { self == .thick ? AppConstants.Visualizer.numSpectrumBars : AppConstants.Visualizer.numThinBands }
+}
+
+public enum ScopeStyle: String, Codable, CaseIterable {
+    case dot, line, solid
+    public var title: String {
+        switch self {
+        case .dot: return "Dot scope"
+        case .line: return "Line scope"
+        case .solid: return "Solid scope"
+        }
+    }
+}
+
+public enum VisualizerFalloff: Int, Codable, CaseIterable {
+    case slowest = 0, slow, moderate, fast, fastest
+    public var title: String {
+        switch self {
+        case .slowest: return "Slowest"
+        case .slow: return "Slow"
+        case .moderate: return "Moderate"
+        case .fast: return "Fast"
+        case .fastest: return "Fastest"
+        }
+    }
+    /// Height (0...1) a bar loses per frame (~43 fps)
+    public var barStep: Float { [0.008, 0.016, 0.03, 0.05, 0.08][rawValue] }
+    /// Height (0...1) a peak marker loses per frame
+    public var peakStep: Float { [0.003, 0.006, 0.012, 0.02, 0.035][rawValue] }
+}
+
+public struct VisualizerOptions: Codable, Equatable {
+    public var analyzerStyle: AnalyzerStyle = .normal
+    public var bands: AnalyzerBands = .thick
+    public var scopeStyle: ScopeStyle = .dot
+    public var barFalloff: VisualizerFalloff = .moderate
+    public var peakFalloff: VisualizerFalloff = .moderate
+    public init() {}
+}

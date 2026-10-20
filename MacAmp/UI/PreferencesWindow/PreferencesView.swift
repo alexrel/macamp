@@ -168,7 +168,9 @@ public class PreferencesViewModel: ObservableObject {
         didSet {
             PersistenceManager.shared.state.visualizerMode = visualizerMode
             PersistenceManager.shared.saveSession()
-            PlayerCoordinator.shared.mainView?.visualizer.mode = visualizerMode
+            if PlayerCoordinator.shared.mainView != nil {
+                PlayerCoordinator.shared.setVisualizerMode(visualizerMode) // also re-gates the FFT tap
+            }
         }
     }
     
@@ -177,6 +179,22 @@ public class PreferencesViewModel: ObservableObject {
             PersistenceManager.shared.state.visualizerShowPeaks = visualizerShowPeaks
             PersistenceManager.shared.saveSession()
             PlayerCoordinator.shared.mainView?.visualizer.showPeaks = visualizerShowPeaks
+        }
+    }
+    
+    @Published public var manualPlaylistAdvance: Bool {
+        didSet {
+            PersistenceManager.shared.state.manualPlaylistAdvance = manualPlaylistAdvance
+            PersistenceManager.shared.saveSession()
+            MainMenuManager.shared.updateStates()
+        }
+    }
+    
+    @Published public var visualizerOptions: VisualizerOptions {
+        didSet {
+            PersistenceManager.shared.state.visualizerOptions = visualizerOptions
+            PersistenceManager.shared.saveSession()
+            PlayerCoordinator.shared.mainView?.visualizer.options = visualizerOptions
         }
     }
     
@@ -256,6 +274,8 @@ public class PreferencesViewModel: ObservableObject {
         self.dspReverbPreset = state.dspReverbPreset
         self.visualizerMode = state.visualizerMode
         self.visualizerShowPeaks = state.visualizerShowPeaks
+        self.visualizerOptions = state.visualizerOptions
+        self.manualPlaylistAdvance = state.manualPlaylistAdvance
         
         self.availableOutputDevices = AudioDeviceManager.shared.availableDevices
         self.selectedAudioOutputDeviceUID = AudioDeviceManager.shared.selectedDeviceUID
@@ -383,6 +403,7 @@ public struct TreeConnector: View {
 // MARK: - Preferences View
 public struct PreferencesView: View {
     @ObservedObject public var viewModel: PreferencesViewModel
+    @ObservedObject private var hotkeysController = GlobalHotkeysController.shared
     public var onClose: (() -> Void)?
     
     private let availableFonts = ["Monaco", "Menlo", "Geneva", "SF Pro Display", "Courier New", "Helvetica"]
@@ -508,7 +529,7 @@ public struct PreferencesView: View {
         VStack(alignment: .leading, spacing: 10) {
             Win32GroupBox("Display options") {
                 VStack(alignment: .leading, spacing: 6) {
-                    Win32Checkbox("Always On Top (shortcut: ⌘T / Ctrl+T)", isOn: $viewModel.isAlwaysOnTop)
+                    Win32Checkbox("Always On Top (⌘T)", isOn: $viewModel.isAlwaysOnTop)
                     Win32Checkbox("Smoothly scroll song title when it exceeds display width", isOn: $viewModel.isMarqueeScrollEnabled)
                     
                     HStack(spacing: 6) {
@@ -539,7 +560,7 @@ public struct PreferencesView: View {
                         viewModel.scaleFactor = .x1
                     }
                     
-                    Win32RadioButton("Double size (2x: 550 × 232 px, shortcut: Ctrl+D)", isSelected: viewModel.scaleFactor == .x2) {
+                    Win32RadioButton("Double size (2x: 550 × 232 px, ⌃D)", isSelected: viewModel.scaleFactor == .x2) {
                         viewModel.scaleFactor = .x2
                     }
                 }
@@ -570,13 +591,9 @@ public struct PreferencesView: View {
                                 .font(.system(size: 11))
                                 .frame(width: 80, alignment: .trailing)
                             
-                            Picker("", selection: $viewModel.desktopFontFamily) {
-                                ForEach(availableFonts, id: \.self) { f in
-                                    Text(f).tag(f)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 150)
+                            Win32ComboBox(selection: $viewModel.desktopFontFamily,
+                                          options: availableFonts.map { (value: $0, title: $0) },
+                                          width: 150)
                         }
                         
                         HStack(spacing: 8) {
@@ -584,13 +601,9 @@ public struct PreferencesView: View {
                                 .font(.system(size: 11))
                                 .frame(width: 80, alignment: .trailing)
                             
-                            Picker("", selection: $viewModel.desktopFontSize) {
-                                ForEach(availableFontSizes, id: \.self) { sz in
-                                    Text("\(Int(sz)) pt").tag(sz)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 90)
+                            Win32ComboBox(selection: $viewModel.desktopFontSize,
+                                          options: availableFontSizes.map { (value: $0, title: "\(Int($0)) pt") },
+                                          width: 90)
                         }
                         
                         Text("Color is automatically inherited from the active skin's text palette.")
@@ -608,30 +621,53 @@ public struct PreferencesView: View {
         VStack(alignment: .leading, spacing: 10) {
             Win32GroupBox("Visualization Mode") {
                 VStack(alignment: .leading, spacing: 6) {
-                    Win32RadioButton("Spectrum Analyzer (60 fps FFT frequency bands)", isSelected: viewModel.visualizerMode == .spectrum) {
+                    Win32RadioButton("Spectrum analyzer", isSelected: viewModel.visualizerMode == .spectrum) {
                         viewModel.visualizerMode = .spectrum
                     }
                     
-                    Win32RadioButton("Oscilloscope (real-time audio waveform)", isSelected: viewModel.visualizerMode == .oscilloscope) {
+                    Win32RadioButton("Oscilloscope", isSelected: viewModel.visualizerMode == .oscilloscope) {
                         viewModel.visualizerMode = .oscilloscope
                     }
                     
-                    Win32RadioButton("Off (no visualizer)", isSelected: viewModel.visualizerMode == .off) {
+                    Win32RadioButton("Off", isSelected: viewModel.visualizerMode == .off) {
                         viewModel.visualizerMode = .off
                     }
                 }
             }
             
-            Win32GroupBox("Spectrum Analyzer Options") {
+            Win32GroupBox("Analyzer Options") {
                 VStack(alignment: .leading, spacing: 6) {
-                    Win32Checkbox("Show peak markers", isOn: $viewModel.visualizerShowPeaks)
-                    
-                    Text("Draws falling peak dots above each frequency bar in spectrum mode.")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                        .padding(.leading, 18)
+                    visOptionRow("Style:", Win32ComboBox(selection: $viewModel.visualizerOptions.analyzerStyle,
+                                                         options: AnalyzerStyle.allCases.map { (value: $0, title: $0.title) }, width: 130))
+                    visOptionRow("Bands:", Win32ComboBox(selection: $viewModel.visualizerOptions.bands,
+                                                         options: AnalyzerBands.allCases.map { (value: $0, title: $0.title) }, width: 130))
+                    visOptionRow("Bar falloff:", Win32ComboBox(selection: $viewModel.visualizerOptions.barFalloff,
+                                                               options: VisualizerFalloff.allCases.map { (value: $0, title: $0.title) }, width: 130))
+                    visOptionRow("Peak falloff:", Win32ComboBox(selection: $viewModel.visualizerOptions.peakFalloff,
+                                                                options: VisualizerFalloff.allCases.map { (value: $0, title: $0.title) }, width: 130))
+                    Win32Checkbox("Show peaks", isOn: $viewModel.visualizerShowPeaks)
                 }
             }
+            
+            Win32GroupBox("Oscilloscope Options") {
+                visOptionRow("Style:", Win32ComboBox(selection: $viewModel.visualizerOptions.scopeStyle,
+                                                     options: ScopeStyle.allCases.map { (value: $0, title: $0.title) }, width: 130))
+            }
+            
+            Text("Tip: right-click the visualizer in the main window for the same options.")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+        }
+    }
+    
+    private func visOptionRow<Control: View>(_ label: String, _ control: Control) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundColor(Win32Colors.text)
+                .frame(width: 80, alignment: .trailing)
+            control
+            Spacer()
         }
     }
     
@@ -647,46 +683,27 @@ public struct PreferencesView: View {
                         .foregroundColor(.secondary)
                     
                     VStack(alignment: .leading, spacing: 5) {
-                        hotkeyRow("Play", "Ctrl + Alt + X")
-                        hotkeyRow("Play / Pause", "Ctrl + Alt + C  or  Space")
-                        hotkeyRow("Stop", "Ctrl + Alt + V")
-                        hotkeyRow("Previous Track", "Ctrl + Alt + Z  or  ←")
-                        hotkeyRow("Next Track", "Ctrl + Alt + B  or  →")
-                        hotkeyRow("Volume Up", "Ctrl + Alt + ↑")
-                        hotkeyRow("Volume Down", "Ctrl + Alt + ↓")
-                        hotkeyRow("Toggle Mute", "Ctrl + Alt + M")
+                        ForEach(hotkeysController.displayRows, id: \.action) { row in
+                            hotkeyRow(row.action, row.shortcut)
+                        }
                     }
                     .padding(6)
                     .background(Color(nsColor: .controlBackgroundColor))
                     .modifier(Win32SunkenBorder())
+                    
+                    if viewModel.isGlobalHotkeysEnabled && !hotkeysController.unavailableHotkeys.isEmpty {
+                        Text("Already used by another application: \(hotkeysController.unavailableHotkeys.joined(separator: ", "))")
+                            .font(.system(size: 11))
+                            .foregroundColor(.orange)
+                    }
                 }
             }
             
-            Win32GroupBox("Media Keys & Permissions") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("• Hardware media keys (F7, F8, F9, AirPods & Touch Bar) work globally.")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    
-                    HStack {
-                        Text("Accessibility Status:")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundColor(Win32Colors.text)
-                        
-                        if GlobalHotkeysController.shared.isAccessibilityTrusted {
-                            Text("Granted ✓")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.green)
-                        } else {
-                            Text("Permission needed for background Ctrl+Alt keys")
-                                .font(.system(size: 11))
-                                .foregroundColor(.orange)
-                            Win32Button("Grant Access...", width: 105, height: 21) {
-                                GlobalHotkeysController.shared.requestAccessibilityPermission()
-                            }
-                        }
-                    }
-                }
+            Win32GroupBox("Media Keys") {
+                Text("Hardware media keys (F7, F8, F9), AirPods and headphone controls work globally. No special permissions are required.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -698,7 +715,7 @@ public struct PreferencesView: View {
                 .foregroundColor(Win32Colors.text)
             Spacer()
             Text(shortcut)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .font(.system(size: 12, weight: .medium)) // system font draws ⌃ ⌥ like the macOS menus
                 .foregroundColor(Win32Colors.text)
         }
     }
@@ -716,11 +733,24 @@ public struct PreferencesView: View {
                             .font(.system(size: 11, design: .monospaced))
                     }
                     
-                    Slider(value: $viewModel.audioFadeOutDurationMs, in: 0...2000, step: 50)
+                    Win32Slider(value: $viewModel.audioFadeOutDurationMs, in: 0...2000, step: 50)
                     
                     Text("Smoothly reduces audio volume before pausing or stopping to avoid pops or clicks.")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
+                }
+            }
+            
+            Win32GroupBox("Playlist Advance") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Win32Checkbox("Manual playlist advance", isOn: Binding(
+                        get: { viewModel.manualPlaylistAdvance },
+                        set: { viewModel.manualPlaylistAdvance = $0 }
+                    ))
+                    Text("Don't start the next track when one ends. With Repeat on, the current track repeats.\nStop w/ fadeout: ⇧V  ·  Stop after current: ⌃V")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -840,7 +870,7 @@ public struct PreferencesView: View {
                                 .foregroundColor(Win32Colors.text)
                         }
                         
-                        Slider(value: $viewModel.dspPitchSemitones, in: -12.0...12.0, step: 1.0)
+                        Win32Slider(value: $viewModel.dspPitchSemitones, in: -12.0...12.0, step: 1.0)
                     }
                     
                     // Tempo / Playback Rate
@@ -855,7 +885,7 @@ public struct PreferencesView: View {
                                 .foregroundColor(Win32Colors.text)
                         }
                         
-                        Slider(value: $viewModel.dspPlaybackRate, in: 0.5...2.0, step: 0.05)
+                        Win32Slider(value: $viewModel.dspPlaybackRate, in: 0.5...2.0, step: 0.05)
                     }
                 }
             }
@@ -874,7 +904,7 @@ public struct PreferencesView: View {
                                 .foregroundColor(Win32Colors.text)
                         }
                         
-                        Slider(value: $viewModel.dspReverbMix, in: 0.0...100.0, step: 1.0)
+                        Win32Slider(value: $viewModel.dspReverbMix, in: 0.0...100.0, step: 1.0)
                     }
                     
                     // Reverb Presets

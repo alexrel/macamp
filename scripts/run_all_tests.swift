@@ -379,9 +379,19 @@ testGroup("Global Hotkeys Controller") {
     let hotkeys = GlobalHotkeysController.shared
     assertTrue(hotkeys.isEnabled == true || hotkeys.isEnabled == false, "isEnabled is readable")
     
-    // Check permission helper returns boolean without crash
-    let perm = hotkeys.checkAccessibilityPermission()
-    print("    ℹ️ System Accessibility Permission: \(perm ? "GRANTED" : "NOT GRANTED")")
+    // Labels are Mac-style and come from the same list that gets registered
+    let rows = hotkeys.displayRows
+    assertTrue(rows.contains { $0.action == "Play / Pause" && $0.shortcut == "⌃⌥C  or  ⌃⌥Space" }, "Alternatives joined in one row: \(rows)")
+    assertTrue(rows.allSatisfy { !$0.shortcut.contains("Ctrl") && !$0.shortcut.contains("Alt") }, "No Windows-style labels")
+    
+    // Carbon hotkeys need no Accessibility permission: registration works in a plain process
+    let wasEnabled = hotkeys.isEnabled
+    hotkeys.isEnabled = false
+    assertEqual(hotkeys.registeredHotkeyCount, 0, "Disabled: nothing registered")
+    hotkeys.isEnabled = true
+    assertEqual(hotkeys.registeredHotkeyCount + hotkeys.unavailableHotkeys.count, hotkeys.hotkeys.count, "Every hotkey is either registered or reported as taken")
+    assertTrue(hotkeys.registeredHotkeyCount > 0, "Hotkeys registered without any permission prompt")
+    hotkeys.isEnabled = wasEnabled
 }
 
 // 6. Retro Visualizer Studio Mode & Presets Tests
@@ -1123,6 +1133,136 @@ testGroup("Untagged File Titles & Playlist Scroll") {
     assertTrue(view.isTrackVisible(99), "Last track: scroll is clamped but the track is visible")
     view.scrollToTrack(0, centered: false)
     assertEqual(view.firstVisibleTrackIndex, 0, "Minimal scroll back to the first track")
+}
+
+// 20. Skin cursors, visualizer options, playback options, playlist MISC
+testGroup("Skin Cursors") {
+    // Base skin ships 8 .CUR files; they decode with the hotspot from the CUR header
+    _ = SkinManager.shared.currentSkin
+    SkinManager.shared.resetToBaseSkin()
+    let cursors = SkinManager.shared.currentSkin?.cursors ?? [:]
+    assertTrue(cursors.count >= 8, "Base skin cursors loaded (\(cursors.keys.sorted()))")
+    for name in ["TITLEBAR", "CLOSE", "POSBAR", "VOLBAL", "EQSLID", "EQTITLE", "MAINMENU", "PSIZE"] {
+        assertTrue(cursors[name] != nil, "Cursor \(name) present")
+    }
+    assertEqual(cursors["TITLEBAR"]?.image.size, NSSize(width: 32, height: 32), "Cursor image is 32x32")
+    assertTrue(SkinLoader.makeCursor(fromCUR: Data([0, 0, 1, 0, 1, 0] + Array(repeating: 0, count: 30))) == nil, "ICO (type 1) data is not accepted as a cursor")
+    
+    let main = MainWindowView()
+    main.applySkinCursorNames()
+    assertEqual(main.closeButton.skinCursorName, "CLOSE", "Close button cursor")
+    assertEqual(main.seekSlider.skinCursorName, "POSBAR", "Seek bar cursor")
+    assertEqual(main.marquee.skinCursorName, "SONGNAME", "Marquee cursor")
+    assertEqual(main.skinCursorZones().map(\.name), ["TITLEBAR", "NORMAL"], "Main window zones")
+    main.isShadeMode = true
+    assertEqual(main.closeButton.skinCursorName, "WSCLOSE", "Windowshade close cursor")
+    assertEqual(main.skinCursorZones().map(\.name), ["WSNORMAL"], "Windowshade zone")
+    
+    let pl = PlaylistWindowView(playlist: PlaylistModel())
+    pl.frame = NSRect(x: 0, y: 0, width: 275, height: 232)
+    pl.bounds = pl.frame
+    let zones = pl.skinCursorZones()
+    assertEqual(Set(zones.map(\.name)), ["PTBAR", "PNORMAL", "PVSCROLL", "PSIZE"], "Playlist zones")
+    for i in zones.indices { for j in zones.indices where i < j {
+        assertTrue(!zones[i].rect.intersects(zones[j].rect), "Playlist cursor zones don't overlap: \(zones[i].name) / \(zones[j].name)")
+    }}
+}
+
+testGroup("Visualizer Options") {
+    let vis = VisualizerView()
+    var options = VisualizerOptions()
+    options.barFalloff = .moderate
+    options.peakFalloff = .slow
+    vis.options = options
+    vis.mode = .spectrum
+    vis.spectrumAmplitudes = Array(repeating: 0.8, count: 19)
+    vis.spectrumAmplitudes = Array(repeating: 0.0, count: 19)
+    let afterOneFrame = vis.spectrumAmplitudes[0]
+    assertTrue(abs(afterOneFrame - (0.8 - VisualizerFalloff.moderate.barStep)) < 0.0001, "Bars fall by the falloff step instead of dropping to zero (got \(afterOneFrame))")
+    for _ in 0..<200 { vis.spectrumAmplitudes = Array(repeating: 0.0, count: 19) }
+    assertEqual(vis.spectrumAmplitudes[0], 0, "Bars eventually reach zero")
+    
+    // Options survive a session round-trip and old session files without the field still decode
+    var state = AppState()
+    state.visualizerOptions.analyzerStyle = .fire
+    state.visualizerOptions.bands = .thin
+    let data = try JSONEncoder().encode(state)
+    let decoded = try JSONDecoder().decode(AppState.self, from: data)
+    assertEqual(decoded.visualizerOptions.analyzerStyle, .fire, "Analyzer style persisted")
+    assertEqual(decoded.visualizerOptions.bands, .thin, "Band mode persisted")
+    var legacy = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    legacy.removeValue(forKey: "visualizerOptionsStorage")
+    legacy.removeValue(forKey: "manualPlaylistAdvanceStorage")
+    let legacyState = try JSONDecoder().decode(AppState.self, from: JSONSerialization.data(withJSONObject: legacy))
+    assertEqual(legacyState.visualizerOptions, VisualizerOptions(), "Old session.json decodes with default visualizer options")
+    assertEqual(legacyState.manualPlaylistAdvance, false, "Old session.json decodes with manual advance off")
+    
+    // 76 thin bands -> 19 thick bars (max of each group of 4)
+    let analyzer = FFTAnalyzer()
+    let fmt = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
+    let tone = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 1024)!
+    tone.frameLength = 1024
+    for c in 0..<2 { for i in 0..<1024 { tone.floatChannelData![c][i] = 0.5 * sinf(Float(i) * 0.3) } }
+    var thin = [Float](repeating: 0, count: 76), wave = [Float](repeating: 0, count: 76)
+    assertTrue(analyzer.analyze(buffer: tone, spectrum: &thin, waveform: &wave), "Thin-band analysis")
+    assertTrue(thin.filter { $0 > 0.3 }.count < 20, "A pure tone lights only a few of the 76 thin bands")
+}
+
+testGroup("Playback Options: Stop After Current, Manual Advance, Fade Stop") {
+    typealias C = PlayerCoordinator
+    assertEqual(C.actionAfterTrackEnd(stopAfterCurrent: false, manualAdvance: false, isRepeat: false), .advance, "Default: next track")
+    assertEqual(C.actionAfterTrackEnd(stopAfterCurrent: true, manualAdvance: false, isRepeat: true), .stop, "Stop after current wins over repeat")
+    assertEqual(C.actionAfterTrackEnd(stopAfterCurrent: false, manualAdvance: true, isRepeat: false), .stop, "Manual advance: stop at track end")
+    assertEqual(C.actionAfterTrackEnd(stopAfterCurrent: false, manualAdvance: true, isRepeat: true), .replayCurrent, "Manual advance + repeat: replay the track")
+    
+    // Shift+V: long fade, status changes immediately
+    let engine = AudioEngine.shared
+    defer { engine.stop() }
+    let url = try makeTestWAV(named: "fadestop.wav", seconds: 6.0)
+    _ = try loadSync(engine, url)
+    engine.play()
+    _ = spinRunLoop(until: { engine.fadeGain >= 0.999 }, timeout: 0.5)
+    engine.stop(fadeOutDuration: 1.0)
+    assertEqual(engine.status, .stopped, "Fade-out stop updates status immediately")
+    _ = spinRunLoop(until: { false }, timeout: 0.4)
+    assertTrue(engine.fadeGain > 0.2 && engine.fadeGain < 0.95, "Still fading 0.4s into a 1s fade-out (gain \(engine.fadeGain))")
+    assertTrue(spinRunLoop(until: { engine.fadeGain <= 0.0001 }, timeout: 1.5), "Fade-out stop reaches silence")
+}
+
+testGroup("Playlist MISC: Path Sort, PLS Save, HTML Export") {
+    let pl = PlaylistModel()
+    pl.add(tracks: [
+        TrackItem(url: URL(fileURLWithPath: "/Music/B/02.mp3"), title: "z", artist: "", duration: 60),
+        TrackItem(url: URL(fileURLWithPath: "/Music/A/10.mp3"), title: "y", artist: "", duration: 60),
+        TrackItem(url: URL(fileURLWithPath: "/Music/A/9.mp3"), title: "x", artist: "", duration: 60)
+    ])
+    pl.currentIndex = 0
+    let currentID = pl.currentTrack!.id
+    pl.sortByPath()
+    assertEqual(pl.tracks.map { $0.url.lastPathComponent }, ["9.mp3", "10.mp3", "02.mp3"], "Path sort is folder-first and numeric-aware")
+    assertEqual(pl.currentTrack?.id, currentID, "Current track follows the sort")
+    
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests", isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let tracks = [
+        TrackItem(url: URL(fileURLWithPath: "/Music/Кино - Кукушка.mp3"), title: "Кукушка", artist: "Кино", duration: 401),
+        TrackItem(url: URL(string: "http://radio.example.com:8000/stream")!, title: "Radio", artist: "Internet Stream", duration: 0)
+    ]
+    let plsURL = dir.appendingPathComponent("out.pls")
+    try PlaylistIO.save(tracks: tracks, to: plsURL)
+    let plsText = try String(contentsOf: plsURL, encoding: .utf8)
+    assertTrue(plsText.contains("File2=http://radio.example.com:8000/stream"), "Stream keeps its full URL in PLS")
+    assertTrue(plsText.contains("NumberOfEntries=2"), "PLS entry count")
+    let parsed = PlaylistIO.parsePLS(content: plsText, baseURL: dir)
+    assertEqual(parsed.count, 2, "Saved PLS parses back")
+    let m3uURL = dir.appendingPathComponent("out.m3u")
+    try PlaylistIO.save(tracks: tracks, to: m3uURL)
+    assertTrue(try String(contentsOf: m3uURL, encoding: .utf8).contains("\nhttp://radio.example.com:8000/stream\n"), "Stream keeps its full URL in M3U (was saved as a bare path)")
+    
+    let html = PlaylistIO.generateHTML(tracks: tracks + [TrackItem(url: URL(fileURLWithPath: "/x.mp3"), title: "<b>&</b>", artist: "", duration: 30)])
+    assertTrue(html.contains("Кино - Кукушка (6:41)"), "HTML lists 'Artist - Title (time)'")
+    assertTrue(html.contains("&lt;b&gt;&amp;&lt;/b&gt;") && !html.contains("<b>&</b>"), "HTML escapes titles")
+    assertTrue(html.contains("<b>3</b> tracks"), "HTML shows the track count")
 }
 
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")

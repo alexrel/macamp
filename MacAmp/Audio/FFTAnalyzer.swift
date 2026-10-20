@@ -16,8 +16,8 @@ public final class FFTAnalyzer {
     private var real: [Float]
     private var imag: [Float]
     private var magnitudes: [Float]
-    /// Half-open FFT bin range for each spectrum bar (logarithmic-ish grouping, as before)
-    private let barBins: [Range<Int>]
+    /// Half-open FFT bin range for each spectrum bar, per bar count (19 thick / 76 thin), computed once
+    private var barBinsByCount: [Int: [Range<Int>]] = [:]
 
     public init(fftSize: Int = 1024) {
         self.fftSize = fftSize
@@ -31,11 +31,16 @@ public final class FFTAnalyzer {
         imag = [Float](repeating: 0, count: fftSize)
         magnitudes = [Float](repeating: 0, count: fftSize / 2)
 
-        let numBars = AppConstants.Visualizer.numSpectrumBars
-        let halfSize = fftSize / 2
-        barBins = (0..<numBars).map { bar in
-            let lowFreq = pow(Double(bar) / Double(numBars), 2.0)
-            let highFreq = pow(Double(bar + 1) / Double(numBars), 2.0)
+        for count in [AppConstants.Visualizer.numSpectrumBars, AppConstants.Visualizer.numThinBands] {
+            barBinsByCount[count] = FFTAnalyzer.makeBarBins(count: count, halfSize: fftSize / 2)
+        }
+    }
+    
+    /// Logarithmic-ish grouping of FFT bins into `count` bars (low frequencies get narrow bars).
+    private static func makeBarBins(count: Int, halfSize: Int) -> [Range<Int>] {
+        (0..<count).map { bar in
+            let lowFreq = pow(Double(bar) / Double(count), 2.0)
+            let highFreq = pow(Double(bar + 1) / Double(count), 2.0)
             let lowBin = max(1, min(halfSize - 1, Int(lowFreq * Double(halfSize))))
             let highBin = max(lowBin + 1, min(halfSize, Int(highFreq * Double(halfSize))))
             return lowBin..<highBin
@@ -116,8 +121,11 @@ public final class FFTAnalyzer {
             }
         }
 
-        // 4. Group into bars, -60 dB ... 0 dB -> 0 ... 1
-        for (bar, bins) in barBins.enumerated() where bar < spectrum.count {
+        // 4. Group into bars (as many as `spectrum` has), -60 dB ... 0 dB -> 0 ... 1
+        if barBinsByCount[spectrum.count] == nil {
+            barBinsByCount[spectrum.count] = FFTAnalyzer.makeBarBins(count: spectrum.count, halfSize: half)
+        }
+        for (bar, bins) in barBinsByCount[spectrum.count]!.enumerated() {
             var maxAmp: Float = 0
             for bin in bins where magnitudes[bin] > maxAmp {
                 maxAmp = magnitudes[bin]
@@ -184,7 +192,8 @@ public final class VisualizerFrameBuffer {
     private var publishedSlot = 0
 
     public init() {
-        spectrumSlots = Array(repeating: [Float](repeating: 0, count: AppConstants.Visualizer.numSpectrumBars), count: VisualizerFrameBuffer.slotCount)
+        // Thin-band resolution (76); thick bars are derived from it by the view
+        spectrumSlots = Array(repeating: [Float](repeating: 0, count: AppConstants.Visualizer.numThinBands), count: VisualizerFrameBuffer.slotCount)
         waveformSlots = Array(repeating: [Float](repeating: 0, count: AppConstants.Visualizer.numWaveformPoints), count: VisualizerFrameBuffer.slotCount)
     }
 

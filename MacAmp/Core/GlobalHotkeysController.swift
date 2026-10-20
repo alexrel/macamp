@@ -1,12 +1,24 @@
 import Cocoa
-import ApplicationServices
+import Carbon.HIToolbox
 
-/// Manages background global hotkeys allowing control of MacAmp from any application.
-/// Uses NSEvent global monitor for classic Winamp Ctrl+Alt combinations,
-/// and provides accessibility permission detection and prompts.
+/// One system-wide hotkey. `GlobalHotkeysController.hotkeys` is the single source of truth:
+/// it is what gets registered and what Preferences displays.
+public struct GlobalHotkey {
+    public let action: String
+    /// Mac-style label, e.g. "⌃⌥X"
+    public let label: String
+    let keyCode: UInt32
+    let perform: () -> Void
+}
+
+/// Classic Winamp global hotkeys (Ctrl+Alt+key on Windows, ⌃⌥+key on the Mac), working while MacAmp is in the background.
+///
+/// Uses Carbon `RegisterEventHotKey`: macOS delivers only the registered combinations to the app, so no
+/// Accessibility / Input Monitoring permission is needed, and the keystroke is consumed instead of also
+/// reaching the frontmost app (an `NSEvent` global monitor needed Accessibility and only observed keys).
 public final class GlobalHotkeysController: ObservableObject {
     public static let shared = GlobalHotkeysController()
-    
+
     @Published public var isEnabled: Bool {
         didSet {
             PersistenceManager.shared.state.isGlobalHotkeysEnabled = isEnabled
@@ -18,91 +30,112 @@ public final class GlobalHotkeysController: ObservableObject {
             }
         }
     }
-    
-    @Published public var isAccessibilityTrusted: Bool = false
-    
-    private var globalMonitor: Any?
-    
+
+    /// Combinations another app already owns (registration failed); shown in Preferences.
+    @Published public private(set) var unavailableHotkeys: [String] = []
+
+    public static let modifierLabel = "⌃⌥"
+
+    public let hotkeys: [GlobalHotkey] = {
+        let coord = { PlayerCoordinator.shared }
+        func key(_ action: String, _ symbol: String, _ code: Int, _ perform: @escaping () -> Void) -> GlobalHotkey {
+            GlobalHotkey(action: action, label: GlobalHotkeysController.modifierLabel + symbol, keyCode: UInt32(code), perform: perform)
+        }
+        return [
+            key("Play", "X", kVK_ANSI_X) { coord().handlePlay() },
+            key("Play / Pause", "C", kVK_ANSI_C) { coord().handlePlayPause() },
+            key("Play / Pause", "Space", kVK_Space) { coord().handlePlayPause() },
+            key("Stop", "V", kVK_ANSI_V) { coord().handleStop() },
+            key("Previous Track", "Z", kVK_ANSI_Z) { coord().handlePrev() },
+            key("Previous Track", "←", kVK_LeftArrow) { coord().handlePrev() },
+            key("Next Track", "B", kVK_ANSI_B) { coord().handleNext() },
+            key("Next Track", "→", kVK_RightArrow) { coord().handleNext() },
+            key("Volume Up", "↑", kVK_UpArrow) { coord().increaseVolume(by: 0.05) },
+            key("Volume Down", "↓", kVK_DownArrow) { coord().decreaseVolume(by: 0.05) },
+            key("Toggle Mute", "M", kVK_ANSI_M) { coord().toggleMute() }
+        ]
+    }()
+
+    /// Rows for Preferences: one per action, alternatives joined ("⌃⌥C  or  ⌃⌥Space").
+    public var displayRows: [(action: String, shortcut: String)] {
+        var rows: [(action: String, shortcut: String)] = []
+        for hotkey in hotkeys {
+            if let i = rows.firstIndex(where: { $0.action == hotkey.action }) {
+                rows[i].shortcut += "  or  " + hotkey.label
+            } else {
+                rows.append((hotkey.action, hotkey.label))
+            }
+        }
+        return rows
+    }
+
+    private var hotKeyRefs: [EventHotKeyRef] = []
+    private var eventHandler: EventHandlerRef?
+    private static let signature: OSType = 0x4D414D50 // 'MAMP'
+
+    public var registeredHotkeyCount: Int { hotKeyRefs.count }
+
     private init() {
         self.isEnabled = PersistenceManager.shared.state.isGlobalHotkeysEnabled
-        self.isAccessibilityTrusted = AXIsProcessTrusted()
     }
-    
+
     deinit {
         stopMonitoring()
     }
-    
+
     public func setup() {
-        checkAccessibilityPermission()
         if isEnabled {
             startMonitoring()
         }
     }
-    
-    @discardableResult
-    public func checkAccessibilityPermission() -> Bool {
-        let trusted = AXIsProcessTrusted()
-        DispatchQueue.main.async {
-            self.isAccessibilityTrusted = trusted
-        }
-        return trusted
-    }
-    
-    public func requestAccessibilityPermission() {
-        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        let trusted = AXIsProcessTrustedWithOptions(options)
-        DispatchQueue.main.async {
-            self.isAccessibilityTrusted = trusted
-        }
-    }
-    
+
     public func startMonitoring() {
-        guard globalMonitor == nil else { return }
-        
-        // NSEvent global monitor intercepts key events when MacAmp is in the background
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.handleGlobalKeyEvent(event)
-        }
-    }
-    
-    public func stopMonitoring() {
-        if let monitor = globalMonitor {
-            NSEvent.removeMonitor(monitor)
-            globalMonitor = nil
-        }
-    }
-    
-    private func handleGlobalKeyEvent(_ event: NSEvent) {
-        guard isEnabled else { return }
-        
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let isCtrlAlt = flags.contains(.control) && flags.contains(.option)
-        
-        guard isCtrlAlt else { return }
-        
-        DispatchQueue.main.async {
-            let coord = PlayerCoordinator.shared
-            
-            switch event.keyCode {
-            case 7: // X -> Play
-                coord.handlePlay()
-            case 8, 49: // C or Space -> Toggle Play/Pause
-                coord.handlePlayPause()
-            case 9: // V -> Stop
-                coord.handleStop()
-            case 6, 123: // Z or Left Arrow -> Previous Track
-                coord.handlePrev()
-            case 11, 124: // B or Right Arrow -> Next Track
-                coord.handleNext()
-            case 126: // Up Arrow -> Volume Up
-                coord.increaseVolume(by: 0.05)
-            case 125: // Down Arrow -> Volume Down
-                coord.decreaseVolume(by: 0.05)
-            case 46: // M -> Toggle Mute
-                coord.toggleMute()
-            default:
-                break
+        guard hotKeyRefs.isEmpty else { return }
+        installEventHandlerIfNeeded()
+
+        let modifiers = UInt32(controlKey | optionKey)
+        var unavailable: [String] = []
+        for (index, hotkey) in hotkeys.enumerated() {
+            var ref: EventHotKeyRef?
+            let id = EventHotKeyID(signature: GlobalHotkeysController.signature, id: UInt32(index))
+            let status = RegisterEventHotKey(hotkey.keyCode, modifiers, id, GetApplicationEventTarget(), 0, &ref)
+            if status == noErr, let ref {
+                hotKeyRefs.append(ref)
+            } else {
+                unavailable.append(hotkey.label)
             }
         }
+        unavailableHotkeys = unavailable
+    }
+
+    public func stopMonitoring() {
+        for ref in hotKeyRefs {
+            UnregisterEventHotKey(ref)
+        }
+        hotKeyRefs.removeAll()
+        unavailableHotkeys = []
+    }
+
+    private func installEventHandlerIfNeeded() {
+        guard eventHandler == nil else { return }
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+            guard let event else { return OSStatus(eventNotHandledErr) }
+            var hotKeyID = EventHotKeyID()
+            let status = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                                           nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
+            guard status == noErr, hotKeyID.signature == GlobalHotkeysController.signature else {
+                return OSStatus(eventNotHandledErr)
+            }
+            GlobalHotkeysController.shared.trigger(index: Int(hotKeyID.id))
+            return noErr
+        }, 1, &spec, nil, &eventHandler)
+    }
+
+    /// Runs the action for a registered hotkey (exposed for tests).
+    public func trigger(index: Int) {
+        guard isEnabled, hotkeys.indices.contains(index) else { return }
+        let action = hotkeys[index].perform
+        DispatchQueue.main.async { action() }
     }
 }
