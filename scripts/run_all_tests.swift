@@ -186,6 +186,54 @@ testGroup("Window Position & Layout Persistence") {
     assertTrue(group.contains(.playlist), "Restored group contains Playlist")
 }
 
+// 2b. Multi-Monitor Safety & Display Disconnect/Reconnect Tests
+testGroup("Multi-Monitor Safety & Display Disconnect/Reconnect") {
+    let wlm = WindowLayoutManager.shared
+    
+    // 1. isRectVisibleOnAnyScreen tests
+    let offscreenRect = NSRect(x: 99999, y: 99999, width: 275, height: 116)
+    assertTrue(!wlm.isRectVisibleOnAnyScreen(offscreenRect), "Offscreen rect must NOT be reported as visible")
+    
+    if let screen = NSScreen.main {
+        let onscreenRect = NSRect(x: screen.visibleFrame.midX - 100, y: screen.visibleFrame.midY - 50, width: 200, height: 100)
+        assertTrue(wlm.isRectVisibleOnAnyScreen(onscreenRect), "Onscreen rect inside visibleFrame must be reported as visible")
+    }
+    
+    // 2. Simulate windows on a disconnected secondary monitor
+    let offX: CGFloat = 88000
+    let offY: CGFloat = 88000
+    let winM = NSWindow(contentRect: NSRect(x: offX, y: offY + 116, width: 275, height: 116), styleMask: .borderless, backing: .buffered, defer: false)
+    let winE = NSWindow(contentRect: NSRect(x: offX, y: offY, width: 275, height: 116), styleMask: .borderless, backing: .buffered, defer: false)
+    
+    wlm.register(window: winM, for: .main)
+    wlm.register(window: winE, for: .equalizer)
+    winM.orderFront(nil)
+    winE.orderFront(nil)
+    wlm.updateAdjacencies()
+    
+    // 3. Screen parameters changed (monitor disconnect)
+    wlm.handleScreenParametersChanged()
+    
+    // Verify savedExternalPositions was recorded
+    assertTrue(wlm.savedExternalPositions != nil, "savedExternalPositions must be populated when windows were on a disconnected screen")
+    assertEqual(wlm.savedExternalPositions?[.main]?.x, offX, "Saved external X matches original offscreen coordinate")
+    assertEqual(wlm.savedExternalPositions?[.main]?.y, offY + 116, "Saved external Y matches original offscreen coordinate")
+    
+    // Verify windows were relocated onto the visible screen
+    assertTrue(wlm.isRectVisibleOnAnyScreen(winM.frame), "Main window must now be visible on an active screen")
+    assertTrue(wlm.isRectVisibleOnAnyScreen(winE.frame), "Equalizer window must now be visible on an active screen")
+    
+    // Verify relative docking offset is preserved
+    let deltaY = round(winM.frame.minY - winE.frame.maxY)
+    assertEqual(deltaY, 0.0, "Docked windows must preserve adjacency on relocation")
+    assertEqual(winM.frame.minX, winE.frame.minX, "Docked windows must preserve X alignment on relocation")
+    
+    // 4. Manual drag should cancel pending external restore
+    _ = wlm.startDrag(for: .main)
+    assertTrue(wlm.hasUserMovedWindowsSinceRelocation, "User manual drag marks windows as moved")
+    assertTrue(wlm.savedExternalPositions == nil, "User manual drag clears saved external positions")
+}
+
 // 3. ICY Streaming & Metadata Parsing Tests
 testGroup("ICY Streaming & Metadata Parser") {
     let dummyURL = URL(string: "http://streaming.somafm.com:80/groovesalad-128-mp3")!

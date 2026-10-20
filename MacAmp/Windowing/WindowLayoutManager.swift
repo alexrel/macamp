@@ -21,6 +21,11 @@ public class WindowLayoutManager: NSObject {
     public var currentScale: CGFloat = 1.0
     public var onLayoutChanged: (() -> Void)?
     
+    /// Stored window origins when temporarily relocated from a disconnected external display.
+    public var savedExternalPositions: [WindowID: NSPoint]? = nil
+    /// Tracks if the user intentionally dragged/moved windows after they were brought to the main display.
+    public var hasUserMovedWindowsSinceRelocation: Bool = false
+    
     private override init() {
         super.init()
     }
@@ -39,6 +44,8 @@ public class WindowLayoutManager: NSObject {
     
     // MARK: - Dragging & Snapping
     public func startDrag(for id: WindowID) -> [WindowID: NSPoint] {
+        hasUserMovedWindowsSinceRelocation = true
+        savedExternalPositions = nil
         updateAdjacencies()
         // Main window moves all attached visible windows; other windows move individually
         let group: Set<WindowID> = (id == .main) ? findGroup(for: id) : [id]
@@ -459,6 +466,104 @@ public class WindowLayoutManager: NSObject {
         }
     }
     
+    // MARK: - Multi-Monitor & Screen Bounds Clamping
+    
+    /// Checks whether a given rect intersects any active connected screen by at least minWidth x minHeight.
+    public func isRectVisibleOnAnyScreen(_ rect: NSRect, minVisibleWidth: CGFloat = 50, minVisibleHeight: CGFloat = 30) -> Bool {
+        for screen in NSScreen.screens {
+            let intersection = screen.visibleFrame.intersection(rect)
+            if !intersection.isNull && intersection.width >= minVisibleWidth && intersection.height >= minVisibleHeight {
+                return true
+            }
+        }
+        return false
+    }
+    
+    /// Handles display connection / disconnection and resolution changes.
+    /// If an external screen was disconnected, moves off-screen windows cleanly to the main screen.
+    /// If the external screen was reconnected and windows were not moved by the user, restores them to the external screen.
+    public func handleScreenParametersChanged() {
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return }
+        
+        // 1. Try to restore to external monitor if it was reconnected and user hasn't moved windows
+        if let saved = savedExternalPositions, !hasUserMovedWindowsSinceRelocation {
+            var canRestore = true
+            for (id, pos) in saved {
+                guard let win = windows[id] else { continue }
+                let rect = NSRect(origin: pos, size: win.frame.size)
+                if !isRectVisibleOnAnyScreen(rect) {
+                    canRestore = false
+                    break
+                }
+            }
+            
+            if canRestore {
+                for (id, pos) in saved {
+                    windows[id]?.setFrameOrigin(pos)
+                }
+                savedExternalPositions = nil
+                updateAdjacencies()
+                clampToScreen()
+                onLayoutChanged?()
+                return
+            }
+        }
+        
+        // 2. Check each window group to see if any are now off-screen (disconnected monitor)
+        var processed = Set<WindowID>()
+        for id in windows.keys {
+            guard windows[id] != nil, !processed.contains(id) else { continue }
+            let group = findGroup(for: id)
+            processed.formUnion(group)
+            
+            var minX = CGFloat.infinity
+            var maxX = -CGFloat.infinity
+            var minY = CGFloat.infinity
+            var maxY = -CGFloat.infinity
+            
+            for gid in group {
+                guard let gWin = windows[gid] else { continue }
+                minX = min(minX, gWin.frame.minX)
+                maxX = max(maxX, gWin.frame.maxX)
+                minY = min(minY, gWin.frame.minY)
+                maxY = max(maxY, gWin.frame.maxY)
+            }
+            guard minX < maxX && minY < maxY else { continue }
+            let groupRect = NSRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            
+            if !isRectVisibleOnAnyScreen(groupRect) {
+                // Save current positions for restoration when monitor is reconnected
+                var origins: [WindowID: NSPoint] = [:]
+                for gid in group {
+                    if let gWin = windows[gid] {
+                        origins[gid] = gWin.frame.origin
+                    }
+                }
+                self.savedExternalPositions = origins
+                self.hasUserMovedWindowsSinceRelocation = false
+                
+                // Shift whole group onto the primary screen's visible frame
+                let mainScreen = NSScreen.main ?? screens[0]
+                let visible = mainScreen.visibleFrame
+                let groupW = maxX - minX
+                let targetX = round(visible.minX + max(20.0, (visible.width - groupW) / 2.0))
+                let targetTopY = round(visible.maxY - 50.0)
+                let shiftX = round(targetX - minX)
+                let shiftY = round(targetTopY - maxY)
+                
+                for gid in group {
+                    guard let gWin = windows[gid] else { continue }
+                    let origin = gWin.frame.origin
+                    gWin.setFrameOrigin(NSPoint(x: round(origin.x + shiftX), y: round(origin.y + shiftY)))
+                }
+            }
+        }
+        
+        // 3. Ensure all windows are clamped into visible screen boundaries
+        clampToScreen()
+    }
+    
     public func clampToScreen() {
         let screens = NSScreen.screens
         guard !screens.isEmpty else { return }
@@ -467,12 +572,9 @@ public class WindowLayoutManager: NSObject {
         var didShift = false
         
         for id in windows.keys {
-            guard let win = windows[id], win.isVisible, !processed.contains(id) else { continue }
+            guard windows[id] != nil, !processed.contains(id) else { continue }
             let group = findGroup(for: id)
             processed.formUnion(group)
-            
-            let groupScreen = win.screen ?? NSScreen.main ?? screens[0]
-            let visible = groupScreen.visibleFrame
             
             var minX = CGFloat.infinity
             var maxX = -CGFloat.infinity
@@ -480,7 +582,7 @@ public class WindowLayoutManager: NSObject {
             var maxY = -CGFloat.infinity
             
             for gid in group {
-                guard let gWin = windows[gid], gWin.isVisible else { continue }
+                guard let gWin = windows[gid] else { continue }
                 minX = min(minX, gWin.frame.minX)
                 maxX = max(maxX, gWin.frame.maxX)
                 minY = min(minY, gWin.frame.minY)
@@ -488,27 +590,56 @@ public class WindowLayoutManager: NSObject {
             }
             
             guard minX < maxX && minY < maxY else { continue }
+            let groupRect = NSRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+            
+            // Find which screen contains the largest portion of the group
+            var targetScreen: NSScreen? = nil
+            var maxArea: CGFloat = 0
+            for screen in screens {
+                let inter = screen.visibleFrame.intersection(groupRect)
+                if !inter.isNull && !inter.isEmpty {
+                    let area = inter.width * inter.height
+                    if area > maxArea {
+                        maxArea = area
+                        targetScreen = screen
+                    }
+                }
+            }
+            
+            let isCompletelyOffscreen = (targetScreen == nil) || (maxArea < 50.0)
+            let chosenScreen = targetScreen ?? NSScreen.main ?? screens[0]
+            let visible = chosenScreen.visibleFrame
             
             var shiftX: CGFloat = 0
             var shiftY: CGFloat = 0
             
-            if maxY > visible.maxY {
-                shiftY = visible.maxY - maxY
-            }
-            if minY + shiftY < visible.minY {
-                shiftY = visible.minY - minY
-            }
-            if minX < visible.minX {
-                shiftX = visible.minX - minX
-            } else if maxX > visible.maxX {
-                shiftX = visible.maxX - maxX
+            if isCompletelyOffscreen {
+                // Relocate cleanly onto the visible frame of chosen screen
+                let groupW = maxX - minX
+                let targetX = round(visible.minX + max(20.0, (visible.width - groupW) / 2.0))
+                shiftX = targetX - minX
+                let targetTopY = round(visible.maxY - 50.0)
+                shiftY = targetTopY - maxY
+            } else {
+                // Window intersects this screen; clamp overflowing edges
+                if maxY > visible.maxY {
+                    shiftY = visible.maxY - maxY
+                }
+                if minY + shiftY < visible.minY {
+                    shiftY = visible.minY - minY
+                }
+                if minX < visible.minX {
+                    shiftX = visible.minX - minX
+                } else if maxX > visible.maxX {
+                    shiftX = visible.maxX - maxX
+                }
             }
             
             if shiftX != 0 || shiftY != 0 {
                 let roundedShiftX = round(shiftX)
                 let roundedShiftY = round(shiftY)
                 for gid in group {
-                    guard let gWin = windows[gid], gWin.isVisible else { continue }
+                    guard let gWin = windows[gid] else { continue }
                     let origin = gWin.frame.origin
                     gWin.setFrameOrigin(NSPoint(x: round(origin.x + roundedShiftX), y: round(origin.y + roundedShiftY)))
                 }
@@ -518,6 +649,7 @@ public class WindowLayoutManager: NSObject {
         
         if didShift {
             updateAdjacencies()
+            onLayoutChanged?()
         }
     }
 }

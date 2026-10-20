@@ -81,15 +81,37 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             
             let mW = (mPos.count >= 4) ? CGFloat(mPos[2]) : (AppConstants.Window.width * scale)
             let mH = (mPos.count >= 4) ? CGFloat(mPos[3]) : (state.isMainWindowShade ? AppConstants.Window.shadeHeight * scale : AppConstants.Window.height * scale)
-            mainRect = NSRect(x: CGFloat(mPos[0]), y: CGFloat(mPos[1]), width: mW, height: mH)
+            let rawMainRect = NSRect(x: CGFloat(mPos[0]), y: CGFloat(mPos[1]), width: mW, height: mH)
             
             let eW = (ePos.count >= 4) ? CGFloat(ePos[2]) : (AppConstants.Window.width * scale)
             let eH = (ePos.count >= 4) ? CGFloat(ePos[3]) : (state.isEqWindowShade ? AppConstants.Window.shadeHeight * scale : AppConstants.Window.height * scale)
-            eqRect = NSRect(x: CGFloat(ePos[0]), y: CGFloat(ePos[1]), width: eW, height: eH)
+            let rawEqRect = NSRect(x: CGFloat(ePos[0]), y: CGFloat(ePos[1]), width: eW, height: eH)
             
             let pW = (pPos.count >= 4) ? CGFloat(pPos[2]) : plW
             let pH = (pPos.count >= 4) ? CGFloat(pPos[3]) : (state.isPlaylistShade ? AppConstants.Window.shadeHeight : plH)
-            plRect = NSRect(x: CGFloat(pPos[0]), y: CGFloat(pPos[1]), width: pW, height: pH)
+            let rawPlRect = NSRect(x: CGFloat(pPos[0]), y: CGFloat(pPos[1]), width: pW, height: pH)
+            
+            // Check if saved position is visible on any currently connected screen
+            if windowManager.isRectVisibleOnAnyScreen(rawMainRect) {
+                mainRect = rawMainRect
+                eqRect = rawEqRect
+                plRect = rawPlRect
+            } else {
+                // Saved positions were on a disconnected display!
+                windowManager.savedExternalPositions = [
+                    .main: rawMainRect.origin,
+                    .equalizer: rawEqRect.origin,
+                    .playlist: rawPlRect.origin
+                ]
+                windowManager.hasUserMovedWindowsSinceRelocation = false
+                
+                // Relocate entire docked cluster to main screen preserving relative offsets
+                let deltaX = defaultOriginX - rawMainRect.minX
+                let deltaY = defaultOriginY - rawMainRect.minY
+                mainRect = NSRect(origin: NSPoint(x: round(rawMainRect.minX + deltaX), y: round(rawMainRect.minY + deltaY)), size: rawMainRect.size)
+                eqRect = NSRect(origin: NSPoint(x: round(rawEqRect.minX + deltaX), y: round(rawEqRect.minY + deltaY)), size: rawEqRect.size)
+                plRect = NSRect(origin: NSPoint(x: round(rawPlRect.minX + deltaX), y: round(rawPlRect.minY + deltaY)), size: rawPlRect.size)
+            }
         } else {
             // Default standard Winamp layout (Main top -> EQ middle -> PL bottom)
             let mainH = state.isMainWindowShade ? AppConstants.Window.shadeHeight * scale : AppConstants.Window.height * scale
@@ -431,6 +453,14 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateTitleBarFocus() }
+            .store(in: &cancellables)
+            
+        // Observe screen configuration changes (monitor connect/disconnect, resolution changes)
+        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.windowManager.handleScreenParametersChanged()
+            }
             .store(in: &cancellables)
     }
     
@@ -936,6 +966,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         if let main = mainWindow, !main.isMiniaturized {
             main.orderFront(nil)
         }
+        
+        windowManager.updateAdjacencies()
+        windowManager.clampToScreen()
         
         if let key = keyWin as? WinampWindow {
             key.makeKeyAndOrderFront(nil)
