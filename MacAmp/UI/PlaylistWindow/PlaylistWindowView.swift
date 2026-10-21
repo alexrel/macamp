@@ -1,3 +1,4 @@
+import UniformTypeIdentifiers
 import Cocoa
 import Foundation
 
@@ -266,7 +267,55 @@ public class PlaylistWindowView: WinampControlView {
         self.playlist = playlist
         super.init(frame: NSRect(x: 0, y: 0, width: AppConstants.Window.width, height: AppConstants.Window.height))
         setupControls()
+        registerForDraggedTypes([.fileURL])
     }
+    
+    // MARK: - Drop files / folders / playlists from Finder (Winamp: inserted at the drop position)
+    
+    /// Insertion index for a point in view coordinates (rows split at their middle; below the list = end).
+    func dropIndex(at point: NSPoint) -> Int {
+        let topH = AppConstants.Playlist.Layout.topBarHeight
+        let rowH = AppConstants.Playlist.trackRowHeight
+        guard !isShadeMode, point.y >= topH else { return isShadeMode ? playlist.tracks.count : scrollOffset }
+        let row = Int(((point.y - topH) / rowH).rounded())
+        return max(0, min(playlist.tracks.count, scrollOffset + row))
+    }
+    
+    public override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        draggingUpdated(sender)
+    }
+    
+    public override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard !PlayerCoordinator.droppedFileURLs(from: sender.draggingPasteboard).isEmpty else { return [] }
+        let index = dropIndex(at: convert(sender.draggingLocation, from: nil))
+        if dropInsertionIndex != index {
+            dropInsertionIndex = index
+            needsDisplay = true
+        }
+        return .copy
+    }
+    
+    public override func draggingExited(_ sender: NSDraggingInfo?) {
+        dropInsertionIndex = nil
+        needsDisplay = true
+    }
+    
+    public override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = PlayerCoordinator.droppedFileURLs(from: sender.draggingPasteboard)
+        let index = dropInsertionIndex ?? dropIndex(at: convert(sender.draggingLocation, from: nil))
+        dropInsertionIndex = nil
+        needsDisplay = true
+        guard !urls.isEmpty else { return false }
+        if let onFilesDropped {
+            onFilesDropped(urls.map(\.path), index)
+        } else {
+            PlayerCoordinator.shared.handleFilesDroppedInPlaylist(urls.map(\.path), at: index)
+        }
+        return true
+    }
+    
+    /// Overridable for tests; defaults to PlayerCoordinator.handleFilesDroppedInPlaylist.
+    public var onFilesDropped: (([String], Int) -> Void)?
     
     public required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
@@ -875,7 +924,7 @@ public class PlaylistWindowView: WinampControlView {
     
     @objc private func handleLoadList() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "m3u")!, .init(filenameExtension: "pls")!]
+        panel.allowedContentTypes = AppConstants.Audio.playlistExtensions.compactMap { UTType(filenameExtension: $0) }
         if panel.runModal() == .OK, let url = panel.url {
             let loaded = PlaylistIO.loadPlaylist(from: url)
             playlist.clear()
@@ -1011,7 +1060,7 @@ public class PlaylistWindowView: WinampControlView {
         let font = NSFont(name: style.fontName, size: 9) ?? NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
         
         let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineBreakMode = .byTruncatingTail
+        paragraphStyle.lineBreakMode = .byClipping // letters are cut at the duration column, no ellipsis
         
         // Time ticks only invalidate the mini time rect in the bottom bar: skip laying out track text then
         let rowsToDraw = dirtyRect.intersects(listRect) ? visibleRows : 0
@@ -1040,14 +1089,16 @@ public class PlaylistWindowView: WinampControlView {
                 .paragraphStyle: paragraphStyle
             ]
             
-            // Title on left
+            // Duration on the right, measured; the title uses all the room up to it (Winamp clips the title
+            // right before the time instead of reserving a fixed 52 px column)
+            let durStr = track.formattedDuration
+            let durWidth = ceil((durStr as NSString).size(withAttributes: [.font: font]).width)
+            let durRect = NSRect(x: rowRect.maxX - 3 - durWidth, y: rowRect.minY + 1, width: durWidth + 1, height: rowH - 1)
             let titleStr = track.formattedTitle(with: trackIndex + 1)
-            let textRect = NSRect(x: rowRect.minX + 2, y: rowRect.minY + 1, width: rowRect.width - 56, height: rowH - 1)
+            let textRect = NSRect(x: rowRect.minX + 2, y: rowRect.minY + 1,
+                                  width: max(0, durRect.minX - 6 - (rowRect.minX + 2)), height: rowH - 1)
             (titleStr as NSString).draw(in: textRect, withAttributes: attrs)
             
-            // Duration on right
-            let durStr = track.formattedDuration
-            let durRect = NSRect(x: rowRect.maxX - 52, y: rowRect.minY + 1, width: 50, height: rowH - 1)
             let durAttrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: textColor,

@@ -140,7 +140,7 @@ public class MainWindowView: WinampControlView {
         visualizer.frame = Layout.visualizer
         addSubview(visualizer)
         
-        marquee.frame = Layout.marquee
+        marquee.frame = MarqueeView.preferredFrame
         addSubview(marquee)
         
         // 4. Sliders (Volume, Balance, Seek)

@@ -10,7 +10,9 @@ public enum PlaylistIO {
         let content = TextEncoding.decode(data)
         
         let ext = url.pathExtension.lowercased()
-        if ext == "pls" {
+        if ext == "xspf" || content.contains("<playlist") && content.contains("xspf.org") {
+            return parseXSPF(data: data, baseURL: url.deletingLastPathComponent())
+        } else if ext == "pls" {
             return parsePLS(content: content, baseURL: url.deletingLastPathComponent())
         } else {
             return parseM3U(content: content, baseURL: url.deletingLastPathComponent())
@@ -38,17 +40,9 @@ public enum PlaylistIO {
                     nextTitle = String(parts[1]).trimmingCharacters(in: .whitespaces)
                 }
             } else if !line.hasPrefix("#") {
-                // File path or URL
-                let trackURL: URL
-                if line.contains("://") {
-                    trackURL = URL(string: line) ?? URL(fileURLWithPath: line)
-                } else if line.hasPrefix("/") {
-                    trackURL = URL(fileURLWithPath: line)
-                } else {
-                    trackURL = baseURL.appendingPathComponent(line)
-                }
+                let trackURL = resolveEntry(line, baseURL: baseURL)
                 
-                let title = nextTitle.isEmpty ? trackURL.deletingPathExtension().lastPathComponent : nextTitle
+                let title = nextTitle.isEmpty ? trackURL.deletingPathExtension().lastPathComponent : displayTitle(nextTitle, for: trackURL)
                 let item = TrackItem.create(from: trackURL, titleFallback: title, durationFallback: nextDuration)
                 items.append(item)
                 
@@ -57,6 +51,91 @@ public enum PlaylistIO {
             }
         }
         return items
+    }
+    
+    /// VLC writes the file name, extension included, as the #EXTINF title ("Song [id].mp3");
+    /// show it like Winamp does, without the extension.
+    static func displayTitle(_ title: String, for url: URL) -> String {
+        let ext = url.pathExtension
+        guard !ext.isEmpty, title.lowercased().hasSuffix("." + ext.lowercased()) else { return title }
+        return String(title.dropLast(ext.count + 1))
+    }
+    
+    /// Turns a playlist entry into a URL. Handles what other players write:
+    /// absolute and relative paths, `file://` URLs, Windows backslashes, and percent-encoded paths
+    /// (e.g. `mp3/%D0%9A%D0%B8%D0%BD%D0%BE.mp3` from yt-dlp / foobar2000 / VLC exports).
+    static func resolveEntry(_ rawEntry: String, baseURL: URL) -> URL {
+        let entry = rawEntry.trimmingCharacters(in: .whitespaces)
+        if entry.lowercased().hasPrefix("file://"), let url = URL(string: entry) {
+            return url
+        }
+        if entry.contains("://") {
+            return URL(string: entry) ?? URL(fileURLWithPath: entry)
+        }
+        let path = entry.replacingOccurrences(of: "\\", with: "/")
+        /// Absolute ("/Users/..."), home-relative ("~/Music/...") or relative to the playlist's folder
+        /// ("song.mp3", "mp3/song.mp3", "../Other/song.mp3"); "." and ".." are resolved.
+        func fileURL(_ p: String) -> URL {
+            let url: URL
+            if p.hasPrefix("/") {
+                url = URL(fileURLWithPath: p)
+            } else if p.hasPrefix("~") {
+                url = URL(fileURLWithPath: (p as NSString).expandingTildeInPath)
+            } else {
+                url = baseURL.appendingPathComponent(p)
+            }
+            return url.standardizedFileURL
+        }
+        let literal = fileURL(path)
+        if !FileManager.default.fileExists(atPath: literal.path),
+           path.contains("%"), let decoded = path.removingPercentEncoding {
+            let candidate = fileURL(decoded)
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        return literal
+    }
+    
+    // MARK: - XSPF Parser (VLC's native playlist format)
+    /// `<track><location>file:///…</location><title>…</title><creator>…</creator><duration>ms</duration></track>`.
+    /// Locations are URIs: absolute `file://`, stream `http://`, or relative to the playlist (percent-encoded).
+    static func parseXSPF(data: Data, baseURL: URL) -> [TrackItem] {
+        final class Collector: NSObject, XMLParserDelegate {
+            struct Entry { var location = "", title = "", creator = "", durationMs: Double = 0 }
+            var entries: [Entry] = []
+            private var current: Entry?
+            private var text = ""
+            func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String] = [:]) {
+                if name == "track" { current = Entry() }
+                text = ""
+            }
+            func parser(_ parser: XMLParser, foundCharacters string: String) { text += string }
+            func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
+                let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                switch name {
+                case "location": if current?.location.isEmpty == true { current?.location = value }
+                case "title": current?.title = value
+                case "creator": current?.creator = value
+                case "duration": current?.durationMs = Double(value) ?? 0
+                case "track":
+                    if let entry = current, !entry.location.isEmpty { entries.append(entry) }
+                    current = nil
+                default: break
+                }
+                text = ""
+            }
+        }
+        let collector = Collector()
+        let parser = XMLParser(data: data)
+        parser.delegate = collector
+        parser.parse()
+        return collector.entries.map { entry in
+            let url = resolveEntry(entry.location, baseURL: baseURL)
+            let title = entry.title.isEmpty ? url.deletingPathExtension().lastPathComponent
+                : (entry.creator.isEmpty ? entry.title : "\(entry.creator) - \(entry.title)")
+            return TrackItem.create(from: url, titleFallback: title, durationFallback: entry.durationMs / 1000)
+        }
     }
     
     // MARK: - PLS Parser
@@ -88,14 +167,7 @@ public enum PlaylistIO {
         
         for idx in files.keys.sorted() {
             guard let path = files[idx] else { continue }
-            let trackURL: URL
-            if path.contains("://") {
-                trackURL = URL(string: path) ?? URL(fileURLWithPath: path)
-            } else if path.hasPrefix("/") {
-                trackURL = URL(fileURLWithPath: path)
-            } else {
-                trackURL = baseURL.appendingPathComponent(path)
-            }
+            let trackURL = resolveEntry(path, baseURL: baseURL)
             let title = titles[idx] ?? trackURL.deletingPathExtension().lastPathComponent
             let dur = lengths[idx] ?? 0
             items.append(TrackItem.create(from: trackURL, titleFallback: title, durationFallback: dur))

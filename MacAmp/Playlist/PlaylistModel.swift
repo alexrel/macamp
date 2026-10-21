@@ -272,6 +272,23 @@ public class PlaylistModel: ObservableObject {
         prefetchMetadata(for: newTracks.map { $0.id })
     }
     
+    /// Inserts tracks before `index` (clamped; `tracks.count` = append), keeping the current track,
+    /// selection and shuffle order pointing at the same songs. Used for drops into the playlist.
+    public func insert(tracks newTracks: [TrackItem], at index: Int) {
+        guard !newTracks.isEmpty else { return }
+        let position = max(0, min(index, tracks.count))
+        let currentID = currentTrack?.id
+        tracks.insert(contentsOf: newTracks, at: position)
+        if let currentID {
+            currentIndex = tracks.firstIndex { $0.id == currentID }
+        } else {
+            currentIndex = position
+        }
+        selectedIndices = Set(position..<(position + newTracks.count))
+        syncShuffleOrder()
+        prefetchMetadata(for: newTracks.map { $0.id })
+    }
+    
     public func updateTrack(id: UUID, duration: TimeInterval? = nil, artist: String? = nil, title: String? = nil) {
         guard let idx = tracks.firstIndex(where: { $0.id == id }) else { return }
         updateTrack(at: idx, duration: duration, artist: artist, title: title)

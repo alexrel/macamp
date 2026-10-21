@@ -92,6 +92,20 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>XSPF Playlist</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>CFBundleTypeIconFile</key>
+			<string>WinampPlaylist</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>xspf</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>Winamp Classic Skin</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>

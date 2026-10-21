@@ -920,18 +920,35 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     }
     
     // MARK: - Drag & Drop Handling
+    /// Files dropped on the main or equalizer window: appended to the playlist; if nothing is playing,
+    /// the first dropped track starts.
     public func handleDroppedFiles(_ paths: [String]) {
         let tracksToAdd = collectTracks(fromPaths: paths)
-        if !tracksToAdd.isEmpty {
-            let wasEmpty = playlist.tracks.isEmpty
-            let wasStopped = (audioEngine.status == .stopped)
-            playlist.add(tracks: tracksToAdd)
-            plView.needsDisplay = true
-            
-            if wasEmpty || wasStopped, let first = playlist.currentTrack ?? playlist.tracks.first {
-                loadAndPlay(track: first)
-            }
+        guard !tracksToAdd.isEmpty else { return }
+        let wasStopped = (audioEngine.status == .stopped)
+        playlist.add(tracks: tracksToAdd)
+        plView.needsDisplay = true
+        if wasStopped {
+            loadAndPlay(track: tracksToAdd[0])
         }
+    }
+    
+    /// Files dropped into the playlist editor: inserted where they were dropped (Winamp behavior).
+    /// Playback starts only if the playlist was empty and nothing was playing.
+    public func handleFilesDroppedInPlaylist(_ paths: [String], at index: Int) {
+        let tracks = collectTracks(fromPaths: paths)
+        guard !tracks.isEmpty else { return }
+        let wasEmpty = playlist.tracks.isEmpty
+        playlist.insert(tracks: tracks, at: index)
+        plView.needsDisplay = true
+        if wasEmpty && audioEngine.status == .stopped {
+            loadAndPlay(track: tracks[0])
+        }
+    }
+    
+    /// File URLs on a drag pasteboard (files, folders, playlists, skins).
+    public static func droppedFileURLs(from pasteboard: NSPasteboard) -> [URL] {
+        (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
     }
     
     /// Turns dropped / opened paths into playlist entries: audio files, folders (recursively), M3U/PLS.
@@ -1000,6 +1017,12 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         }
         let tracks = collectTracks(fromPaths: paths)
         guard !tracks.isEmpty else { return }
+        // Winamp: "Play" on a playlist file replaces the current list; "Enqueue" appends to it
+        let opensPlaylistFile = paths.contains { AppConstants.Audio.playlistExtensions.contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) }
+        if opensPlaylistFile && !shouldEnqueue {
+            audioEngine.stop()
+            playlist.clear()
+        }
         playlist.add(tracks: tracks)
         plView.needsDisplay = true
         if !shouldEnqueue || audioEngine.status == .stopped && playlist.tracks.count == tracks.count {

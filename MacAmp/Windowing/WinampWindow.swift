@@ -67,17 +67,21 @@ public class WinampWindow: NSWindow {
         dragStartOrigins.removeAll()
     }
     
-    // MARK: - Drag & Drop Destination
-    public func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        return .copy
+    // MARK: - Drag & Drop Destination (main and equalizer windows; the playlist view handles its own drops)
+    // @objc is required: NSWindow's NSDraggingDestination conformance is inherited, so without it these
+    // Swift methods are invisible to AppKit and NSWindow's own (do-nothing) implementation runs instead.
+    @objc public func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        PlayerCoordinator.droppedFileURLs(from: sender.draggingPasteboard).isEmpty ? [] : .copy
     }
     
-    public func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard let pasteboard = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] else {
-            return false
-        }
-        let paths = pasteboard.map { $0.path }
-        PlayerCoordinator.shared.handleDroppedFiles(paths)
+    @objc public func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        draggingEntered(sender)
+    }
+    
+    @objc public func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = PlayerCoordinator.droppedFileURLs(from: sender.draggingPasteboard)
+        guard !urls.isEmpty else { return false }
+        PlayerCoordinator.shared.handleDroppedFiles(urls.map(\.path))
         return true
     }
     

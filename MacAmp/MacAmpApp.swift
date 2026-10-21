@@ -48,10 +48,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        // Double-click / Open With from Finder: play (or enqueue, per Preferences ▸ Setup ▸ File types)
-        PlayerCoordinator.shared.openFromFinder(filenames)
-        sender.reply(toOpenOrPrint: .success)
+    /// Files opened from Finder (double-click, Open With, dropped on the Dock icon).
+    /// Must be the URL-based variant: with the SwiftUI App lifecycle, AppKit delivers opened files through
+    /// `application(_:open:)`, which SwiftUI forwards to this delegate; `application(_:openFiles:)` is never called.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let files = urls.filter(\.isFileURL).map(\.path)
+        guard !files.isEmpty else { return }
+        // Play (or enqueue, per Preferences ▸ Setup ▸ File types)
+        PlayerCoordinator.shared.openFromFinder(files)
     }
     
     // MARK: - macOS Dock Menu

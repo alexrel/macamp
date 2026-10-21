@@ -41,8 +41,38 @@ public class MarqueeView: WinampControlView {
     private var pauseTicksRemaining: Int = Int(AppConstants.Marquee.pauseDuration / AppConstants.Marquee.scrollInterval)
     
     public init() {
-        super.init(frame: AppConstants.MainWindow.Layout.marquee)
+        super.init(frame: MarqueeView.preferredFrame)
         updateScrollTimer()
+    }
+    
+    /// Bitmap font: the 6 px text row. TrueType: the taller LCD box, so letters aren't cut.
+    public static var preferredFrame: NSRect {
+        PersistenceManager.shared.state.marqueeFontMode == .desktop
+            ? AppConstants.MainWindow.Layout.marqueeTrueType
+            : AppConstants.MainWindow.Layout.marquee
+    }
+    
+    /// Call after title font preferences change.
+    public func fontSettingsChanged() {
+        frame = MarqueeView.preferredFrame
+        cachedWidthKey = nil
+        needsDisplay = true
+        updateScrollTimer()
+    }
+    
+    /// The chosen TrueType font, shrunk if needed so whole letters (ascender to descender) fit the LCD.
+    func trueTypeFont() -> NSFont {
+        let state = PersistenceManager.shared.state
+        var size = CGFloat(state.desktopFontSize)
+        func make(_ size: CGFloat) -> NSFont {
+            NSFont(name: state.desktopFontFamily, size: size) ?? NSFont.systemFont(ofSize: size)
+        }
+        var font = make(size)
+        while font.ascender - font.descender > bounds.height - 1, size > 5 {
+            size -= 0.5
+            font = make(size)
+        }
+        return font
     }
     
     public required init?(coder: NSCoder) {
@@ -107,10 +137,9 @@ public class MarqueeView: WinampControlView {
         guard state.marqueeFontMode == .desktop else {
             return CGFloat(currentDisplayText.count) * AppConstants.Font.charWidth
         }
-        let key = "\(state.desktopFontFamily)|\(state.desktopFontSize)|\(currentDisplayText)"
+        let key = "\(state.desktopFontFamily)|\(state.desktopFontSize)|\(bounds.height)|\(currentDisplayText)"
         if key == cachedWidthKey { return cachedWidth }
-        let font = NSFont(name: state.desktopFontFamily, size: CGFloat(state.desktopFontSize))
-            ?? NSFont.monospacedSystemFont(ofSize: CGFloat(state.desktopFontSize), weight: .regular)
+        let font = trueTypeFont()
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
         cachedWidth = NSString(string: currentDisplayText).size(withAttributes: attrs).width
         cachedWidthKey = key
@@ -157,8 +186,7 @@ public class MarqueeView: WinampControlView {
         let totalTextWidth = currentTextWidth()
         
         if state.marqueeFontMode == .desktop {
-            let font = NSFont(name: state.desktopFontFamily, size: CGFloat(state.desktopFontSize))
-                ?? NSFont.monospacedSystemFont(ofSize: CGFloat(state.desktopFontSize), weight: .medium)
+            let font = trueTypeFont()
             
             // Text color from current skin playlist style, or classic fluorescent green
             let textColor = SkinManager.shared.currentSkin?.playlistStyle.normalColor
@@ -169,8 +197,11 @@ public class MarqueeView: WinampControlView {
                 .foregroundColor: textColor
             ]
             let str = NSString(string: currentDisplayText)
-            let textSize = str.size(withAttributes: attrs)
-            let yPos = max(0, (bounds.height - textSize.height) / 2)
+            // Center the glyph box (ascender..descender). draw(at:) positions the whole line box, which
+            // includes the font's leading above the baseline, so take that extra space back out.
+            let glyphHeight = font.ascender - font.descender
+            let lineHeight = str.size(withAttributes: attrs).height
+            let yPos = ((bounds.height - glyphHeight) / 2 - (lineHeight - glyphHeight)).rounded()
             
             // Draw primary desktop text
             str.draw(at: CGPoint(x: -scrollOffset, y: yPos), withAttributes: attrs)

@@ -47,6 +47,8 @@ public enum AppConstants {
             public static let timeDisplay = NSRect(x: 39, y: 26, width: 59, height: 13)
             public static let visualizer = NSRect(x: 24, y: 43, width: 76, height: 16)
             public static let marquee = NSRect(x: 112, y: 27, width: 152, height: 6)
+            /// TrueType title: the bitmap font's 6 px row is too low, so use the whole LCD box in MAIN.BMP (rows 24-35)
+            public static let marqueeTrueType = NSRect(x: 112, y: 24, width: 152, height: 12)
             public static let bitrate = CGPoint(x: 111, y: 43)
             public static let sampleRate = CGPoint(x: 156, y: 43)
             public static let monoIndicator = NSRect(x: 212, y: 41, width: 27, height: 12)
@@ -262,7 +264,7 @@ public enum AppConstants {
             "mp3", "flac", "wav", "aiff", "aif", "m4a", "aac", "alac", "ogg"
         ]
         public static let skinExtensions: Set<String> = ["wsz", "zip"]
-        public static let playlistExtensions: Set<String> = ["m3u", "pls"]
+        public static let playlistExtensions: Set<String> = ["m3u", "m3u8", "pls", "xspf"] // xspf: VLC's own format
     }
     
     // MARK: - macOS Keyboard Codes

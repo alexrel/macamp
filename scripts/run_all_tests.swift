@@ -1536,4 +1536,175 @@ testGroup("Setup: Internet Settings") {
     assertEqual((thrown as? URLError)?.code, .notConnectedToInternet, "Offline mode refuses to open streams")
 }
 
+// 23. Playlists from other players, drag & drop into the playlist
+final class FakeDrop: NSObject, NSDraggingInfo {
+    let pasteboard: NSPasteboard
+    let location: NSPoint
+    init(urls: [URL], location: NSPoint) {
+        pasteboard = NSPasteboard(name: NSPasteboard.Name("macamp-test-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.writeObjects(urls as [NSURL])
+        self.location = location
+    }
+    var draggingDestinationWindow: NSWindow? { nil }
+    var draggingSourceOperationMask: NSDragOperation { .copy }
+    var draggingLocation: NSPoint { location }
+    var draggedImageLocation: NSPoint { location }
+    var draggedImage: NSImage? { nil }
+    var draggingPasteboard: NSPasteboard { pasteboard }
+    var draggingSource: Any? { nil }
+    var draggingSequenceNumber: Int { 1 }
+    func slideDraggedImage(to screenPoint: NSPoint) {}
+    var draggingFormation: NSDraggingFormation { get { .default } set {} }
+    var animatesToDestination: Bool { get { false } set {} }
+    var numberOfValidItemsForDrop: Int { get { 0 } set {} }
+    func enumerateDraggingItems(options: NSDraggingItemEnumerationOptions = [], for view: NSView?, classes classArray: [AnyClass], searchOptions: [NSPasteboard.ReadingOptionKey: Any] = [:], using block: (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void) {}
+    var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+    func resetSpringLoading() {}
+}
+
+testGroup("Playlist Paths: Absolute, Relative, VLC, Windows") {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/paths", isDirectory: true)
+    try? FileManager.default.removeItem(at: root)
+    let music = root.appendingPathComponent("Music/Кино", isDirectory: true)
+    let other = root.appendingPathComponent("Other", isDirectory: true)
+    try FileManager.default.createDirectory(at: music.appendingPathComponent("mp3"), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+    let song = music.appendingPathComponent("mp3/#1 Группа крови [x].mp3")
+    let near = music.appendingPathComponent("Кукушка.mp3")
+    let far = other.appendingPathComponent("Far Song.mp3")
+    for f in [song, near, far] { FileManager.default.createFile(atPath: f.path, contents: Data()) }
+    let base = music
+    func resolves(_ entry: String, to expected: URL, _ what: String) {
+        let got = PlaylistIO.resolveEntry(entry, baseURL: base)
+        assertEqual(got.standardizedFileURL.path, expected.standardizedFileURL.path, what)
+    }
+    resolves(near.path, to: near, "Absolute path")
+    resolves("Кукушка.mp3", to: near, "Relative to the playlist's folder")
+    resolves("mp3/#1 Группа крови [x].mp3", to: song, "Relative path in a subfolder")
+    resolves("../../Other/Far Song.mp3", to: far, "Relative path with ..")
+    resolves("./Кукушка.mp3", to: near, "Relative path with ./")
+    resolves("mp3/%231%20%D0%93%D1%80%D1%83%D0%BF%D0%BF%D0%B0%20%D0%BA%D1%80%D0%BE%D0%B2%D0%B8%20%5Bx%5D.mp3", to: song, "VLC-style percent-encoded relative path")
+    resolves(song.absoluteString, to: song, "file:// URL")
+    resolves("mp3\\#1 Группа крови [x].mp3", to: song, "Windows backslashes")
+    assertEqual(PlaylistIO.resolveEntry("http://radio.example.com/stream", baseURL: base).absoluteString, "http://radio.example.com/stream", "Stream URLs stay URLs")
+    let home = PlaylistIO.resolveEntry("~/Music/x.mp3", baseURL: base)
+    assertTrue(home.path.hasSuffix("/Music/x.mp3") && !home.path.contains("~"), "~ expands to the home folder (\(home.path))")
+    
+    // A VLC playlist (the kind that failed to open) loads with every file found
+    let m3u = "#EXTM3U\n#EXTINF:123,Группа крови\nmp3/%231%20%D0%93%D1%80%D1%83%D0%BF%D0%BF%D0%B0%20%D0%BA%D1%80%D0%BE%D0%B2%D0%B8%20%5Bx%5D.mp3\n#EXTINF:60,Кукушка\nКукушка.mp3\n"
+    let m3uURL = music.appendingPathComponent("vlc.m3u")
+    try m3u.write(to: m3uURL, atomically: true, encoding: .utf8)
+    let loaded = PlaylistIO.loadPlaylist(from: m3uURL)
+    assertEqual(loaded.count, 2, "Both entries loaded")
+    assertEqual(PlaylistIO.displayTitle("Reggae - Янка [a0VMeWSTyQY].mp3", for: URL(fileURLWithPath: "/x/Reggae.mp3")), "Reggae - Янка [a0VMeWSTyQY]", "VLC's file-name titles lose the extension")
+    assertEqual(PlaylistIO.displayTitle("Кино - Звезда", for: URL(fileURLWithPath: "/x/a.mp3")), "Кино - Звезда", "Normal titles untouched")
+    assertEqual(PlaylistIO.displayTitle("Live at mp3.com", for: URL(fileURLWithPath: "/x/a.mp3")), "Live at mp3.com", "Only a real '.ext' suffix is removed")
+    assertTrue(loaded.allSatisfy { FileManager.default.fileExists(atPath: $0.url.path) }, "Every entry points at an existing file")
+}
+
+testGroup("VLC Playlists: XSPF and M3U8") {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/vlc", isDirectory: true)
+    try? FileManager.default.removeItem(at: dir)
+    try FileManager.default.createDirectory(at: dir.appendingPathComponent("mp3"), withIntermediateDirectories: true)
+    let abs = dir.appendingPathComponent("Кино - Звезда.mp3"), rel = dir.appendingPathComponent("mp3/#2 Песня [y].mp3")
+    for f in [abs, rel] { FileManager.default.createFile(atPath: f.path, contents: Data()) }
+    // As VLC writes it: absolute file:// URI, relative percent-encoded URI, a stream, durations in ms
+    let xspf = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <playlist xmlns="http://xspf.org/ns/0/" xmlns:vlc="http://www.videolan.org/vlc/playlist/ns/0/" version="1">
+    \t<title>Плейлист</title>
+    \t<trackList>
+    \t\t<track><location>\(abs.absoluteString)</location><title>Звезда</title><creator>Кино</creator><duration>245000</duration>
+    \t\t\t<extension application="http://www.videolan.org/vlc/playlist/0"><vlc:id>0</vlc:id></extension></track>
+    \t\t<track><location>mp3/%232%20%D0%9F%D0%B5%D1%81%D0%BD%D1%8F%20%5By%5D.mp3</location><duration>60000</duration></track>
+    \t\t<track><location>http://radio.example.com:8000/stream</location><title>Radio</title></track>
+    \t</trackList>
+    </playlist>
+    """
+    let xspfURL = dir.appendingPathComponent("vlc.xspf")
+    try xspf.write(to: xspfURL, atomically: true, encoding: .utf8)
+    let items = PlaylistIO.loadPlaylist(from: xspfURL)
+    assertEqual(items.count, 3, "All three XSPF tracks loaded")
+    assertEqual(items[0].url.standardizedFileURL.path, abs.standardizedFileURL.path, "Absolute file:// URI with Cyrillic")
+    assertEqual(items[1].url.standardizedFileURL.path, rel.standardizedFileURL.path, "Relative percent-encoded location")
+    assertEqual(items[2].url.absoluteString, "http://radio.example.com:8000/stream", "Stream location")
+    assertEqual(items[0].duration, 245, "Duration converted from milliseconds")
+    assertTrue(AppConstants.Audio.playlistExtensions.isSuperset(of: ["m3u", "m3u8", "pls", "xspf"]), "m3u8 and xspf accepted everywhere playlists are")
+    
+    let m3u8URL = dir.appendingPathComponent("vlc.m3u8")
+    try "#EXTM3U\n#EXTINF:245,Кино - Звезда\n\(abs.absoluteString)\nmp3/%232%20%D0%9F%D0%B5%D1%81%D0%BD%D1%8F%20%5By%5D.mp3\n".write(to: m3u8URL, atomically: true, encoding: .utf8)
+    let m3u8 = PlaylistIO.loadPlaylist(from: m3u8URL)
+    assertEqual(m3u8.count, 2, "M3U8 entries loaded")
+    assertTrue(m3u8.allSatisfy { FileManager.default.fileExists(atPath: $0.url.path) }, "M3U8: file:// and relative encoded paths both found")
+}
+
+testGroup("Drag & Drop into the Playlist") {
+    // AppKit must call our handlers (they used to be invisible to it, so drops did nothing)
+    for name in ["draggingEntered:", "performDragOperation:"] {
+        let sel = NSSelectorFromString(name)
+        assertTrue(class_getMethodImplementation(WinampWindow.self, sel) != class_getMethodImplementation(NSWindow.self, sel), "WinampWindow implements \(name)")
+        assertTrue(class_getMethodImplementation(PlaylistWindowView.self, sel) != class_getMethodImplementation(NSView.self, sel), "PlaylistWindowView implements \(name)")
+    }
+    
+    let pl = PlaylistModel()
+    pl.add(tracks: (0..<10).map { TrackItem(url: URL(fileURLWithPath: "/tmp/d\($0).mp3"), title: "d\($0)", artist: "T", duration: 60) })
+    pl.currentIndex = 5
+    let currentID = pl.currentTrack!.id
+    let view = PlaylistWindowView(playlist: pl)
+    view.frame = NSRect(x: 0, y: 0, width: 275, height: 232)
+    view.bounds = view.frame
+    var dropped: ([String], Int)?
+    view.onFilesDropped = { dropped = ($0, $1) }
+    
+    let topH = AppConstants.Playlist.Layout.topBarHeight, rowH = AppConstants.Playlist.trackRowHeight
+    assertEqual(view.dropIndex(at: NSPoint(x: 50, y: topH + rowH * 3 + 2)), 3, "Drop near the top edge of row 3 inserts before it")
+    assertEqual(view.dropIndex(at: NSPoint(x: 50, y: topH + rowH * 3 + rowH - 2)), 4, "Drop on the lower half inserts after it")
+    assertEqual(view.dropIndex(at: NSPoint(x: 50, y: 220)), 10, "Drop below the last track appends")
+    
+    let file = URL(fileURLWithPath: "/tmp/dropped.mp3")
+    // draggingLocation is in window coordinates (y up); the playlist view is flipped (y down)
+    let host = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 275, height: 232), styleMask: [.borderless], backing: .buffered, defer: false)
+    host.contentView = view
+    let drag = FakeDrop(urls: [file], location: view.convert(NSPoint(x: 50, y: topH + rowH * 2 + 2), to: nil))
+    assertEqual(view.draggingEntered(drag), .copy, "Finder files are accepted")
+    assertTrue(view.performDragOperation(drag), "Drop accepted")
+    assertEqual(dropped?.0, [file.path], "Dropped paths passed on")
+    assertEqual(dropped?.1, 2, "Insertion position passed on")
+    
+    pl.insert(tracks: [TrackItem(url: file, title: "dropped", artist: "", duration: 30)], at: 2)
+    assertEqual(pl.tracks[2].title, "dropped", "Inserted at the drop position")
+    assertEqual(pl.tracks.count, 11, "Nothing replaced")
+    assertEqual(pl.currentTrack?.id, currentID, "Current track is still the same song")
+    assertEqual(pl.selectedIndices, [2], "Dropped tracks are selected")
+    pl.insert(tracks: [TrackItem(url: file, title: "end", artist: "", duration: 30)], at: 999)
+    assertEqual(pl.tracks.last?.title, "end", "Out-of-range position appends")
+    
+    let nothing = FakeDrop(urls: [], location: .zero)
+    assertEqual(view.draggingEntered(nothing), [], "Non-file drags are refused")
+}
+
+testGroup("TrueType Title Fits the LCD") {
+    let state = PersistenceManager.shared.state
+    defer {
+        PersistenceManager.shared.state.marqueeFontMode = state.marqueeFontMode
+        PersistenceManager.shared.state.desktopFontSize = state.desktopFontSize
+        PersistenceManager.shared.state.desktopFontFamily = state.desktopFontFamily
+    }
+    PersistenceManager.shared.state.marqueeFontMode = .bitmap
+    assertEqual(MarqueeView.preferredFrame.height, 6, "Bitmap font keeps the 6 px TEXT.BMP row")
+    PersistenceManager.shared.state.marqueeFontMode = .desktop
+    assertEqual(MarqueeView.preferredFrame, NSRect(x: 112, y: 24, width: 152, height: 12), "TrueType uses the whole LCD box")
+    PersistenceManager.shared.state.desktopFontFamily = "Helvetica"
+    let marquee = MarqueeView()
+    marquee.fontSettingsChanged()
+    for size in [8.0, 10.0, 14.0] {
+        PersistenceManager.shared.state.desktopFontSize = size
+        let font = marquee.trueTypeFont()
+        assertTrue(font.ascender - font.descender <= marquee.bounds.height - 1, "\(Int(size)) pt: whole letters fit (glyph box \(font.ascender - font.descender) in \(marquee.bounds.height))")
+    }
+    PersistenceManager.shared.state.desktopFontSize = 8
+    assertEqual(marquee.trueTypeFont().pointSize, 8, "A size that fits is not shrunk")
+}
+
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")
