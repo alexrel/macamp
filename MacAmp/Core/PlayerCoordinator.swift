@@ -923,26 +923,30 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     /// Files dropped on the main or equalizer window: appended to the playlist; if nothing is playing,
     /// the first dropped track starts.
     public func handleDroppedFiles(_ paths: [String]) {
-        let tracksToAdd = collectTracks(fromPaths: paths)
-        guard !tracksToAdd.isEmpty else { return }
-        let wasStopped = (audioEngine.status == .stopped)
-        playlist.add(tracks: tracksToAdd)
-        plView.needsDisplay = true
-        if wasStopped {
-            loadAndPlay(track: tracksToAdd[0])
+        Task { @MainActor in
+            let tracksToAdd = await collectTracks(fromPaths: paths)
+            guard !tracksToAdd.isEmpty else { return }
+            let wasStopped = (audioEngine.status == .stopped)
+            playlist.add(tracks: tracksToAdd)
+            plView.needsDisplay = true
+            if wasStopped {
+                loadAndPlay(track: tracksToAdd[0])
+            }
         }
     }
     
     /// Files dropped into the playlist editor: inserted where they were dropped (Winamp behavior).
     /// Playback starts only if the playlist was empty and nothing was playing.
     public func handleFilesDroppedInPlaylist(_ paths: [String], at index: Int) {
-        let tracks = collectTracks(fromPaths: paths)
-        guard !tracks.isEmpty else { return }
-        let wasEmpty = playlist.tracks.isEmpty
-        playlist.insert(tracks: tracks, at: index)
-        plView.needsDisplay = true
-        if wasEmpty && audioEngine.status == .stopped {
-            loadAndPlay(track: tracks[0])
+        Task { @MainActor in
+            let tracks = await collectTracks(fromPaths: paths)
+            guard !tracks.isEmpty else { return }
+            let wasEmpty = playlist.tracks.isEmpty
+            playlist.insert(tracks: tracks, at: min(index, playlist.tracks.count))
+            plView.needsDisplay = true
+            if wasEmpty && audioEngine.status == .stopped {
+                loadAndPlay(track: tracks[0])
+            }
         }
     }
     
@@ -953,8 +957,18 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     
     /// Turns dropped / opened paths into playlist entries: audio files, folders (recursively), M3U/PLS.
     /// Skins (.wsz/.zip or an unpacked skin folder) are installed and applied instead.
-    func collectTracks(fromPaths paths: [String]) -> [TrackItem] {
+    /// Tags are read off the main thread, so a big folder doesn't freeze the windows.
+    func collectTracks(fromPaths paths: [String]) async -> [TrackItem] {
+        let (tracks, skins) = await Task.detached(priority: .userInitiated) {
+            PlayerCoordinator.scanPaths(paths)
+        }.value
+        skins.forEach(installAndApplySkin)
+        return tracks
+    }
+
+    nonisolated static func scanPaths(_ paths: [String]) -> (tracks: [TrackItem], skins: [URL]) {
         var tracks: [TrackItem] = []
+        var skins: [URL] = []
         let audioExtensions = AppConstants.Audio.supportedExtensions
         let skinExtensions = AppConstants.Audio.skinExtensions
         let playlistExtensions = AppConstants.Audio.playlistExtensions
@@ -964,7 +978,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             let ext = url.pathExtension.lowercased()
             
             if skinExtensions.contains(ext) {
-                installAndApplySkin(at: url)
+                skins.append(url)
             } else if playlistExtensions.contains(ext) {
                 tracks.append(contentsOf: PlaylistIO.loadPlaylist(from: url))
             } else {
@@ -974,7 +988,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                     // Unpacked skin folder?
                     let fm = FileManager.default
                     if fm.fileExists(atPath: url.appendingPathComponent("MAIN.BMP").path) || fm.fileExists(atPath: url.appendingPathComponent("main.bmp").path) {
-                        installAndApplySkin(at: url)
+                        skins.append(url)
                         continue
                     }
                     // Recursively scan for audio files, in name order like Winamp's "Add directory"
@@ -985,13 +999,13 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
                         }
                     }
                     found.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-                    tracks.append(contentsOf: found.map { TrackItem.create(from: $0) })
+                    tracks.append(contentsOf: TrackItem.createAll(from: found))
                 } else if audioExtensions.contains(ext) {
                     tracks.append(TrackItem.create(from: url))
                 }
             }
         }
-        return tracks
+        return (tracks, skins)
     }
     
     private func installAndApplySkin(at url: URL) {
@@ -1015,8 +1029,14 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             pendingFinderOpens.append((paths, shouldEnqueue))
             return
         }
-        let tracks = collectTracks(fromPaths: paths)
-        guard !tracks.isEmpty else { return }
+        Task { @MainActor in
+            let tracks = await collectTracks(fromPaths: paths)
+            guard !tracks.isEmpty else { return }
+            addOpenedTracks(tracks, fromPaths: paths, enqueue: shouldEnqueue)
+        }
+    }
+
+    private func addOpenedTracks(_ tracks: [TrackItem], fromPaths paths: [String], enqueue shouldEnqueue: Bool) {
         // Winamp: "Play" on a playlist file replaces the current list; "Enqueue" appends to it
         let opensPlaylistFile = paths.contains { AppConstants.Audio.playlistExtensions.contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) }
         if opensPlaylistFile && !shouldEnqueue {

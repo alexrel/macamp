@@ -32,6 +32,7 @@
 		AAD719B780D8F95273A00FD0 /* JumpToTimeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD6E38A7F56975675B2CB94 /* JumpToTimeView.swift */; };
 		AA4D0BF6C536E9544492B22E /* JumpToTimeWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA3A148CD6471539DA79382 /* JumpToTimeWindow.swift */; };
 		AA8D8CCC061DB657208AD691 /* RegionParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1F33C7BFF21C5DFFA70857 /* RegionParser.swift */; };
+		AA7C1E2B3D4F5061728394A5 /* BuiltInCursors.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA8D2F3C4E5061728394A5B6 /* BuiltInCursors.swift */; };
 		AA8BF893901A485D189E84F9 /* SkinLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA4627C7045CDF506FB23B7A /* SkinLoader.swift */; };
 		AA8E06ACA27F6157F6B02552 /* SkinManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9A6639CAE2B651F58D1EA5 /* SkinManager.swift */; };
 		AA06D528091F6C5F668C19FA /* SkinModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA560C0BAB74DB5D70B89CE5 /* SkinModel.swift */; };
@@ -95,6 +96,7 @@
 		AAD6E38A7F56975675B2CB94 /* JumpToTimeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "JumpToTimeView.swift"; sourceTree = "<group>"; };
 		AAA3A148CD6471539DA79382 /* JumpToTimeWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "JumpToTimeWindow.swift"; sourceTree = "<group>"; };
 		AA1F33C7BFF21C5DFFA70857 /* RegionParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RegionParser.swift"; sourceTree = "<group>"; };
+		AA8D2F3C4E5061728394A5B6 /* BuiltInCursors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BuiltInCursors.swift"; sourceTree = "<group>"; };
 		AA4627C7045CDF506FB23B7A /* SkinLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SkinLoader.swift"; sourceTree = "<group>"; };
 		AA9A6639CAE2B651F58D1EA5 /* SkinManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SkinManager.swift"; sourceTree = "<group>"; };
 		AA560C0BAB74DB5D70B89CE5 /* SkinModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SkinModel.swift"; sourceTree = "<group>"; };
@@ -212,6 +214,7 @@
 			isa = PBXGroup;
 			children = (
 				AA1F33C7BFF21C5DFFA70857 /* RegionParser.swift */,
+				AA8D2F3C4E5061728394A5B6 /* BuiltInCursors.swift */,
 				AA4627C7045CDF506FB23B7A /* SkinLoader.swift */,
 				AA9A6639CAE2B651F58D1EA5 /* SkinManager.swift */,
 				AA560C0BAB74DB5D70B89CE5 /* SkinModel.swift */,
@@ -489,6 +492,7 @@
 				AAD719B780D8F95273A00FD0 /* JumpToTimeView.swift in Sources */,
 				AA4D0BF6C536E9544492B22E /* JumpToTimeWindow.swift in Sources */,
 				AA8D8CCC061DB657208AD691 /* RegionParser.swift in Sources */,
+				AA7C1E2B3D4F5061728394A5 /* BuiltInCursors.swift in Sources */,
 				AA8BF893901A485D189E84F9 /* SkinLoader.swift in Sources */,
 				AA8E06ACA27F6157F6B02552 /* SkinManager.swift in Sources */,
 				AA06D528091F6C5F668C19FA /* SkinModel.swift in Sources */,

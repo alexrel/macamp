@@ -1148,7 +1148,49 @@ testGroup("Skin Cursors") {
     }
     assertEqual(cursors["TITLEBAR"]?.image.size, NSSize(width: 32, height: 32), "Cursor image is 32x32")
     assertTrue(SkinLoader.makeCursor(fromCUR: Data([0, 0, 1, 0, 1, 0] + Array(repeating: 0, count: 30))) == nil, "ICO (type 1) data is not accepted as a cursor")
-    
+
+    // Skins without *.cur files get winamp.exe's built-in cursors (Winamp 2.95 behavior)
+    assertEqual(BuiltInCursors.cursors.keys.sorted(), [205, 206, 207, 208, 209, 210], "All 6 built-in cursors decode")
+    for cursor in BuiltInCursors.cursors.values {
+        assertEqual(cursor.image.size, NSSize(width: 32, height: 32), "Built-in cursor is 32x32")
+        assertEqual(cursor.hotSpot, .zero, "Built-in cursor hotspot is the arrow tip")
+    }
+    let builtIn = BuiltInCursors.complete([:])
+    let usedNames = ["CLOSE", "MIN", "WINBUT", "MAINMENU", "POSBAR", "VOLBAL", "SONGNAME", "TITLEBAR", "NORMAL",
+                     "WSCLOSE", "WSMIN", "WSWINBUT", "WSPOSBAR", "WSNORMAL", "PCLOSE", "PWINBUT", "PTBAR", "PNORMAL",
+                     "PVSCROLL", "PSIZE", "PWSNORM", "PWSSIZE", "EQCLOSE", "EQSLID", "EQTITLE", "EQNORMAL"]
+    for name in usedNames {
+        assertTrue(builtIn[name] != nil, "Cursor \(name) has a built-in fallback")
+    }
+    assertTrue(builtIn["PSIZE"] === BuiltInCursors.cursors[210], "PSize.cur falls back to the resize cursor")
+    assertTrue(builtIn["EQSLID"] === BuiltInCursors.cursors[209], "EQSlid.cur falls back to the vertical cursor")
+    assertTrue(builtIn["WSCLOSE"] === BuiltInCursors.cursors[207], "Windowshade close uses the close cursor")
+    let skinClose = NSCursor.pointingHand
+    let mixed = BuiltInCursors.complete(["CLOSE": skinClose])
+    assertTrue(mixed["CLOSE"] === skinClose, "A skin's own cursor wins over the built-in one")
+    assertTrue(mixed["WSCLOSE"] === skinClose, "Windowshade close reuses the skin's Close.cur like Winamp 2.95")
+    assertTrue(mixed["TITLEBAR"] === BuiltInCursors.cursors[205], "Missing skin cursors still get built-ins")
+    assertTrue(cursors["PVSCROLL"] != nil && cursors["SONGNAME"] != nil, "Loaded skins are completed with built-ins")
+
+    // Cursors follow the mouse in every window, key or not (tracking area on the window's root view)
+    let host = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 275, height: 116), styleMask: .borderless, backing: .buffered, defer: true)
+    let hosted = MainWindowView()
+    hosted.frame = NSRect(x: 0, y: 0, width: 275, height: 116)
+    host.contentView = hosted
+    hosted.applySkinCursorNames()
+    hosted.updateTrackingAreas()
+    assertTrue(hosted.trackingAreas.contains { $0.options.contains(.activeAlways) && $0.options.contains(.mouseMoved) },
+               "Root view tracks the mouse even when the window isn't key")
+    assertTrue(hosted.closeButton.trackingAreas.isEmpty, "Child controls don't add their own cursor tracking")
+    func cursorAt(_ view: NSView, _ local: NSPoint) -> NSCursor? {
+        hosted.skinCursor(atWindowPoint: view.convert(local, to: nil))
+    }
+    let closeFrame = hosted.closeButton.bounds
+    assertTrue(cursorAt(hosted.closeButton, NSPoint(x: closeFrame.midX, y: closeFrame.midY)) === cursors["CLOSE"], "Close button shows CLOSE")
+    assertTrue(cursorAt(hosted, NSPoint(x: 100, y: 6)) === cursors["TITLEBAR"], "Title bar shows TITLEBAR")
+    let seekFrame = hosted.seekSlider.bounds
+    assertTrue(cursorAt(hosted.seekSlider, NSPoint(x: seekFrame.midX, y: seekFrame.midY)) === cursors["POSBAR"], "Seek bar shows POSBAR")
+
     let main = MainWindowView()
     main.applySkinCursorNames()
     assertEqual(main.closeButton.skinCursorName, "CLOSE", "Close button cursor")

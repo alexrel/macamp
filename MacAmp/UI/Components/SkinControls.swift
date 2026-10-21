@@ -89,33 +89,64 @@ open class WinampControlView: NSView {
     
     /// Skin cursor (CUR file stem, e.g. "CLOSE") shown over this whole control. Ignored if the skin has none.
     public var skinCursorName: String? {
-        didSet { if oldValue != skinCursorName { window?.invalidateCursorRects(for: self) } }
+        didSet { if oldValue != skinCursorName { refreshSkinCursor() } }
     }
     
     /// Additional cursor zones inside this view (used by window backgrounds for title bars, resize grips...).
     open func skinCursorZones() -> [(rect: NSRect, name: String)] { [] }
     
-    open override func resetCursorRects() {
-        super.resetCursorRects()
-        let cursors = SkinManager.shared.currentSkin?.cursors ?? [:]
-        guard !cursors.isEmpty else { return }
-        if let name = skinCursorName, let cursor = cursors[name] {
-            addCursorRect(bounds, cursor: cursor)
-        }
-        // Later rects win where they overlap, so zones refine the whole-view cursor
-        for zone in skinCursorZones() {
-            if let cursor = cursors[zone.name] {
-                addCursorRect(zone.rect, cursor: cursor)
-            }
-        }
+    /// The window's root view tracks the mouse for all its controls. Cursor rects would only work in the
+    /// key window of the active app; Winamp shows skin cursors over every window, active or not.
+    private lazy var cursorTracker = SkinCursorTracker(view: self)
+    private var cursorTrackingArea: NSTrackingArea?
+    
+    open override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let cursorTrackingArea { removeTrackingArea(cursorTrackingArea) }
+        cursorTrackingArea = nil
+        guard !(superview is WinampControlView) else { return }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                  owner: cursorTracker, userInfo: nil)
+        addTrackingArea(area)
+        cursorTrackingArea = area
     }
     
-    /// Re-applies cursor rects for this view and all subviews (after skin or layout changes).
-    public func invalidateSkinCursorsRecursively() {
-        window?.invalidateCursorRects(for: self)
-        for case let sub as WinampControlView in subviews {
-            sub.invalidateSkinCursorsRecursively()
+    /// Cursor for a point in window coordinates: the deepest control's zone or own cursor wins, like nested cursor rects.
+    public func skinCursor(atWindowPoint point: NSPoint) -> NSCursor? {
+        let cursors = SkinManager.shared.currentSkin?.cursors ?? [:]
+        var view = hitTest(superview?.convert(point, from: nil) ?? point)
+        while let current = view {
+            if let control = current as? WinampControlView {
+                let local = control.convert(point, from: nil)
+                if let zone = control.skinCursorZones().last(where: { $0.rect.contains(local) }), let cursor = cursors[zone.name] {
+                    return cursor
+                }
+                if let name = control.skinCursorName, let cursor = cursors[name] {
+                    return cursor
+                }
+            }
+            if current === self { break }
+            view = current.superview
         }
+        return nil
+    }
+    
+    fileprivate func updateSkinCursor(atWindowPoint point: NSPoint) {
+        (skinCursor(atWindowPoint: point) ?? .arrow).set()
+    }
+    
+    /// Re-applies the cursor under the mouse (after skin, mode or layout changes).
+    private func refreshSkinCursor() {
+        var root: NSView = self
+        while let parent = root.superview as? WinampControlView { root = parent }
+        guard let rootControl = root as? WinampControlView, let window = rootControl.window,
+              rootControl.bounds.contains(rootControl.convert(window.mouseLocationOutsideOfEventStream, from: nil)) else { return }
+        rootControl.updateSkinCursor(atWindowPoint: window.mouseLocationOutsideOfEventStream)
+    }
+    
+    /// Re-applies the cursor for this view and its subviews (after skin or layout changes).
+    public func invalidateSkinCursorsRecursively() {
+        refreshSkinCursor()
     }
     
     open override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
@@ -388,4 +419,20 @@ public class SkinToggle: WinampControlView {
             }
         }
     }
+}
+
+/// Receives the root view's mouse-tracking events (a separate owner, so views keep their own mouseMoved).
+private final class SkinCursorTracker: NSResponder {
+    private weak var view: WinampControlView?
+    
+    init(view: WinampControlView) {
+        self.view = view
+        super.init()
+    }
+    
+    required init?(coder: NSCoder) { nil }
+    
+    override func mouseEntered(with event: NSEvent) { view?.updateSkinCursor(atWindowPoint: event.locationInWindow) }
+    override func mouseMoved(with event: NSEvent) { view?.updateSkinCursor(atWindowPoint: event.locationInWindow) }
+    override func mouseExited(with event: NSEvent) { NSCursor.arrow.set() }
 }

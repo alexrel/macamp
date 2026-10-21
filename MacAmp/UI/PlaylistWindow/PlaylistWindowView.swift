@@ -233,7 +233,6 @@ public class PlaylistWindowView: WinampControlView {
             layoutButtons()
             clampScrollOffset()
             applySkinCursorNames()
-            window?.invalidateCursorRects(for: self)
             needsDisplay = true
             for sub in subviews {
                 sub.needsDisplay = true
@@ -407,7 +406,6 @@ public class PlaylistWindowView: WinampControlView {
     public override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         layoutButtons()
-        window?.invalidateCursorRects(for: self)
         needsDisplay = true
     }
     
@@ -819,15 +817,8 @@ public class PlaylistWindowView: WinampControlView {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         if panel.runModal() == .OK, let dirURL = panel.url {
-            let extensions = AppConstants.Audio.supportedExtensions
-            if let enumerator = FileManager.default.enumerator(at: dirURL, includingPropertiesForKeys: nil) {
-                var newTracks: [TrackItem] = []
-                for case let fileURL as URL in enumerator {
-                    if extensions.contains(fileURL.pathExtension.lowercased()) {
-                        newTracks.append(TrackItem.create(from: fileURL))
-                    }
-                }
-                playlist.add(tracks: newTracks)
+            Task { @MainActor in
+                playlist.add(tracks: await PlayerCoordinator.shared.collectTracks(fromPaths: [dirURL.path]))
                 needsDisplay = true
             }
         }
@@ -926,10 +917,12 @@ public class PlaylistWindowView: WinampControlView {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = AppConstants.Audio.playlistExtensions.compactMap { UTType(filenameExtension: $0) }
         if panel.runModal() == .OK, let url = panel.url {
-            let loaded = PlaylistIO.loadPlaylist(from: url)
-            playlist.clear()
-            playlist.add(tracks: loaded)
-            needsDisplay = true
+            Task { @MainActor in
+                let loaded = await PlayerCoordinator.shared.collectTracks(fromPaths: [url.path])
+                playlist.clear()
+                playlist.add(tracks: loaded)
+                needsDisplay = true
+            }
         }
     }
     
@@ -1368,18 +1361,6 @@ public class PlaylistWindowView: WinampControlView {
             (NSRect(x: grip.minX, y: bottomY, width: grip.width, height: max(0, grip.minY - bottomY)), "PNORMAL"),
             (grip, "PSIZE")
         ]
-    }
-    
-    public override func resetCursorRects() {
-        // System cursors where the skin has no PSIZE / PVSCROLL / PWSSIZE of its own
-        let cursors = SkinManager.shared.currentSkin?.cursors ?? [:]
-        if cursors[isShadeMode ? "PWSSIZE" : "PSIZE"] == nil {
-            addCursorRect(resizeGripRect, cursor: .resizeUpDown)
-        }
-        if !isShadeMode && cursors["PVSCROLL"] == nil {
-            addCursorRect(scrollTrackRect, cursor: .resizeUpDown)
-        }
-        super.resetCursorRects()
     }
     
     public override var acceptsFirstResponder: Bool { true }

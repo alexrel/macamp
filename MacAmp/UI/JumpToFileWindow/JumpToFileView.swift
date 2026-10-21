@@ -129,7 +129,7 @@ public struct JumpToFileView: View {
                 }
                 .background(Color.white)
                 .win32Sunken()
-                .onChange(of: viewModel.selectedRow) { newRow in
+                .onChange(of: viewModel.selectedRow) { _, newRow in
                     proxy.scrollTo(newRow, anchor: .center)
                 }
             }

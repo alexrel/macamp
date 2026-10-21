@@ -58,7 +58,6 @@ ClassicSkins/
 docs/*
 !docs/*.md
 /skin/
-stuff/
 scratch/
 __pycache__/
 *.pyc

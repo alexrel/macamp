@@ -45,8 +45,27 @@ public struct TrackItem: Codable, Identifiable, Equatable {
         return TrackItem(url: url, title: title, artist: artist, duration: duration)
     }
     
+    /// Reads many files in parallel (tag parsing is mostly waiting on disk), keeping their order.
+    public static func createAll(from urls: [URL]) -> [TrackItem] {
+        var items = [TrackItem?](repeating: nil, count: urls.count)
+        let lock = NSLock()
+        DispatchQueue.concurrentPerform(iterations: urls.count) { i in
+            let item = create(from: urls[i])
+            lock.lock(); items[i] = item; lock.unlock()
+        }
+        return items.compactMap { $0 }
+    }
+    
+    /// shortcut: uses AVAsset's deprecated blocking getters so playlist loading stays synchronous; callers run
+    /// it off the main thread. Switch to `resolveMetadataAsync` if PlaylistIO / TrackItem.create become async.
     public static func resolveDuration(from url: URL) -> TimeInterval {
-        // 1. AudioToolbox estimated duration (fastest & most resilient for MP3/AAC/VBR)
+        let estimated = estimatedDuration(of: url)
+        if estimated > 0 { return estimated }
+        return fallbackDuration(of: url)
+    }
+    
+    /// AudioToolbox estimated duration (fastest & most resilient for MP3/AAC/VBR); 0 if unknown.
+    static func estimatedDuration(of url: URL) -> TimeInterval {
         var fileID: AudioFileID?
         if AudioFileOpenURL(url as CFURL, .readPermission, 0, &fileID) == noErr, let fileID = fileID {
             defer { AudioFileClose(fileID) }
@@ -58,15 +77,18 @@ public struct TrackItem: Codable, Identifiable, Equatable {
                 }
             }
         }
-        
-        // 2. AVURLAsset duration
+        return 0
+    }
+    
+    private static func fallbackDuration(of url: URL) -> TimeInterval {
+        // AVURLAsset duration
         let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
         let assetDur = CMTimeGetSeconds(asset.duration)
         if assetDur.isFinite && assetDur > 0 {
             return assetDur
         }
         
-        // 3. AVAudioFile length / sampleRate
+        // AVAudioFile length / sampleRate
         if let file = try? AVAudioFile(forReading: url) {
             let sr = file.processingFormat.sampleRate
             if sr > 0 && file.length > 0 {
@@ -90,7 +112,7 @@ public struct TrackItem: Codable, Identifiable, Equatable {
     /// Placeholder older versions stored for untagged files; treated as "no artist".
     public static let legacyUnknownArtist = "Unknown Artist"
     
-    /// Reads title/artist tags. Without tags the artist stays empty and the title is the file name,
+    /// Reads title/artist tags (blocking; see the shortcut note on resolveDuration). Without tags the artist stays empty and the title is the file name,
     /// like Winamp: no guessing from separators, because file names don't follow one order
     /// ("Song - Artist - Cover [id]", "Song ｜ Artist ｜ Cover [id]", "Artist - Song", ...).
     public static func resolveArtistAndTitle(from url: URL) -> (artist: String, title: String) {
@@ -138,29 +160,30 @@ public struct TrackItem: Codable, Identifiable, Equatable {
             }
         }
         
-        var duration = resolveDuration(from: url)
-        var (artist, title) = resolveArtistAndTitle(from: url)
-        
         let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-        if duration <= 0 {
-            if let cmTime = try? await asset.load(.duration), cmTime.seconds.isFinite && cmTime.seconds > 0 {
-                duration = cmTime.seconds
-            }
+        var duration = estimatedDuration(of: url)
+        if duration <= 0, let cmTime = try? await asset.load(.duration), cmTime.seconds.isFinite && cmTime.seconds > 0 {
+            duration = cmTime.seconds
         }
         
-        if let metadata = try? await asset.load(.metadata) {
-            for item in metadata {
-                let keyStr = (item.key as? String) ?? item.commonKey?.rawValue ?? item.identifier?.rawValue ?? ""
-                if (item.commonKey == .commonKeyTitle || keyStr == "TIT2" || keyStr.hasSuffix("©nam")),
-                   let val = try? await item.load(.stringValue), !val.trimmingCharacters(in: .whitespaces).isEmpty {
-                    title = TextEncoding.repairCyrillic(val.trimmingCharacters(in: .whitespaces))
-                } else if (item.commonKey == .commonKeyArtist || keyStr == "TPE1" || keyStr.hasSuffix("©ART")),
-                          let val = try? await item.load(.stringValue), !val.trimmingCharacters(in: .whitespaces).isEmpty {
-                    artist = TextEncoding.repairCyrillic(val.trimmingCharacters(in: .whitespaces))
-                }
-            }
+        // Same order as resolveArtistAndTitle: common keys first, then raw ID3 / iTunes frames
+        let fileBaseName = url.deletingPathExtension().lastPathComponent
+        var artist = "", title = fileBaseName
+        let common = (try? await asset.load(.commonMetadata)) ?? []
+        let all = (try? await asset.load(.metadata)) ?? []
+        for item in common + all {
+            let keyStr = (item.key as? String) ?? item.commonKey?.rawValue ?? item.identifier?.rawValue ?? ""
+            let isTitle = item.commonKey == .commonKeyTitle || keyStr.contains("TIT2") || keyStr.hasSuffix("©nam")
+            let isArtist = item.commonKey == .commonKeyArtist || keyStr.contains("TPE1") || keyStr.hasSuffix("©ART")
+            guard (isTitle && title == fileBaseName) || (isArtist && artist.isEmpty),
+                  let raw = try? await item.load(.stringValue) else { continue }
+            let value = raw.trimmingCharacters(in: .whitespaces)
+            guard !value.isEmpty else { continue }
+            if isTitle { title = TextEncoding.repairCyrillic(value) } else { artist = TextEncoding.repairCyrillic(value) }
         }
-        
+        if title == fileBaseName {
+            title = TextEncoding.repairCyrillic(fileBaseName)
+        }
         return (duration, artist, title)
     }
     

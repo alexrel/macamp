@@ -39,13 +39,15 @@ public class SkinLoader {
         return skin
     }
     
-    /// Loads Windows cursor files (*.CUR). Animated *.ANI cursors are not supported and fall back to the arrow.
+    /// Loads Windows cursor files (*.CUR); like Winamp, every cursor the skin lacks is Winamp's built-in one.
+    /// Animated *.ANI cursors are not supported and get the built-in cursor too.
     private func loadCursors(from dir: URL, into skin: Skin) {
-        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         for file in files where file.pathExtension.uppercased() == "CUR" {
             guard let data = try? Data(contentsOf: file), let cursor = SkinLoader.makeCursor(fromCUR: data) else { continue }
             skin.cursors[file.deletingPathExtension().lastPathComponent.uppercased()] = cursor
         }
+        skin.cursors = BuiltInCursors.complete(skin.cursors)
     }
     
     /// Decodes a .CUR file (ImageIO reads the bitmap; the hotspot comes from the first ICONDIRENTRY).
