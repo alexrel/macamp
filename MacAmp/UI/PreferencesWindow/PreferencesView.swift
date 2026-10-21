@@ -1255,7 +1255,8 @@ private struct FileTypesSection: View {
             }
             .padding(2)
         }
-        .frame(width: 84, height: 190)
+        // Tall enough for every extension (15 pt rows + padding), so the list doesn't scroll
+        .frame(width: 84, height: CGFloat(manager.entries.count) * 15 + 6)
         .background(Color.white)
         .win32Sunken()
     }
