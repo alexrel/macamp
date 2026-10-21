@@ -8,6 +8,7 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
     private var playbackMenu: NSMenu?
     private var windowMenu: NSMenu?
     private var skinsSubmenu: NSMenu?
+    private var bookmarksMenu: NSMenu?
     private var audioOutputSubmenu: NSMenu?
     
     private var alwaysOnTopItem: NSMenuItem?
@@ -190,6 +191,15 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         pbMenuItem.submenu = pbMenu
         mainMenu.addItem(pbMenuItem)
         
+        // Bookmarks Menu (rebuilt in updateStates)
+        let bookmarksMenuItem = NSMenuItem()
+        let bookmarks = NSMenu(title: "Bookmarks")
+        bookmarks.delegate = self
+        bookmarksMenu = bookmarks
+        coord.fillBookmarksMenu(bookmarks)
+        bookmarksMenuItem.submenu = bookmarks
+        mainMenu.addItem(bookmarksMenuItem)
+        
         // 4. Track Menu
         let trackMenuItem = NSMenuItem()
         let trackMenu = NSMenu(title: "Track")
@@ -312,6 +322,8 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         shuffleItem?.state = coord.playlist.isShuffle ? .on : .off
         stopAfterCurrentItem?.state = coord.stopAfterCurrent ? .on : .off
         manualAdvanceItem?.state = coord.persistence.state.manualPlaylistAdvance ? .on : .off
+        
+        if let bookmarksMenu { coord.fillBookmarksMenu(bookmarksMenu) }
         
         // Rebuild dynamic skins menu
         if let skinsMenu = skinsSubmenu {

@@ -37,6 +37,7 @@
 		AA8E06ACA27F6157F6B02552 /* SkinManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9A6639CAE2B651F58D1EA5 /* SkinManager.swift */; };
 		AA06D528091F6C5F668C19FA /* SkinModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA560C0BAB74DB5D70B89CE5 /* SkinModel.swift */; };
 		AAB80C694F32155969AE260D /* SpriteCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABDA04E0BDD5D5D1AA9F7E3 /* SpriteCatalog.swift */; };
+		AAA64332F30EF80B3B09B7BB /* Bookmarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB4332F30EF80B3B09B7BB09 /* Bookmarks.swift */; };
 		AA383D2891312C5014B22779 /* PlaylistIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB42EC5AB992B597ABD0387 /* PlaylistIO.swift */; };
 		AAC032D338D42950FB89EE00 /* PlaylistModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6E8F1A02031A5DEFAC3E37 /* PlaylistModel.swift */; };
 		AA8F13D2C914E75D6688E311 /* AppConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA27AF03ADE54357D783D64D /* AppConstants.swift */; };
@@ -49,6 +50,7 @@
 		AAC5668CE1E6369C092DE0D8 /* PlayerCoordinator+Playback.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB668CE1E6369C092DE0D8E3 /* PlayerCoordinator+Playback.swift */; };
 		AAD9FE20FC2159EAD22FFDF1 /* PlayerCoordinator+State.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABFE20FC2159EAD22FFDF146 /* PlayerCoordinator+State.swift */; };
 		AA97E2B6784C0E2F3158E31E /* PlayerCoordinator+Windows.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABE2B6784C0E2F3158E31E86 /* PlayerCoordinator+Windows.swift */; };
+		AABC61EDAC460C3C72CEDC00 /* PlayerCoordinator+Bookmarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB61EDAC460C3C72CEDC00A3 /* PlayerCoordinator+Bookmarks.swift */; };
 		AA2BBF0F6C992A5E46B7A987 /* PlayerCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAC2BB3C6AE0885E199BF702 /* PlayerCoordinator.swift */; };
 		AAE0CA665F5ECB5A40A155FB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA5EF6CB8C8A2B5ED39134E5 /* AppState.swift */; };
 		AA23E98EB7712053029F4B2D /* AudioDeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0D4B086012575E24AB9073 /* AudioDeviceManager.swift */; };
@@ -107,6 +109,7 @@
 		AA9A6639CAE2B651F58D1EA5 /* SkinManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SkinManager.swift"; sourceTree = "<group>"; };
 		AA560C0BAB74DB5D70B89CE5 /* SkinModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SkinModel.swift"; sourceTree = "<group>"; };
 		AABDA04E0BDD5D5D1AA9F7E3 /* SpriteCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SpriteCatalog.swift"; sourceTree = "<group>"; };
+		AB4332F30EF80B3B09B7BB09 /* Bookmarks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Bookmarks.swift"; sourceTree = "<group>"; };
 		AAB42EC5AB992B597ABD0387 /* PlaylistIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistIO.swift"; sourceTree = "<group>"; };
 		AA6E8F1A02031A5DEFAC3E37 /* PlaylistModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistModel.swift"; sourceTree = "<group>"; };
 		AA27AF03ADE54357D783D64D /* AppConstants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppConstants.swift"; sourceTree = "<group>"; };
@@ -119,6 +122,7 @@
 		AB668CE1E6369C092DE0D8E3 /* PlayerCoordinator+Playback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayerCoordinator+Playback.swift"; sourceTree = "<group>"; };
 		ABFE20FC2159EAD22FFDF146 /* PlayerCoordinator+State.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayerCoordinator+State.swift"; sourceTree = "<group>"; };
 		ABE2B6784C0E2F3158E31E86 /* PlayerCoordinator+Windows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayerCoordinator+Windows.swift"; sourceTree = "<group>"; };
+		AB61EDAC460C3C72CEDC00A3 /* PlayerCoordinator+Bookmarks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayerCoordinator+Bookmarks.swift"; sourceTree = "<group>"; };
 		AAC2BB3C6AE0885E199BF702 /* PlayerCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayerCoordinator.swift"; sourceTree = "<group>"; };
 		AA5EF6CB8C8A2B5ED39134E5 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppState.swift"; sourceTree = "<group>"; };
 		AA0D4B086012575E24AB9073 /* AudioDeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioDeviceManager.swift"; sourceTree = "<group>"; };
@@ -214,6 +218,7 @@
 				AA36A1D975E52D59DCA57075 /* GlobalHotkeysController.swift */,
 				AA2EE4C01E58DA5839980F70 /* MediaKeyController.swift */,
 				AAC2BB3C6AE0885E199BF702 /* PlayerCoordinator.swift */,
+				AB61EDAC460C3C72CEDC00A3 /* PlayerCoordinator+Bookmarks.swift */,
 				ABE2B6784C0E2F3158E31E86 /* PlayerCoordinator+Windows.swift */,
 				ABFE20FC2159EAD22FFDF146 /* PlayerCoordinator+State.swift */,
 				AB668CE1E6369C092DE0D8E3 /* PlayerCoordinator+Playback.swift */,
@@ -259,6 +264,7 @@
 			isa = PBXGroup;
 			children = (
 				AAB42EC5AB992B597ABD0387 /* PlaylistIO.swift */,
+				AB4332F30EF80B3B09B7BB09 /* Bookmarks.swift */,
 				AA6E8F1A02031A5DEFAC3E37 /* PlaylistModel.swift */,
 			);
 			path = "Playlist";
@@ -516,12 +522,14 @@
 				AA06D528091F6C5F668C19FA /* SkinModel.swift in Sources */,
 				AAB80C694F32155969AE260D /* SpriteCatalog.swift in Sources */,
 				AA383D2891312C5014B22779 /* PlaylistIO.swift in Sources */,
+				AAA64332F30EF80B3B09B7BB /* Bookmarks.swift in Sources */,
 				AAC032D338D42950FB89EE00 /* PlaylistModel.swift in Sources */,
 				AA8F13D2C914E75D6688E311 /* AppConstants.swift in Sources */,
 				AA01006C968B8B5FEA977E7E /* Enums.swift in Sources */,
 				AA50FC858AADC05B57B35BD5 /* GlobalHotkeysController.swift in Sources */,
 				AA9EF05B9533115EC4B41E8D /* MediaKeyController.swift in Sources */,
 				AA2BBF0F6C992A5E46B7A987 /* PlayerCoordinator.swift in Sources */,
+				AABC61EDAC460C3C72CEDC00 /* PlayerCoordinator+Bookmarks.swift in Sources */,
 				AA97E2B6784C0E2F3158E31E /* PlayerCoordinator+Windows.swift in Sources */,
 				AAD9FE20FC2159EAD22FFDF1 /* PlayerCoordinator+State.swift in Sources */,
 				AAC5668CE1E6369C092DE0D8 /* PlayerCoordinator+Playback.swift in Sources */,

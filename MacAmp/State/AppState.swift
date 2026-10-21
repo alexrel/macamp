@@ -65,6 +65,27 @@ public struct AppState: Codable {
         set { enqueueAsDefaultActionStorage = newValue }
     }
     
+    /// Crossfade between tracks in seconds, 0 = off (Optional for decode compatibility)
+    public var crossfadeSecondsStorage: Double? = nil
+    public var crossfadeSeconds: Double {
+        get { crossfadeSecondsStorage ?? 0 }
+        set { crossfadeSecondsStorage = newValue }
+    }
+    
+    /// Bookmarks menu entries (Optional for decode compatibility)
+    public var bookmarksStorage: [Bookmark]? = nil
+    public var bookmarks: [Bookmark] {
+        get { bookmarksStorage ?? [] }
+        set { bookmarksStorage = newValue }
+    }
+    
+    /// Save playlists with paths relative to the playlist file where possible (portable playlists)
+    public var savePlaylistRelativePathsStorage: Bool? = nil
+    public var savePlaylistRelativePaths: Bool {
+        get { savePlaylistRelativePathsStorage ?? false }
+        set { savePlaylistRelativePathsStorage = newValue }
+    }
+    
     /// Winamp "Manual playlist advance": don't start the next track when one ends (Optional for decode compatibility)
     public var manualPlaylistAdvanceStorage: Bool? = nil
     public var manualPlaylistAdvance: Bool {

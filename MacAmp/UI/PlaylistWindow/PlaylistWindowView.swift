@@ -809,6 +809,10 @@ public class PlaylistWindowView: WinampControlView {
         }
     }
     
+    @objc private func contextBookmarkSelected() {
+        BookmarkStore.shared.add(playlist.selectedIndices.sorted().compactMap { playlist.tracks.indices.contains($0) ? playlist.tracks[$0] : nil })
+    }
+    
     @objc private func handleRemoveSelected() {
         playlist.removeSelected()
         needsDisplay = true
@@ -891,7 +895,7 @@ public class PlaylistWindowView: WinampControlView {
         panel.nameFieldStringValue = "playlist.m3u"
         if panel.runModal() == .OK, let url = panel.url {
             do {
-                try PlaylistIO.save(tracks: playlist.tracks, to: url)
+                try PlaylistIO.save(tracks: playlist.tracks, to: url, relativePaths: PersistenceManager.shared.state.savePlaylistRelativePaths)
             } catch {
                 PlayerCoordinator.shared.mainView?.marquee.showTemporaryMessage("Cannot save playlist")
             }
@@ -1542,6 +1546,13 @@ public class PlaylistWindowView: WinampControlView {
             infoItem.keyEquivalentModifierMask = [.option]
             infoItem.target = self
             menu.addItem(infoItem)
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            let bookmarkItem = NSMenuItem(title: "Bookmark item(s)", action: #selector(contextBookmarkSelected), keyEquivalent: "i")
+            bookmarkItem.keyEquivalentModifierMask = [.option]
+            bookmarkItem.target = self
+            menu.addItem(bookmarkItem)
             
             menu.addItem(NSMenuItem.separator())
             

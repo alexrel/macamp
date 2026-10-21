@@ -272,6 +272,14 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         audioEngine.onPlaybackFinished = { [weak self] in
             self?.handleTrackFinished()
         }
+        audioEngine.crossfadeDuration = persistence.state.crossfadeSeconds
+        audioEngine.canCrossfadeIntoNext = { [weak self] in
+            guard let self else { return false }
+            let action = PlayerCoordinator.actionAfterTrackEnd(stopAfterCurrent: self.stopAfterCurrent,
+                                                               manualAdvance: self.persistence.state.manualPlaylistAdvance,
+                                                               isRepeat: self.playlist.isRepeat)
+            return action == .advance && self.playlist.hasNext
+        }
         
         // 2. Transport actions
         mainView.playButton.action = { [weak self] in self?.handlePlay() }

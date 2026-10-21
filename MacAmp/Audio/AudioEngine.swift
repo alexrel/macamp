@@ -36,7 +36,10 @@ public class AudioEngine {
 
     // AVFoundation Engine
     private let engine = AVAudioEngine()
-    private let playerNode = AVAudioPlayerNode()
+    /// File player for the current track. Crossfading swaps it with `spareNode`, which then plays the
+    /// end of the previous track while it fades out.
+    private var playerNode = AVAudioPlayerNode()
+    private var spareNode = AVAudioPlayerNode()
     private let streamNode = AVAudioPlayerNode()
     private let sourceMixer = AVAudioMixerNode()
     private let eqNode = AVAudioUnitEQ(numberOfBands: 10)
@@ -75,6 +78,16 @@ public class AudioEngine {
     public var onStatusUpdate: ((PlayerStatus) -> Void)?
     public var onTimeUpdate: ((TimeInterval) -> Void)?
     public var onPlaybackFinished: (() -> Void)?
+    
+    /// Crossfade length in seconds (0 = off). The next track starts this long before the current one ends.
+    public var crossfadeDuration: TimeInterval = 0
+    /// Asked near a track's end: true when another file will follow (so ending early is safe).
+    public var canCrossfadeIntoNext: (() -> Bool)?
+    /// Early end reported; the next load overlaps instead of cutting the track.
+    private var crossfadeArmed = false
+    private var crossfadeTimer: Timer?
+    /// True while the previous track is still audible under the new one (exposed for tests).
+    public private(set) var isCrossfading = false
     /// Main thread, one per 1024-frame analysis window (~43 fps at 44.1 kHz); nothing while silent.
     /// Read the frame with `frame.read(spectrum:waveform:)`.
     public var onVisualizerFrame: ((VisualizerFrameBuffer) -> Void)?
@@ -255,6 +268,7 @@ public class AudioEngine {
 
     private func setupGraph() {
         engine.attach(playerNode)
+        engine.attach(spareNode)
         engine.attach(streamNode)
         engine.attach(sourceMixer)
         engine.attach(eqNode)
@@ -262,6 +276,7 @@ public class AudioEngine {
         engine.attach(reverbNode)
 
         engine.connect(playerNode, to: sourceMixer, fromBus: 0, toBus: 0, format: nil)
+        engine.connect(spareNode, to: sourceMixer, fromBus: 0, toBus: 2, format: nil)
         // streamNode is connected to bus 1 once the stream's decoded format is known
         engine.connect(sourceMixer, to: eqNode, format: nil)
         // EQ -> [TimePitch] -> [Reverb] -> mainMixer: DSP nodes are wired in only while active (see rewireDSPChain)
@@ -428,7 +443,7 @@ public class AudioEngine {
         let loadToken = loadGeneration
 
         // Track change: quick fade so the old track doesn't end with a click
-        if status == .playing && fadeOutDuration > 0 {
+        if status == .playing && fadeOutDuration > 0 && !crossfadeArmed {
             await fadeOutAsync(duration: min(0.08, fadeOutDuration))
             guard loadToken == loadGeneration else { throw CancellationError() }
         }
@@ -522,7 +537,16 @@ public class AudioEngine {
     private func teardownCurrentSource() {
         playbackGeneration += 1
         finishedWhilePaused = false
-        playerNode.stop()
+        if crossfadeArmed && audioFile != nil {
+            // Keep the old track playing on the other node; play() fades it out under the new one
+            cutCrossfade()
+            swap(&playerNode, &spareNode)
+            isCrossfading = true
+        } else {
+            crossfadeArmed = false
+            cutCrossfade()
+            playerNode.stop()
+        }
         audioFile = nil
         playbackTimer?.invalidate()
         playbackTimer = nil
@@ -707,6 +731,11 @@ public class AudioEngine {
         if isStreaming {
             if status == .playing { return }
             status = .playing
+            if crossfadeArmed && isCrossfading {
+                // File -> stream: the file fades out while the stream connects
+                crossfadeArmed = false
+                startCrossfadeRamp(over: crossfadeDuration)
+            }
             startStreamTimer()
             if let sp = streamPlayer {
                 sp.play()
@@ -754,10 +783,21 @@ public class AudioEngine {
         startFrameOffset = startFrame
         scheduleFileSegment(file, from: startFrame, frames: frameCount, generation: gen)
 
-        sourceMixer.outputVolume = 0
-        playerNode.play()
-        status = .playing
-        fade(to: 1.0, duration: AudioEngine.fadeInDuration)
+        if crossfadeArmed && isCrossfading {
+            crossfadeArmed = false
+            playerNode.volume = 0
+            playerNode.play()
+            status = .playing
+            startCrossfadeRamp(over: crossfadeDuration)
+        } else {
+            crossfadeArmed = false
+            cutCrossfade()
+            playerNode.volume = 1
+            sourceMixer.outputVolume = 0
+            playerNode.play()
+            status = .playing
+            fade(to: 1.0, duration: AudioEngine.fadeInDuration)
+        }
         startTimer()
     }
 
@@ -800,6 +840,7 @@ public class AudioEngine {
 
         // Keep playbackGeneration unchanged: the scheduled segment stays valid across pause/resume,
         // and its completion handler must still advance to the next track.
+        cutCrossfade()
         let gen = playbackGeneration
         currentTrackTime = currentTime
         status = .paused
@@ -866,6 +907,8 @@ public class AudioEngine {
     /// - Parameter duration: fade length; defaults to the "Fade out on Pause/Stop" preference.
     private func stopInternal(fade shouldFade: Bool, duration: TimeInterval? = nil) {
         let wasPlaying = (status == .playing)
+        crossfadeArmed = false
+        cutCrossfade()
         playbackGeneration += 1
         let gen = playbackGeneration
         finishedWhilePaused = false
@@ -920,6 +963,8 @@ public class AudioEngine {
         playbackGeneration += 1
         let gen = playbackGeneration
         finishedWhilePaused = false
+        crossfadeArmed = false
+        cutCrossfade()
         playerNode.stop()
 
         let totalFrames = (file.length > 0) ? file.length : AVAudioFramePosition(fileDuration * sampleRate)
@@ -955,6 +1000,8 @@ public class AudioEngine {
         playbackGeneration += 1
         let gen = playbackGeneration
         finishedWhilePaused = false
+        crossfadeArmed = false
+        cutCrossfade()
         playerNode.stop()
 
         if let file = audioFile {
@@ -977,6 +1024,11 @@ public class AudioEngine {
     }
 
     private func handlePlaybackCompletion() {
+        if crossfadeArmed {
+            // The early end was already reported and nothing took over: just end quietly
+            stopInternal(fade: false)
+            return
+        }
         if status == .playing {
             stopInternal(fade: false)
             onPlaybackFinished?()
@@ -994,10 +1046,56 @@ public class AudioEngine {
             let cur = self.currentTime
             self.currentTrackTime = cur
             self.onTimeUpdate?(cur)
+            self.startCrossfadeIfDue(at: cur)
         }
         timer.tolerance = 0.02 // lets macOS coalesce wakeups
         RunLoop.main.add(timer, forMode: .common)
         playbackTimer = timer
+    }
+
+    // MARK: - Crossfade
+
+    /// Near the end of a file, report it finished early so the next track starts under this one.
+    private func startCrossfadeIfDue(at time: TimeInterval) {
+        guard crossfadeDuration > 0, !crossfadeArmed, !isCrossfading, audioFile != nil,
+              fileDuration > crossfadeDuration * 2, // short tracks just play out
+              fileDuration - time <= crossfadeDuration,
+              canCrossfadeIntoNext?() == true else { return }
+        crossfadeArmed = true
+        onPlaybackFinished?()
+    }
+
+    /// Equal-power ramp: new track in on `playerNode`, the old one out on `spareNode`, then the old one stops.
+    private func startCrossfadeRamp(over duration: TimeInterval) {
+        crossfadeTimer?.invalidate()
+        let outgoing = spareNode
+        let incoming = playerNode
+        let startOut = outgoing.volume
+        let begin = Date()
+        let length = max(0.05, duration)
+        let timer = Timer(timeInterval: 0.01, repeats: true) { [weak self] timer in
+            let progress = min(1.0, Date().timeIntervalSince(begin) / length)
+            incoming.volume = Float(sin(progress * .pi / 2))
+            outgoing.volume = startOut * Float(cos(progress * .pi / 2))
+            if progress >= 1.0 {
+                timer.invalidate()
+                self?.cutCrossfade()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        crossfadeTimer = timer
+    }
+
+    /// Ends a crossfade now: the old track stops, the new one plays at full level.
+    private func cutCrossfade() {
+        crossfadeTimer?.invalidate()
+        crossfadeTimer = nil
+        if isCrossfading {
+            spareNode.stop()
+            isCrossfading = false
+        }
+        spareNode.volume = 1
+        playerNode.volume = 1
     }
 
     private func startStreamTimer() {

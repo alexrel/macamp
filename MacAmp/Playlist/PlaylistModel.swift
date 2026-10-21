@@ -553,6 +553,14 @@ public class PlaylistModel: ObservableObject {
     }
     
     // MARK: - Navigation
+    /// Whether `next()` would return a track (without moving).
+    public var hasNext: Bool {
+        guard !tracks.isEmpty else { return false }
+        if isRepeat { return true }
+        if isShuffle { return shufflePosition + 1 < tracks.count }
+        return (currentIndex.map { $0 + 1 } ?? 0) < tracks.count
+    }
+    
     public func next() -> TrackItem? {
         guard !tracks.isEmpty else { return nil }
         

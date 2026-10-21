@@ -222,6 +222,10 @@ extension PlayerCoordinator {
         let playMenuItem = NSMenuItem(title: "Play", action: nil, keyEquivalent: "")
         playMenuItem.submenu = playMenu
         menu.addItem(playMenuItem)
+        
+        let bookmarksItem = NSMenuItem(title: "Bookmarks", action: nil, keyEquivalent: "")
+        bookmarksItem.submenu = buildBookmarksMenu()
+        menu.addItem(bookmarksItem)
         menu.addItem(NSMenuItem.separator())
         
         // 4. Windows toggles

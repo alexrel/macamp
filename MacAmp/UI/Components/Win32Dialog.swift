@@ -13,10 +13,52 @@ public enum Win32Dialog {
         return accepted ? model.text : nil
     }
 
+    /// Several labeled text fields (e.g. Edit bookmark: Title, File). Returns the values, or nil on Cancel / Esc.
+    public static func promptFields(title: String, fields: [(label: String, value: String)], width: CGFloat = 400) -> [String]? {
+        let model = FieldsModel(values: fields.map(\.value))
+        let accepted = runModal(title: title, width: width) { finish in
+            FieldsView(labels: fields.map(\.label), model: model, finish: finish)
+        }
+        return accepted ? model.values : nil
+    }
+
     /// Asks a yes/no question. Returns true for the confirm button.
     public static func confirm(title: String, message: String, confirmTitle: String = "OK", cancelTitle: String = "Cancel") -> Bool {
         runModal(title: title, width: 340) { finish in
             ConfirmView(message: message, confirmTitle: confirmTitle, cancelTitle: cancelTitle, finish: finish)
+        }
+    }
+
+    private final class FieldsModel: ObservableObject {
+        @Published var values: [String]
+        init(values: [String]) { self.values = values }
+    }
+
+    private struct FieldsView: View {
+        let labels: [String]
+        @ObservedObject var model: FieldsModel
+        let finish: (Bool) -> Void
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(labels.indices, id: \.self) { i in
+                    HStack(spacing: 6) {
+                        Text(labels[i] + ":")
+                            .font(.system(size: 11))
+                            .foregroundColor(Win32Colors.text)
+                            .frame(width: 36, alignment: .leading)
+                        Win32TextField(text: $model.values[i], autoFocus: i == 0 ? .selectAll : .none)
+                    }
+                }
+                HStack(spacing: 6) {
+                    Spacer()
+                    Win32Button("OK", isDefault: true) { finish(true) }
+                    Win32Button("Cancel") { finish(false) }
+                }
+                .padding(.top, 4)
+            }
+            .padding(12)
+            .background(Win32Colors.dialogBg)
         }
     }
 

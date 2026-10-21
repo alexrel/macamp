@@ -1039,7 +1039,31 @@ testGroup("Internet Radio via AVAudioEngine (Decoder, ICY, Reconnect)") {
     assertEqual(format?.channelCount, 2, "Decoder reports stereo")
     let decodedSeconds = Double(decodedFrames) / 44100
     assertTrue(decodedSeconds > 2.7 && decodedSeconds < 3.2, "Decoded ~3s of PCM (got \(decodedSeconds))")
-    assertTrue(!StreamDecoder.canDecode(contentType: "application/ogg"), "Ogg goes to the AVPlayer fallback")
+    assertTrue(StreamDecoder.canDecode(contentType: "application/ogg"), "Ogg radio decoded in-engine (EQ, visualizer, proxy)")
+    assertTrue(!StreamDecoder.canDecode(contentType: "application/vnd.apple.mpegurl"), "HLS goes to the AVPlayer fallback")
+    let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("fixtures")
+    let opusBytes = try Data(contentsOf: fixtures.appendingPathComponent("tone.opus"))
+    let opus = try StreamDecoder(contentType: "audio/ogg")
+    var opusFrames: AVAudioFrameCount = 0
+    opus.onBuffer = { opusFrames += $0.frameLength }
+    var at = 0
+    while at < opusBytes.count {
+        let end = min(opusBytes.count, at + 777)
+        try opus.feed(opusBytes.subdata(in: at..<end))
+        at = end
+    }
+    let opusSeconds = Double(opusFrames) / 48000
+    assertTrue(opusSeconds > 0.9 && opusSeconds < 1.1, "Ogg Opus stream decodes in-engine (\(opusSeconds)s)")
+    let vorbis = try StreamDecoder(contentType: "application/ogg")
+    var vorbisRejected = false
+    do { try vorbis.feed(try Data(contentsOf: fixtures.appendingPathComponent("tone.ogg"))) } catch { vorbisRejected = true }
+    assertTrue(vorbisRejected, "Ogg Vorbis stream is handed to the AVPlayer fallback (AVAudioConverter can't decode it)")
+    let junk = try StreamDecoder(contentType: "application/ogg")
+    var junkFailed = false
+    do {
+        for _ in 0..<40 { try junk.feed(Data(repeating: 0x5A, count: 8192)) }
+    } catch { junkFailed = true }
+    assertTrue(junkFailed, "Undecodable data gives up after the probe limit (then AVPlayer takes over)")
     assertTrue(StreamDecoder.canDecode(contentType: "audio/mpeg"), "MP3 decoded in-engine")
     
     // ICY demux: audio bytes forwarded without metadata blocks
@@ -1643,6 +1667,21 @@ testGroup("Playlist Paths: Absolute, Relative, VLC, Windows") {
     let home = PlaylistIO.resolveEntry("~/Music/x.mp3", baseURL: base)
     assertTrue(home.path.hasSuffix("/Music/x.mp3") && !home.path.contains("~"), "~ expands to the home folder (\(home.path))")
     
+    // Saving with relative paths: files under the playlist's folder relative, others absolute; round-trips
+    let saveTracks = [song, near, far].map { TrackItem(url: $0, title: $0.lastPathComponent) } + [TrackItem(url: URL(string: "http://radio.example.com/stream")!, title: "r")]
+    for ext in ["m3u", "pls"] {
+        let out = music.appendingPathComponent("relative.\(ext)")
+        try PlaylistIO.save(tracks: saveTracks, to: out, relativePaths: true)
+        let text = try String(contentsOf: out, encoding: .utf8)
+        assertTrue(text.contains("mp3/#1 Группа крови [x].mp3\n") && !text.contains(song.path), "\(ext): file in a subfolder saved relative")
+        assertTrue(text.contains(far.standardizedFileURL.path), "\(ext): file outside the folder stays absolute")
+        assertTrue(text.contains("http://radio.example.com/stream"), "\(ext): stream URL unchanged")
+        let entries = awaitValue { await PlaylistIO.loadEntries(from: out) }
+        assertEqual(entries.map { $0.url.standardizedFileURL.path }.prefix(3).map { $0 }, [song, near, far].map { $0.standardizedFileURL.path }, "\(ext): relative playlist loads back")
+    }
+    try PlaylistIO.save(tracks: saveTracks, to: music.appendingPathComponent("absolute.m3u"))
+    assertTrue(try String(contentsOf: music.appendingPathComponent("absolute.m3u"), encoding: .utf8).contains(near.standardizedFileURL.path), "Absolute paths by default")
+    
     // A VLC playlist (the kind that failed to open) loads with every file found
     let m3u = "#EXTM3U\n#EXTINF:123,Группа крови\nmp3/%231%20%D0%93%D1%80%D1%83%D0%BF%D0%BF%D0%B0%20%D0%BA%D1%80%D0%BE%D0%B2%D0%B8%20%5Bx%5D.mp3\n#EXTINF:60,Кукушка\nКукушка.mp3\n"
     let m3uURL = music.appendingPathComponent("vlc.m3u")
@@ -1757,6 +1796,133 @@ testGroup("TrueType Title Fits the LCD") {
     }
     PersistenceManager.shared.state.desktopFontSize = 8
     assertEqual(marquee.trueTypeFont().pointSize, 8, "A size that fits is not shrunk")
+}
+
+testGroup("Ogg Vorbis / Opus Playback") {
+    let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("fixtures")
+    let engine = AudioEngine.shared
+    defer { engine.stop() }
+    for (file, title, artist) in [("tone.ogg", "Ogg Title", "Ogg Artist"), ("tone.opus", "Opus Title", "Opus Artist")] {
+        let url = fixtures.appendingPathComponent(file)
+        assertTrue(AppConstants.Audio.supportedExtensions.contains(url.pathExtension), "\(file) is a supported extension")
+        let meta = try loadSync(engine, url)
+        assertTrue(abs(meta.duration - 1) < 0.1, "\(file) decodes in the engine (EQ/visualizer path), duration \(meta.duration)")
+        let item = awaitValue { await TrackItem.create(from: url) }
+        assertEqual(item.title, title, "\(file) title tag")
+        assertEqual(item.artist, artist, "\(file) artist tag")
+    }
+}
+
+testGroup("Bookmarks") {
+    let store = BookmarkStore.shared
+    store.remove(Set(store.items.map(\.id)))
+    let song = TrackItem(url: URL(fileURLWithPath: "/tmp/Кино - Кукушка.mp3"), title: "Кукушка", artist: "Кино", duration: 401)
+    let radio = TrackItem.entry(url: URL(string: "http://radio.example.com:8000/stream")!, title: "Radio")
+    store.add([song, radio, song])
+    assertEqual(store.items.map(\.title), ["Кино - Кукушка", "Radio"], "Bookmarks use the playlist title; a file isn't added twice")
+    assertEqual(PersistenceManager.shared.state.bookmarks.count, 2, "Bookmarks saved with the session")
+    let data = try JSONEncoder().encode(PersistenceManager.shared.state)
+    let decoded = try JSONDecoder().decode(AppState.self, from: data)
+    assertEqual(decoded.bookmarks.map(\.url), [song.url, radio.url], "Bookmarks round-trip through session.json")
+    var edited = store.items[1]
+    edited.title = "My Radio"
+    store.update(edited)
+    assertEqual(store.items[1].title, "My Radio", "Edit bookmark changes the title")
+
+    let coordinator = PlayerCoordinator.shared
+    let menu = coordinator.buildBookmarksMenu()
+    assertEqual(menu.items.map(\.title), ["Add current as bookmark", "Edit bookmarks...", "", "Кино - Кукушка", "My Radio"], "Bookmarks menu: add, edit, then the list")
+    assertEqual(menu.items[0].keyEquivalent, "i", "Add current as bookmark is ⌥I")
+    assertEqual(menu.items[0].keyEquivalentModifierMask, [.option], "Add current as bookmark is ⌥I")
+    assertEqual(menu.items[1].keyEquivalentModifierMask, [.control, .option], "Edit bookmarks is ⌃⌥I")
+    store.remove([store.items[0].id])
+    assertEqual(store.items.map(\.title), ["My Radio"], "Remove deletes the bookmark")
+    store.remove(Set(store.items.map(\.id)))
+    let empty = coordinator.buildBookmarksMenu()
+    assertEqual(empty.items.last?.title, "(no bookmarks)", "Empty list shows (no bookmarks) like Winamp")
+    assertTrue(empty.items.last?.isEnabled == false, "(no bookmarks) is disabled")
+    assertEqual(PrefTreeItem.bookmarks.sectionHeader, "Playlist", "Bookmarks page sits in Preferences ▸ Playlist")
+}
+
+testGroup("Crossfade Between Tracks") {
+    let engine = AudioEngine.shared
+    let savedFinished = engine.onPlaybackFinished
+    let savedCanCrossfade = engine.canCrossfadeIntoNext
+    defer {
+        engine.onPlaybackFinished = savedFinished
+        engine.canCrossfadeIntoNext = savedCanCrossfade
+        engine.crossfadeDuration = 0
+        engine.stop()
+    }
+    AudioDeviceManager.shared.selectDevice(uid: nil)
+    engine.setOutputDevice(deviceID: AudioDeviceManager.shared.defaultDevice?.id)
+    _ = spinRunLoop(until: { false }, timeout: 0.3)
+    let first = try makeTestWAV(named: "xfade-a.wav", seconds: 4.0)
+    let second = try makeTestWAV(named: "xfade-b.wav", seconds: 4.0)
+    let short = try makeTestWAV(named: "xfade-short.wav", seconds: 1.5)
+
+    engine.crossfadeDuration = 1.0
+    var allowNext = true
+    engine.canCrossfadeIntoNext = { allowNext }
+    var finishedAt: TimeInterval?
+    engine.onPlaybackFinished = {
+        finishedAt = engine.currentTime
+        Task { @MainActor in
+            _ = try? await engine.load(url: second)
+            engine.play()
+        }
+    }
+
+    // Starts the next track ~1 s before the end, both audible for a moment, then only the new one
+    _ = try loadSync(engine, first)
+    engine.seek(to: 2.5)
+    engine.play()
+    assertTrue(spinRunLoop(until: { engine.isCrossfading && engine.status == .playing }, timeout: 3), "Next track starts under the current one")
+    assertTrue((finishedAt ?? 9) > 2.8 && (finishedAt ?? 9) < 3.3, "Hand-off happens ~1 s before the end (at \(finishedAt ?? -1))")
+    assertEqual(engine.currentMetadata?.url, second, "The new track is current during the crossfade")
+    assertEqual(engine.status, .playing, "Playing during the crossfade")
+    assertTrue(engine.currentTime < 1.0, "Time display follows the new track")
+    assertTrue(spinRunLoop(until: { !engine.isCrossfading }, timeout: 2.5), "The old track stops after the crossfade")
+    assertEqual(engine.status, .playing, "The new track keeps playing")
+
+    // Pause during a crossfade cuts the old track
+    finishedAt = nil
+    _ = try loadSync(engine, first)
+    engine.seek(to: 2.6)
+    engine.play()
+    assertTrue(spinRunLoop(until: { engine.isCrossfading && engine.status == .playing }, timeout: 3), "Second crossfade starts")
+    engine.pause()
+    assertTrue(!engine.isCrossfading, "Pause ends the crossfade")
+    engine.stop()
+
+    // No next track (end of list, stop-after-current, manual advance): the track plays to its real end
+    allowNext = false
+    var plainFinished = 0
+    engine.onPlaybackFinished = { plainFinished += 1; finishedAt = engine.currentTime }
+    _ = try loadSync(engine, first)
+    engine.seek(to: 2.5)
+    engine.play()
+    assertTrue(spinRunLoop(until: { plainFinished == 1 }, timeout: 3), "Track finishes")
+    assertTrue(!engine.isCrossfading, "No crossfade without a next track")
+    assertEqual(engine.status, .stopped, "Stopped at the real end")
+
+    // Tracks shorter than two crossfades just play out
+    allowNext = true
+    plainFinished = 0
+    _ = try loadSync(engine, short)
+    engine.play()
+    assertTrue(spinRunLoop(until: { plainFinished == 1 }, timeout: 3), "Short track finishes")
+    assertEqual(engine.status, .stopped, "Short track ended normally (no early hand-off)")
+
+    // Playlist look-ahead used to decide
+    let list = PlaylistModel()
+    list.add(tracks: [TrackItem(url: first, title: "a"), TrackItem(url: second, title: "b")])
+    list.currentIndex = 0
+    assertTrue(list.hasNext, "Has a next track")
+    list.currentIndex = 1
+    assertTrue(!list.hasNext, "Last track without Repeat has no next")
+    list.isRepeat = true
+    assertTrue(list.hasNext, "Repeat wraps around")
 }
 
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")

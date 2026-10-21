@@ -261,7 +261,7 @@ public enum AppConstants {
         public static let defaultBalance: Double = 0.0 // -1.0 (Left) ... 0.0 (Center) ... +1.0 (Right)
         
         public static let supportedExtensions: Set<String> = [
-            "mp3", "flac", "wav", "aiff", "aif", "m4a", "aac", "alac", "ogg"
+            "mp3", "flac", "wav", "aiff", "aif", "m4a", "aac", "alac", "ogg", "oga", "opus"
         ]
         public static let skinExtensions: Set<String> = ["wsz", "zip"]
         public static let playlistExtensions: Set<String> = ["m3u", "m3u8", "pls", "xspf"] // xspf: VLC's own format

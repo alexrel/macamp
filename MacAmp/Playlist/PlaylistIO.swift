@@ -193,26 +193,33 @@ public enum PlaylistIO {
     }
     
     /// Playlist entry location: file path for local files, full URL for streams
-    private static func location(of track: TrackItem) -> String {
-        track.url.isFileURL ? track.url.path : track.url.absoluteString
+    /// With `relativeTo`, files inside the playlist's folder are written relative to it; others stay absolute.
+    private static func location(of track: TrackItem, relativeTo folder: URL?) -> String {
+        guard track.url.isFileURL else { return track.url.absoluteString }
+        let path = track.url.standardizedFileURL.path
+        if let folder {
+            let prefix = folder.standardizedFileURL.path + "/"
+            if path.hasPrefix(prefix) { return String(path.dropFirst(prefix.count)) }
+        }
+        return path
     }
     
     // MARK: - Save M3U
-    public static func saveM3U(tracks: [TrackItem], to url: URL) throws {
+    public static func saveM3U(tracks: [TrackItem], to url: URL, relativePaths: Bool = false) throws {
         var content = "#EXTM3U\n"
         for track in tracks {
             content += "#EXTINF:\(track.duration > 0 ? Int(track.duration) : -1),\(track.displayName)\n"
-            content += "\(location(of: track))\n"
+            content += "\(location(of: track, relativeTo: relativePaths ? url.deletingLastPathComponent() : nil))\n"
         }
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
     
     // MARK: - Save PLS
-    public static func savePLS(tracks: [TrackItem], to url: URL) throws {
+    public static func savePLS(tracks: [TrackItem], to url: URL, relativePaths: Bool = false) throws {
         var content = "[playlist]\n"
         for (i, track) in tracks.enumerated() {
             let n = i + 1
-            content += "File\(n)=\(location(of: track))\n"
+            content += "File\(n)=\(location(of: track, relativeTo: relativePaths ? url.deletingLastPathComponent() : nil))\n"
             content += "Title\(n)=\(track.displayName)\n"
             content += "Length\(n)=\(track.duration > 0 ? Int(track.duration) : -1)\n"
         }
@@ -221,11 +228,11 @@ public enum PlaylistIO {
     }
     
     /// Saves as PLS or M3U depending on the file extension.
-    public static func save(tracks: [TrackItem], to url: URL) throws {
+    public static func save(tracks: [TrackItem], to url: URL, relativePaths: Bool = false) throws {
         if url.pathExtension.lowercased() == "pls" {
-            try savePLS(tracks: tracks, to: url)
+            try savePLS(tracks: tracks, to: url, relativePaths: relativePaths)
         } else {
-            try saveM3U(tracks: tracks, to: url)
+            try saveM3U(tracks: tracks, to: url, relativePaths: relativePaths)
         }
     }
     

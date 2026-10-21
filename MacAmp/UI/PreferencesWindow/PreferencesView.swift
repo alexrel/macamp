@@ -23,6 +23,7 @@ public enum PrefTreeItem: String, CaseIterable, Identifiable {
     case dsp = "DSP / Effects"
     case equalizer = "Equalizer"
     case playlist = "Track Display"
+    case bookmarks = "Bookmarks"
     case skins = "Installed Skins"
     
     public var id: String { rawValue }
@@ -32,7 +33,7 @@ public enum PrefTreeItem: String, CaseIterable, Identifiable {
         case .setup, .fileTypes: return "Setup"
         case .display, .titles, .visualization, .hotkeys: return "Options"
         case .audio, .output, .dsp, .equalizer: return "Audio"
-        case .playlist: return "Playlist"
+        case .playlist, .bookmarks: return "Playlist"
         case .skins: return "Skins"
         }
     }
@@ -135,6 +136,13 @@ public class PreferencesViewModel: ObservableObject {
         }
     }
     
+    @Published public var savePlaylistRelativePaths: Bool {
+        didSet {
+            PersistenceManager.shared.state.savePlaylistRelativePaths = savePlaylistRelativePaths
+            PersistenceManager.shared.saveSession()
+        }
+    }
+    
     @Published public var playlistShowExtensions: Bool {
         didSet {
             PersistenceManager.shared.state.playlistShowExtensions = playlistShowExtensions
@@ -151,6 +159,14 @@ public class PreferencesViewModel: ObservableObject {
     }
     
     // Audio State
+    @Published public var crossfadeSeconds: Double {
+        didSet {
+            PersistenceManager.shared.state.crossfadeSeconds = crossfadeSeconds
+            PersistenceManager.shared.scheduleSave()
+            AudioEngine.shared.crossfadeDuration = crossfadeSeconds
+        }
+    }
+    
     @Published public var audioFadeOutDurationMs: Double {
         didSet {
             PersistenceManager.shared.state.audioFadeOutDurationMs = audioFadeOutDurationMs
@@ -267,8 +283,10 @@ public class PreferencesViewModel: ObservableObject {
         self.showNumbersInPlaylist = state.showNumbersInPlaylist
         self.playlistZeroPadding = state.playlistZeroPadding
         self.playlistShowExtensions = state.playlistShowExtensions
+        self.savePlaylistRelativePaths = state.savePlaylistRelativePaths
         self.authenticShuffle = state.authenticShuffle
         self.audioFadeOutDurationMs = state.audioFadeOutDurationMs
+        self.crossfadeSeconds = state.crossfadeSeconds
         self.autoGenreEQ = state.autoGenreEQ
         self.isGlobalHotkeysEnabled = state.isGlobalHotkeysEnabled
         self.isDspEnabled = state.isDspEnabled
@@ -324,7 +342,7 @@ public class PreferencesViewModel: ObservableObject {
             case .setup, .fileTypes, .display, .titles, .visualization, .hotkeys: return .titles
             case .skins: return .skins
             case .audio, .output, .dsp, .equalizer: return .audio
-            case .playlist: return .playlist
+            case .playlist, .bookmarks: return .playlist
             }
         }
         set {
@@ -473,6 +491,8 @@ public struct PreferencesView: View {
                             equalizerSection
                         case .playlist:
                             playlistSection
+                        case .bookmarks:
+                            BookmarksSection()
                         case .skins:
                             skinsSection
                         }
@@ -758,6 +778,22 @@ public struct PreferencesView: View {
                     Text("Smoothly reduces audio volume before pausing or stopping to avoid pops or clicks.")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
+                    
+                    HStack {
+                        Text("Crossfade between tracks:")
+                            .font(.system(size: 11))
+                        Spacer()
+                        Text(viewModel.crossfadeSeconds > 0 ? "\(Int(viewModel.crossfadeSeconds)) s" : "Off")
+                            .font(.system(size: 11, design: .monospaced))
+                    }
+                    .padding(.top, 4)
+                    
+                    Win32Slider(value: $viewModel.crossfadeSeconds, in: 0...10, step: 1)
+                    
+                    Text("The next track starts while the current one fades out (files only; not with Stop after current or Manual advance).")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             
@@ -980,6 +1016,10 @@ public struct PreferencesView: View {
                 }
             }
             
+            Win32GroupBox("Saving Playlists") {
+                Win32Checkbox("Save paths relative to the playlist file (files in its folder)", isOn: $viewModel.savePlaylistRelativePaths)
+            }
+            
             Win32GroupBox("Playback Shuffle Engine") {
                 VStack(alignment: .leading, spacing: 6) {
                     Win32Checkbox("Authentic Winamp pseudo-random shuffle (remembers played tracks without repeats)", isOn: $viewModel.authenticShuffle)
@@ -1063,6 +1103,81 @@ public struct PreferencesView: View {
 }
 
 // MARK: - Setup ▸ File types (Winamp "File type setup")
+/// Winamp's Bookmarks page: the list with Open / Enqueue / Remove / Edit (double-click opens).
+private struct BookmarksSection: View {
+    @ObservedObject private var store = BookmarkStore.shared
+    @State private var selection = Set<UUID>()
+
+    private var selected: [Bookmark] { store.items.filter { selection.contains($0.id) } }
+
+    var body: some View {
+        Win32GroupBox("Bookmarks") {
+            HStack(alignment: .top, spacing: 8) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if store.items.isEmpty {
+                            Text("(no bookmarks) — add with ⌥I or the playlist's \"Bookmark item(s)\"")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .padding(4)
+                        }
+                        ForEach(store.items) { bookmark in
+                            row(bookmark)
+                        }
+                    }
+                    .padding(2)
+                }
+                .frame(maxWidth: .infinity, minHeight: 260, maxHeight: 260)
+                .background(Color.white)
+                .win32Sunken()
+
+                VStack(spacing: 6) {
+                    Win32Button("Open", width: 70) { PlayerCoordinator.shared.openBookmarks(selected, enqueue: false) }
+                    Win32Button("Enqueue", width: 70) { PlayerCoordinator.shared.openBookmarks(selected, enqueue: true) }
+                    Win32Button("Remove", width: 70) { store.remove(selection); selection = [] }
+                    Win32Button("Edit", width: 70) { if let first = selected.first { edit(first) } }
+                }
+                .disabled(selection.isEmpty)
+            }
+        }
+    }
+
+    private func row(_ bookmark: Bookmark) -> some View {
+        let isOn = selection.contains(bookmark.id)
+        return Text(bookmark.title)
+            .font(.system(size: 11))
+            .lineLimit(1)
+            .foregroundColor(isOn ? .white : Win32Colors.text)
+            .padding(.horizontal, 4)
+            .frame(maxWidth: .infinity, minHeight: 15, alignment: .leading)
+            .background(isOn ? Win32Colors.selectionBlue : Color.clear)
+            .contentShape(Rectangle())
+            .help(bookmark.url.isFileURL ? bookmark.url.path : bookmark.url.absoluteString)
+            .onTapGesture(count: 2) { PlayerCoordinator.shared.openBookmarks([bookmark], enqueue: false) }
+            .onTapGesture {
+                // ⌘-click adds to the selection, like a Win32 multi-select list
+                if NSEvent.modifierFlags.contains(.command) {
+                    if isOn { selection.remove(bookmark.id) } else { selection.insert(bookmark.id) }
+                } else {
+                    selection = [bookmark.id]
+                }
+            }
+    }
+
+    /// Winamp's "Edit bookmark" dialog: Title and File
+    private func edit(_ bookmark: Bookmark) {
+        let location = bookmark.url.isFileURL ? bookmark.url.path : bookmark.url.absoluteString
+        guard let values = Win32Dialog.promptFields(title: "Edit bookmark", fields: [("Title", bookmark.title), ("File", location)]) else { return }
+        let title = values[0].trimmingCharacters(in: .whitespaces)
+        let file = values[1].trimmingCharacters(in: .whitespaces)
+        guard !file.isEmpty else { return }
+        var updated = bookmark
+        updated.title = title.isEmpty ? bookmark.title : title
+        updated.url = file.contains("://") ? (URL(string: file) ?? bookmark.url) : URL(fileURLWithPath: (file as NSString).expandingTildeInPath)
+        store.update(updated)
+    }
+}
+
 private struct FileTypesSection: View {
     @ObservedObject private var manager = FileAssociationManager.shared
     @ObservedObject private var icons = DocumentIconManager.shared

@@ -73,6 +73,7 @@
 			<array>
 				<string>ogg</string>
 				<string>oga</string>
+				<string>opus</string>
 			</array>
 		</dict>
 		<dict>

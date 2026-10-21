@@ -41,12 +41,21 @@ public final class StreamDecoder {
         if let streamID { AudioFileStreamClose(streamID) }
     }
 
-    /// Returns false for formats AudioFileStream cannot decode (Ogg Vorbis/Opus, HLS playlists).
+    /// Returns false for HLS playlists, which AudioFileStream can't parse. Ogg Opus decodes on current macOS;
+    /// Ogg Vorbis parses but AVAudioConverter outputs no audio for it (only Apple's file reader decodes it),
+    /// so `feed` throws once a Vorbis or unknown format shows up and the engine falls back to AVPlayer.
     public static func canDecode(contentType: String?) -> Bool {
         guard let type = contentType?.lowercased() else { return true }
-        let unsupported = ["ogg", "opus", "vorbis", "mpegurl", "flac"]
-        return !unsupported.contains { type.contains($0) }
+        return !type.contains("mpegurl")
     }
+    
+    /// 'vorb' (no public constant in AudioToolbox)
+    static let vorbisFormatID: AudioFormatID = 0x766F_7262
+    
+    /// Bytes fed without a recognized format before giving up (a format the parser doesn't know).
+    static let formatProbeLimit = 256 * 1024
+    private var bytesBeforeFormat = 0
+    private var hasFormat = false
 
     static func fileTypeHint(for contentType: String?) -> AudioFileTypeID {
         let type = contentType?.lowercased() ?? ""
@@ -61,6 +70,10 @@ public final class StreamDecoder {
             AudioFileStreamParseBytes(streamID, UInt32(raw.count), raw.baseAddress, [])
         }
         if status != noErr { throw DecoderError.parseFailed(status) }
+        if !hasFormat {
+            bytesBeforeFormat += data.count
+            if bytesBeforeFormat > StreamDecoder.formatProbeLimit { throw DecoderError.unsupportedFormat }
+        }
         if parseError != noErr {
             let err = parseError
             parseError = noErr
@@ -77,6 +90,7 @@ public final class StreamDecoder {
         var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
         guard AudioFileStreamGetProperty(streamID, kAudioFileStreamProperty_DataFormat, &size, &asbd) == noErr,
               asbd.mSampleRate > 0, asbd.mChannelsPerFrame > 0,
+              asbd.mFormatID != StreamDecoder.vorbisFormatID,
               let input = AVAudioFormat(streamDescription: &asbd) else {
             parseError = kAudioFormatUnsupportedDataFormatError
             return
@@ -106,6 +120,7 @@ public final class StreamDecoder {
         self.inputFormat = input
         self.outputFormat = output
         self.converter = converter
+        hasFormat = true
         onFormatReady?(output)
     }
 
