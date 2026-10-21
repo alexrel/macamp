@@ -2009,4 +2009,13 @@ testGroup("CUE Sheets") {
     assertTrue(Date().timeIntervalSince(began) < 0.9, "Stops at the next track's start, not the end of the file")
 }
 
+testGroup("Status Bar Menu Title") {
+    let font = [NSAttributedString.Key.font: NSFont.menuFont(ofSize: 0)]
+    let long = "▶ Шок видео! Гитара с одной наклейкой! Эксклюзив (нет) 2016 год [cdJzZETdxYY]"
+    let cut = StatusBarManager.truncated(long, toWidth: 300)
+    assertTrue(cut.hasSuffix("…") && cut.hasPrefix("▶ Шок видео!"), "Long title is cut at the end (\(cut))")
+    assertTrue((cut as NSString).size(withAttributes: font).width <= 300, "Cut title fits the width")
+    assertEqual(StatusBarManager.truncated("▶ Кино - Кукушка", toWidth: 300), "▶ Кино - Кукушка", "Short title unchanged")
+}
+
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")

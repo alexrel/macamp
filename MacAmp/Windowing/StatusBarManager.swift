@@ -80,7 +80,7 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
         
         // 5. Show/Hide Windows
-        let toggleWinItem = NSMenuItem(title: "Bring Winamp to Front", action: #selector(handleToggleWindows), keyEquivalent: "")
+        let toggleWinItem = NSMenuItem(title: "Bring MacAmp to Front", action: #selector(handleToggleWindows), keyEquivalent: "")
         toggleWinItem.target = self
         menu.addItem(toggleWinItem)
         
@@ -91,7 +91,7 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
         menu.addItem(prefsItem)
         
         // 7. About
-        let aboutItem = NSMenuItem(title: "About Winamp...", action: #selector(handleAbout), keyEquivalent: "")
+        let aboutItem = NSMenuItem(title: "About MacAmp...", action: #selector(handleAbout), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(aboutItem)
         
@@ -103,6 +103,20 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
         menu.addItem(quitItem)
         
         return menu
+    }
+    
+    /// Widest the track title may make the menu (about twice the other items)
+    static let titleWidth: CGFloat = 300
+
+    /// Cuts `text` with "…" so it fits `width` in the menu font.
+    static func truncated(_ text: String, toWidth width: CGFloat) -> String {
+        let font = [NSAttributedString.Key.font: NSFont.menuFont(ofSize: 0)]
+        guard (text as NSString).size(withAttributes: font).width > width else { return text }
+        var cut = text
+        while !cut.isEmpty && ((cut + "…") as NSString).size(withAttributes: font).width > width {
+            cut.removeLast()
+        }
+        return cut.trimmingCharacters(in: .whitespaces) + "…"
     }
     
     public func menuNeedsUpdate(_ menu: NSMenu) {
@@ -117,7 +131,9 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
             let name = track.displayName
             let prefix = isPlaying ? "▶ " : "❚❚ "
             let displayName = name.isEmpty ? track.url.lastPathComponent : name
-            titleItem?.title = prefix + displayName
+            // A long name would stretch the whole menu: cut it, the tooltip has it in full
+            titleItem?.title = StatusBarManager.truncated(prefix + displayName, toWidth: StatusBarManager.titleWidth)
+            titleItem?.toolTip = displayName
             statusItem?.button?.toolTip = "MacAmp: " + displayName
         } else {
             titleItem?.title = "MacAmp 2.91 [Stopped]"
