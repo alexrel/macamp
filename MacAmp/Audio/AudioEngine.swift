@@ -450,6 +450,7 @@ public class AudioEngine {
 
         // Remote Audio / SHOUTcast / Icecast stream handling
         if !url.isFileURL {
+            guard !MacAmpNetwork.isOffline else { throw MacAmpNetwork.offlineError }
             // Resolve direct stream endpoint if URL is a .pls or .m3u
             let resolvedURL = await ICYStreamSession.resolveStreamURL(from: url)
             guard loadToken == loadGeneration else { throw CancellationError() }

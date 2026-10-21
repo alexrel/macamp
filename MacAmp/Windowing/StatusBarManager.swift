@@ -13,6 +13,16 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
         super.init()
     }
     
+    /// Preferences ▸ Setup ▸ "Show MacAmp in the menu bar"
+    public func setVisible(_ visible: Bool) {
+        if visible {
+            setup()
+        } else if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+    }
+    
     public func setup() {
         guard statusItem == nil else { return }
         

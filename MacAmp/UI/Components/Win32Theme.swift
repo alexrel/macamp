@@ -127,6 +127,7 @@ public struct Win32Button: View {
         let button = Button(action: action) {
             Text(title)
                 .font(.system(size: 11))
+                .multilineTextAlignment(.center)
                 .foregroundColor(isEnabled ? Win32Colors.text : Win32Colors.textDisabled)
                 .shadow(color: isEnabled ? .clear : Win32Colors.borderLight, radius: 0, x: 1, y: 1) // etched disabled text
                 .padding(.horizontal, 8)
@@ -189,10 +190,11 @@ public struct Win32GroupBox<Content: View>: View {
                 .zIndex(2)
             
             // GroupBox Content
+            // Win32 group boxes leave a clear gap between the caption and the first control
             content
                 .padding(.horizontal, 10)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
+                .padding(.top, 22)
+                .padding(.bottom, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -294,94 +296,277 @@ public struct Win32NumberField: View {
     }
     
     public var body: some View {
-        TextField("", value: $value, formatter: NumberFormatter())
-            .font(.system(size: 11, design: .monospaced))
-            .multilineTextAlignment(.center)
-            .textFieldStyle(.plain)
-            .frame(width: width, height: 18)
-            .background(Color.white)
-            .win32Sunken()
+        // The shared Win32TextField, centered and digits-only
+        Win32TextField(text: Binding(
+            get: { String(value) },
+            set: { newText in
+                let digits = newText.filter(\.isNumber)
+                value = Int(digits) ?? 0
+            }
+        ), height: 18, alignment: .center, monospaced: true)
+            .frame(width: width)
     }
 }
 
-// MARK: - Win32 Tab Header
-public struct Win32TabHeader<T: Hashable & RawRepresentable>: View where T.RawValue == String {
+// MARK: - Win32 Tab Control (property sheet)
+/// Tabs and page drawn as one control, like a Win32 property sheet: the selected tab is taller,
+/// regular weight, and opens into the page (no border line under it); other tabs sit 2 px lower.
+public struct Win32TabView<T: Hashable & RawRepresentable, Content: View>: View where T.RawValue == String {
     public let tabs: [T]
     @Binding public var selectedTab: T
-    
-    public init(tabs: [T], selectedTab: Binding<T>) {
+    public let content: Content
+
+    private let tabHeight: CGFloat = 20
+
+    public init(tabs: [T], selectedTab: Binding<T>, @ViewBuilder content: () -> Content) {
         self.tabs = tabs
         self._selectedTab = selectedTab
+        self.content = content()
     }
-    
+
     public var body: some View {
-        HStack(spacing: 2) {
-            ForEach(tabs, id: \.self) { tab in
-                let isSelected = (selectedTab == tab)
-                Button(action: { selectedTab = tab }) {
-                    Text(tab.rawValue)
-                        .font(.system(size: 11, weight: isSelected ? .bold : .regular))
-                        .foregroundColor(Win32Colors.text)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, isSelected ? 4 : 3)
-                        .background(Win32Colors.dialogBg)
-                        .overlay(
-                            ZStack {
-                                VStack(spacing: 0) {
-                                    Rectangle().fill(Win32Colors.borderLight).frame(height: 1)
-                                    Spacer()
-                                    if !isSelected {
-                                        Rectangle().fill(Win32Colors.borderShadow).frame(height: 1)
-                                    }
-                                }
-                                HStack(spacing: 0) {
-                                    Rectangle().fill(Win32Colors.borderLight).frame(width: 1)
-                                    Spacer()
-                                    Rectangle().fill(Win32Colors.borderDark).frame(width: 1)
-                                }
-                            }
-                        )
+        VStack(spacing: 0) {
+            HStack(alignment: .bottom, spacing: 0) {
+                ForEach(tabs, id: \.self) { tab in
+                    tabButton(tab)
                 }
-                .buttonStyle(.plain)
-                .focusable(false)
-                .offset(y: isSelected ? 1 : 0)
-                .zIndex(isSelected ? 2 : 1)
+                // Page top edge continues to the right of the tabs
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    Rectangle().fill(Win32Colors.borderLight).frame(height: 1)
+                }
+                .frame(height: tabHeight)
             }
-            Spacer()
+            .padding(.leading, 2)
+
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Win32Colors.dialogBg)
+                .overlay(pageBorder)
         }
-        .overlay(
-            VStack {
-                Spacer()
-                Rectangle().fill(Win32Colors.borderLight).frame(height: 1)
-            },
-            alignment: .bottom
-        )
+    }
+
+    private func tabButton(_ tab: T) -> some View {
+        let isSelected = tab == selectedTab
+        return Button(action: { selectedTab = tab }) {
+            Text(tab.rawValue)
+                .font(.system(size: 11))
+                .foregroundColor(Win32Colors.text)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, isSelected ? 10 : 8)
+                .frame(height: isSelected ? tabHeight : tabHeight - 2)
+                .background(Win32Colors.dialogBg)
+                .overlay(tabBorder(isSelected: isSelected))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .padding(.horizontal, isSelected ? -2 : 0) // selected tab overlaps its neighbours by 2 px
+        .zIndex(isSelected ? 1 : 0)
+    }
+
+    private func tabBorder(isSelected: Bool) -> some View {
+        ZStack {
+            // Top highlight (inset 1 px at the ends: Win32's clipped tab corners)
+            VStack(spacing: 0) {
+                Rectangle().fill(Win32Colors.borderLight).frame(height: 1).padding(.horizontal, 1)
+                Spacer(minLength: 0)
+                // Unselected tabs sit on the page's top edge; the selected one opens into the page
+                Rectangle().fill(isSelected ? Win32Colors.dialogBg : Win32Colors.borderLight).frame(height: 1)
+            }
+            HStack(spacing: 0) {
+                Rectangle().fill(Win32Colors.borderLight).frame(width: 1).padding(.top, 1)
+                Spacer(minLength: 0)
+                Rectangle().fill(Win32Colors.borderShadow).frame(width: 1).padding(.top, 1)
+                Rectangle().fill(Win32Colors.borderDark).frame(width: 1).padding(.top, 2)
+            }
+        }
+    }
+
+    private var pageBorder: some View {
+        ZStack {
+            HStack(spacing: 0) {
+                Rectangle().fill(Win32Colors.borderLight).frame(width: 1)
+                Spacer(minLength: 0)
+                Rectangle().fill(Win32Colors.borderShadow).frame(width: 1)
+                Rectangle().fill(Win32Colors.borderDark).frame(width: 1)
+            }
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                Rectangle().fill(Win32Colors.borderShadow).frame(height: 1)
+                Rectangle().fill(Win32Colors.borderDark).frame(height: 1)
+            }
+        }
+    }
+}
+
+// MARK: - Small triangle glyph (◄ ►) drawn as a shape, so both directions have identical size
+public struct Win32TriangleIcon: View {
+    public enum Direction { case left, right }
+    public let direction: Direction
+    @Environment(\.isEnabled) private var isEnabled
+
+    public init(_ direction: Direction) {
+        self.direction = direction
+    }
+
+    public var body: some View {
+        Path { path in
+            if direction == .left {
+                path.move(to: CGPoint(x: 4, y: 0)); path.addLine(to: CGPoint(x: 0, y: 4)); path.addLine(to: CGPoint(x: 4, y: 8))
+            } else {
+                path.move(to: CGPoint(x: 0, y: 0)); path.addLine(to: CGPoint(x: 4, y: 4)); path.addLine(to: CGPoint(x: 0, y: 8))
+            }
+            path.closeSubpath()
+        }
+        .fill(isEnabled ? Win32Colors.text : Win32Colors.textDisabled)
+        .frame(width: 4, height: 8)
+    }
+}
+
+/// Win32 push button with a triangle glyph before/after the title (e.g. "◄ Prev", "Next ►").
+public struct Win32ArrowButton: View {
+    public let title: String
+    public let direction: Win32TriangleIcon.Direction
+    public var width: CGFloat? = 75
+    public let action: () -> Void
+    @State private var isPressed = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    public init(_ title: String, direction: Win32TriangleIcon.Direction, width: CGFloat? = 75, action: @escaping () -> Void) {
+        self.title = title
+        self.direction = direction
+        self.width = width
+        self.action = action
+    }
+
+    public var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                if direction == .left { Win32TriangleIcon(.left) }
+                Text(title)
+                    .font(.system(size: 11))
+                    .foregroundColor(isEnabled ? Win32Colors.text : Win32Colors.textDisabled)
+                if direction == .right { Win32TriangleIcon(.right) }
+            }
+            .frame(width: width, height: 23)
+            .background(Win32Colors.dialogBg)
+            .win32Raised(isPressed: isPressed)
+        }
+        .buttonStyle(Win32ButtonStyle(isPressed: $isPressed))
+        .focusable(false)
     }
 }
 
 // MARK: - Win32 Text Field
+/// Single-line edit box backed by a stock NSTextField, so the text doesn't jump when the field
+/// gains focus (a SwiftUI plain TextField positions its field editor differently from the static text).
+///
+/// This is the only text input in MacAmp: dialogs, Track Info, Jump to File and number fields all use it.
 public struct Win32TextField: View {
+    public enum Focus { case none, cursor, selectAll }
+
     public let placeholder: String
     @Binding public var text: String
     public var height: CGFloat = 20
-    
-    public init(_ placeholder: String = "", text: Binding<String>, height: CGFloat = 20) {
+    public var alignment: NSTextAlignment = .natural
+    public var monospaced: Bool = false
+    /// Take keyboard focus when the window appears (search boxes, prompts)
+    public var autoFocus: Focus = .none
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    /// Gap between the sunken border and the text
+    public static let textInset: CGFloat = 4
+
+    public init(_ placeholder: String = "", text: Binding<String>, height: CGFloat = 20,
+                alignment: NSTextAlignment = .natural, monospaced: Bool = false, autoFocus: Focus = .none) {
         self.placeholder = placeholder
         self._text = text
         self.height = height
+        self.alignment = alignment
+        self.monospaced = monospaced
+        self.autoFocus = autoFocus
     }
-    
-    @Environment(\.isEnabled) private var isEnabled
-    
+
     public var body: some View {
-        TextField(placeholder, text: $text)
-            .font(.system(size: 11))
-            .foregroundColor(isEnabled ? Win32Colors.text : Win32Colors.textDisabled)
-            .textFieldStyle(.plain)
-            .padding(.horizontal, 4)
+        // The field is one line tall; the sunken box around it centers it vertically
+        Win32NSTextField(placeholder: placeholder, text: $text, isEnabled: isEnabled,
+                         alignment: alignment, monospaced: monospaced, autoFocus: autoFocus)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, Win32TextField.textInset)
+            .frame(maxWidth: .infinity)
             .frame(height: height)
             .background(isEnabled ? Color.white : Win32Colors.dialogBg) // disabled edit boxes are gray in Win32
             .win32Sunken()
+    }
+}
+
+struct Win32NSTextField: NSViewRepresentable {
+    let placeholder: String
+    @Binding var text: String
+    let isEnabled: Bool
+    var alignment: NSTextAlignment = .natural
+    var monospaced: Bool = false
+    var autoFocus: Win32TextField.Focus = .none
+
+    func makeNSView(context: Context) -> NSTextField {
+        // Stock cell on purpose: measured after real clicks and Tab focus, it keeps the text in place
+        // (custom drawing/editor rects made it jump)
+        let field = NSTextField()
+        field.isEditable = true
+        field.isSelectable = true
+        field.cell?.isScrollable = true
+        field.cell?.wraps = false
+        field.cell?.usesSingleLineMode = true
+        field.lineBreakMode = .byClipping
+        field.isBordered = false
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = monospaced ? .monospacedSystemFont(ofSize: 11, weight: .regular) : .systemFont(ofSize: 11)
+        field.alignment = alignment
+        field.placeholderString = placeholder
+        field.delegate = context.coordinator
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        if autoFocus != .none {
+            let selectAll = autoFocus == .selectAll
+            DispatchQueue.main.async {
+                guard let window = field.window else { return }
+                window.makeFirstResponder(field)
+                if !selectAll, let editor = field.currentEditor() {
+                    editor.selectedRange = NSRange(location: (field.stringValue as NSString).length, length: 0)
+                }
+            }
+        }
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.text = $text
+        if field.stringValue != text, field.currentEditor() == nil {
+            field.stringValue = text
+        }
+        field.isEnabled = isEnabled
+        field.textColor = isEnabled ? .black : NSColor(white: 128 / 255, alpha: 1)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var text: Binding<String>
+        init(text: Binding<String>) { self.text = text }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            text.wrappedValue = field.stringValue
+            // Keep length limits applied by the binding (e.g. ID3v1's 30 chars) visible while typing
+            if field.stringValue != text.wrappedValue {
+                field.stringValue = text.wrappedValue
+            }
+        }
     }
 }
 
@@ -460,6 +645,127 @@ final class Win32ClosureMenuItem: NSMenuItem {
     }
     
     @objc private func run() { handler() }
+}
+
+// MARK: - Win32 vertical trackbar with tick marks (TBS_VERT | TBS_AUTOTICKS)
+/// Integer positions 0..<count, top to bottom, like Winamp's File icon / Playlist icon sliders.
+/// AppKit-backed (mouseDown tracking loop) so press-and-drag is reliable inside dialogs.
+public struct Win32VerticalTickSlider: NSViewRepresentable {
+    @Binding public var position: Int
+    public let count: Int
+    public var height: CGFloat = 76
+    /// Called once when the drag / click ends (expensive work belongs here, not in `position`'s setter)
+    public var onCommit: (() -> Void)?
+    @Environment(\.isEnabled) private var isEnabled
+
+    public init(position: Binding<Int>, count: Int, height: CGFloat = 76, onCommit: (() -> Void)? = nil) {
+        self._position = position
+        self.count = max(1, count)
+        self.height = height
+        self.onCommit = onCommit
+    }
+
+    public func makeNSView(context: Context) -> Win32VerticalTickSliderView {
+        Win32VerticalTickSliderView(frame: NSRect(x: 0, y: 0, width: Win32VerticalTickSliderView.width, height: height))
+    }
+
+    public func updateNSView(_ view: Win32VerticalTickSliderView, context: Context) {
+        view.count = count
+        view.position = position
+        view.isEnabled = isEnabled
+        view.onChange = { newValue in if newValue != position { position = newValue } }
+        view.onCommit = onCommit
+    }
+
+    public func sizeThatFits(_ proposal: ProposedViewSize, nsView: Win32VerticalTickSliderView, context: Context) -> CGSize? {
+        CGSize(width: Win32VerticalTickSliderView.width, height: height)
+    }
+}
+
+public final class Win32VerticalTickSliderView: NSView {
+    static let width: CGFloat = 28
+    private let thumbWidth: CGFloat = 20
+    private let thumbHeight: CGFloat = 10
+
+    var count = 10 { didSet { needsDisplay = true } }
+    var position = 0 { didSet { if oldValue != position { needsDisplay = true } } }
+    var isEnabled = true { didSet { needsDisplay = true } }
+    var onChange: ((Int) -> Void)?
+    var onCommit: (() -> Void)?
+
+    public override var isFlipped: Bool { true }
+    public override var mouseDownCanMoveWindow: Bool { false }
+    public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    private var step: CGFloat { count > 1 ? (bounds.height - thumbHeight) / CGFloat(count - 1) : 0 }
+
+    private func position(at point: NSPoint) -> Int {
+        guard count > 1, step > 0 else { return 0 }
+        return min(count - 1, max(0, Int(((point.y - thumbHeight / 2) / step).rounded())))
+    }
+
+    public override func mouseDown(with event: NSEvent) {
+        guard isEnabled else { return }
+        func track(_ e: NSEvent) {
+            let p = position(at: convert(e.locationInWindow, from: nil))
+            if p != position {
+                position = p
+                onChange?(p)
+            }
+        }
+        track(event)
+        // Standard AppKit tracking loop: follow the mouse until the button is released
+        while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            track(next)
+            if next.type == .leftMouseUp { break }
+        }
+        onCommit?()
+    }
+
+    public override func draw(_ dirtyRect: NSRect) {
+        let light = NSColor.white, shadow = NSColor(white: 128 / 255, alpha: 1), dark = NSColor(white: 64 / 255, alpha: 1)
+        let face = NSColor(red: 212 / 255, green: 208 / 255, blue: 200 / 255, alpha: 1)
+        let alpha: CGFloat = isEnabled ? 1 : 0.5
+
+        // Sunken channel
+        let channel = NSRect(x: thumbWidth / 2 - 2, y: 2, width: 4, height: bounds.height - 4)
+        NSColor.white.withAlphaComponent(alpha).setFill(); channel.fill()
+        shadow.withAlphaComponent(alpha).setFill()
+        NSRect(x: channel.minX, y: channel.minY, width: channel.width, height: 1).fill()
+        NSRect(x: channel.minX, y: channel.minY, width: 1, height: channel.height).fill()
+        light.setFill()
+        NSRect(x: channel.minX, y: channel.maxY - 1, width: channel.width, height: 1).fill()
+        NSRect(x: channel.maxX - 1, y: channel.minY, width: 1, height: channel.height).fill()
+
+        // Ticks
+        NSColor.black.withAlphaComponent(alpha).setFill()
+        for i in 0..<count {
+            NSRect(x: thumbWidth + 3, y: (thumbHeight / 2 + CGFloat(i) * step).rounded(.down), width: 3, height: 1).fill()
+        }
+
+        // Raised thumb pointing at the ticks
+        let y = (CGFloat(position) * step).rounded(.down)
+        let tip = thumbWidth - 5
+        let outline = NSBezierPath()
+        outline.move(to: NSPoint(x: 0, y: y))
+        outline.line(to: NSPoint(x: tip, y: y))
+        outline.line(to: NSPoint(x: thumbWidth, y: y + thumbHeight / 2))
+        outline.line(to: NSPoint(x: tip, y: y + thumbHeight))
+        outline.line(to: NSPoint(x: 0, y: y + thumbHeight))
+        outline.close()
+        face.setFill(); outline.fill()
+        let highlight = NSBezierPath()
+        highlight.move(to: NSPoint(x: 0.5, y: y + thumbHeight - 0.5))
+        highlight.line(to: NSPoint(x: 0.5, y: y + 0.5))
+        highlight.line(to: NSPoint(x: tip, y: y + 0.5))
+        highlight.line(to: NSPoint(x: thumbWidth - 0.5, y: y + thumbHeight / 2))
+        light.setStroke(); highlight.lineWidth = 1; highlight.stroke()
+        let lowlight = NSBezierPath()
+        lowlight.move(to: NSPoint(x: 0.5, y: y + thumbHeight - 0.5))
+        lowlight.line(to: NSPoint(x: tip, y: y + thumbHeight - 0.5))
+        lowlight.line(to: NSPoint(x: thumbWidth - 0.5, y: y + thumbHeight / 2))
+        dark.setStroke(); lowlight.lineWidth = 1; lowlight.stroke()
+    }
 }
 
 // MARK: - Win32 Trackbar (slider)

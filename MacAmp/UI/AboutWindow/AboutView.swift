@@ -20,16 +20,8 @@ public struct AboutView: View {
     
     public var body: some View {
         VStack(spacing: 0) {
-            // Top Classic Win32 Tab Bar
-            Win32TabHeader(tabs: AboutTab.allCases, selectedTab: $selectedTab)
-                .padding(.horizontal, 4)
-                .padding(.top, 4)
-            
-            // Content Frame
-            ZStack {
-                Rectangle()
-                    .fill(Win32Colors.dialogBg)
-                
+            // Classic Win32 property sheet
+            Win32TabView(tabs: AboutTab.allCases, selectedTab: $selectedTab) {
                 switch selectedTab {
                 case .winamp:
                     winampTabContent
@@ -41,6 +33,9 @@ public struct AboutView: View {
                     historyTabContent
                 }
             }
+            .padding(.horizontal, 4)
+            .padding(.top, 4)
+            .padding(.bottom, selectedTab == .winamp ? 4 : 0)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             
             // Show bottom Close button only on information tabs

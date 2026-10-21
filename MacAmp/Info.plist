@@ -15,21 +15,161 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.music</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>13.1</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 MacAmp. All rights reserved.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+
+	<!-- SHOUTcast / Icecast stations are mostly plain http:// -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+
+	<!-- Files MacAmp opens. Rank "Alternate": listed in Finder's Open With, but never takes over
+	     a type by itself; Preferences ▸ Setup ▸ File types makes MacAmp the default per type.
+	     Document icons are the original Winamp 2.95 file icons (winamp.exe RT_GROUP_ICON #131 / #102 / #164). -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Audio File</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>CFBundleTypeIconFile</key>
+			<string>WinampAudioFile</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.mp3</string>
+				<string>com.apple.m4a-audio</string>
+				<string>public.aac-audio</string>
+				<string>com.microsoft.waveform-audio</string>
+				<string>public.aiff-audio</string>
+				<string>public.aifc-audio</string>
+				<string>org.xiph.flac</string>
+				<string>org.xiph.opus</string>
+				<string>com.apple.coreaudio-format</string>
+				<string>public.audio</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Ogg Audio</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>CFBundleTypeIconFile</key>
+			<string>WinampAudioFile</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>ogg</string>
+				<string>oga</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Playlist</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>CFBundleTypeIconFile</key>
+			<string>WinampPlaylist</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.m3u-playlist</string>
+				<string>public.pls-playlist</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Winamp Classic Skin</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>CFBundleTypeIconFile</key>
+			<string>WinampSkin</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.nullsoft.winamp.skin</string>
+			</array>
+		</dict>
+	</array>
+
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.nullsoft.winamp.skin</string>
+			<key>UTTypeDescription</key>
+			<string>Winamp Classic Skin</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>wsz</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+
+	<!-- Finder ▸ Services (and Quick Actions): Winamp's "Play in Winamp" / "Enqueue in Winamp" directory context menus -->
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Play in MacAmp</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>playFiles</string>
+			<key>NSPortName</key>
+			<string>MacAmp</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.audio</string>
+				<string>public.folder</string>
+				<string>public.m3u-playlist</string>
+				<string>public.pls-playlist</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Enqueue in MacAmp</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>enqueueFiles</string>
+			<key>NSPortName</key>
+			<string>MacAmp</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.audio</string>
+				<string>public.folder</string>
+				<string>public.m3u-playlist</string>
+				<string>public.pls-playlist</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

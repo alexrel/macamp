@@ -12,6 +12,8 @@ public enum PreferencesCategory: String, CaseIterable, Identifiable {
 }
 
 public enum PrefTreeItem: String, CaseIterable, Identifiable {
+    case setup = "Setup"
+    case fileTypes = "File types"
     case display = "Display"
     case titles = "Titles & Fonts"
     case visualization = "Visualization"
@@ -27,6 +29,7 @@ public enum PrefTreeItem: String, CaseIterable, Identifiable {
     
     public var sectionHeader: String {
         switch self {
+        case .setup, .fileTypes: return "Setup"
         case .display, .titles, .visualization, .hotkeys: return "Options"
         case .audio, .output, .dsp, .equalizer: return "Audio"
         case .playlist: return "Playlist"
@@ -317,7 +320,7 @@ public class PreferencesViewModel: ObservableObject {
     public var selectedCategory: PreferencesCategory {
         get {
             switch selectedTreeItem {
-            case .display, .titles, .visualization, .hotkeys: return .titles
+            case .setup, .fileTypes, .display, .titles, .visualization, .hotkeys: return .titles
             case .skins: return .skins
             case .audio, .output, .dsp, .equalizer: return .audio
             case .playlist: return .playlist
@@ -409,7 +412,7 @@ public struct PreferencesView: View {
     private let availableFonts = ["Monaco", "Menlo", "Geneva", "SF Pro Display", "Courier New", "Helvetica"]
     private let availableFontSizes: [Double] = [8, 9, 10, 11, 12, 14]
     
-    private let sections: [String] = ["Options", "Audio", "Playlist", "Skins"]
+    private let sections: [String] = ["Setup", "Options", "Audio", "Playlist", "Skins"]
     
     public init(viewModel: PreferencesViewModel, onClose: (() -> Void)? = nil) {
         self.viewModel = viewModel
@@ -447,6 +450,10 @@ public struct PreferencesView: View {
                 ScrollView(.vertical, showsIndicators: true) {
                     VStack(alignment: .leading, spacing: 12) {
                         switch viewModel.selectedTreeItem {
+                        case .setup:
+                            SetupSection()
+                        case .fileTypes:
+                            FileTypesSection()
                         case .display:
                             displaySection
                         case .titles:
@@ -485,18 +492,30 @@ public struct PreferencesView: View {
     @ViewBuilder
     private func treeSection(_ sectionName: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Section Header
-            HStack(spacing: 4) {
+            // Section Header (selectable when the section has its own page, like Winamp's "Setup")
+            let headerPage = PrefTreeItem.allCases.first { $0.rawValue == sectionName }
+            let headerSelected = headerPage != nil && viewModel.selectedTreeItem == headerPage
+            let header = HStack(spacing: 4) {
                 Text(sectionName)
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(Win32Colors.text)
+                    .foregroundColor(headerSelected ? .white : Win32Colors.text)
+                    .padding(.horizontal, headerSelected ? 3 : 0)
+                    .background(headerSelected ? Win32Colors.selectionHighlight : Color.clear)
                 Spacer()
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
+            .contentShape(Rectangle())
+            if let headerPage {
+                Button(action: { viewModel.selectedTreeItem = headerPage }) { header }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+            } else {
+                header
+            }
             
             // Items in Section
-            let items = PrefTreeItem.allCases.filter { $0.sectionHeader == sectionName }
+            let items = PrefTreeItem.allCases.filter { $0.sectionHeader == sectionName && $0.rawValue != sectionName }
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                 let isLast = (index == items.count - 1)
                 let isSelected = (viewModel.selectedTreeItem == item)
@@ -1041,3 +1060,218 @@ public struct PreferencesView: View {
         }
     }
 }
+
+// MARK: - Setup ▸ File types (Winamp "File type setup")
+private struct FileTypesSection: View {
+    @ObservedObject private var manager = FileAssociationManager.shared
+    @ObservedObject private var icons = DocumentIconManager.shared
+    @State private var registerOnStart = PersistenceManager.shared.state.registerFileTypesOnStart
+    @State private var enqueueByDefault = PersistenceManager.shared.state.enqueueAsDefaultAction
+    @State private var busy = false
+
+    var body: some View {
+        Win32GroupBox("File type setup") {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Win32GroupBox("Associated extensions") {
+                        HStack(alignment: .top, spacing: 6) {
+                            extensionList
+                            VStack(spacing: 8) {
+                                Win32Button("Select\nall", width: 62, height: 40) { run { await manager.selectAll() } }
+                                Win32Button("Select\nnone", width: 62, height: 40) { run { await manager.selectNone() } }
+                            }
+                        }
+                    }
+                    if let error = manager.lastError {
+                        Text(error)
+                            .font(.system(size: 10))
+                            .foregroundColor(.red)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    iconBox("File icon", kind: .audio)
+                    iconBox("Playlist icon", kind: .playlist)
+                    if let error = icons.lastError {
+                        Text(error).font(.system(size: 10)).foregroundColor(.red).fixedSize(horizontal: false, vertical: true)
+                    } else if !icons.canChangeIcons {
+                        Text("Icons can be changed in local builds only")
+                            .font(.system(size: 10)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Win32Checkbox("Register types on MacAmp start", isOn: Binding(
+                        get: { registerOnStart },
+                        set: { registerOnStart = $0; PersistenceManager.shared.state.registerFileTypesOnStart = $0; PersistenceManager.shared.saveSession() }
+                    ))
+                    Win32Checkbox("Enqueue as default action", isOn: Binding(
+                        get: { enqueueByDefault },
+                        set: { enqueueByDefault = $0; PersistenceManager.shared.state.enqueueAsDefaultAction = $0; PersistenceManager.shared.saveSession() }
+                    ))
+                    Text("Finder: right-click ▸ Services ▸ Play / Enqueue in MacAmp")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(width: 128)
+            }
+        }
+        .onAppear { manager.refresh() }
+        .disabled(busy)
+    }
+
+    /// Win32 multi-select list box: highlighted rows are the extensions that open in MacAmp
+    private var extensionList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(manager.entries) { entry in
+                    let isOn = manager.isAssociated(entry.ext)
+                    Button(action: { run { await manager.setAssociated(entry.ext, !isOn) } }) {
+                        Text(entry.ext)
+                            .font(.system(size: 11))
+                            .foregroundColor(isOn ? .white : Win32Colors.text)
+                            .padding(.horizontal, 4)
+                            .frame(maxWidth: .infinity, minHeight: 15, alignment: .leading)
+                            .background(isOn ? Win32Colors.selectionBlue : Color.clear)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                }
+            }
+            .padding(2)
+        }
+        .frame(width: 84, height: 190)
+        .background(Color.white)
+        .win32Sunken()
+    }
+
+    /// Winamp's icon chooser: vertical slider on the left, the icon Finder will show on the right
+    private func iconBox(_ title: String, kind: DocumentIconManager.Kind) -> some View {
+        Win32GroupBox(title) {
+            HStack(spacing: 10) {
+                Win32VerticalTickSlider(
+                    position: Binding(
+                        get: { icons.selection[kind] ?? 0 },
+                        set: { icons.preview($0, for: kind) } // dragging only changes the preview
+                    ),
+                    count: DocumentIconManager.resourceIDs.count,
+                    height: 64,
+                    onCommit: { Task { await icons.commit(for: kind) } } // applied once, on release
+                )
+                .disabled(!icons.canChangeIcons)
+                if let image = icons.previewImage(for: kind) {
+                    Image(nsImage: image)
+                        .interpolation(.none) // original 32 px pixel art, doubled
+                        .resizable()
+                        .frame(width: 64, height: 64)
+                } else {
+                    Rectangle().fill(Color.clear).frame(width: 64, height: 64)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func run(_ work: @escaping () async -> Void) {
+        busy = true
+        Task { @MainActor in
+            await work()
+            busy = false
+        }
+    }
+}
+
+// MARK: - Setup (Winamp "Winamp setup" page)
+private struct SetupSection: View {
+    @State private var openAtLogin = LoginItem.isEnabled
+    @State private var loginStatus = LoginItem.statusText
+    @State private var showMenuBarIcon = PersistenceManager.shared.state.showMenuBarIcon
+    @State private var offline = PersistenceManager.shared.state.networkOffline
+    @State private var proxy = PersistenceManager.shared.state.httpProxy
+
+    var body: some View {
+        Win32GroupBox("MacAmp setup") {
+            VStack(alignment: .leading, spacing: 10) {
+                Win32GroupBox("Startup") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Win32Checkbox("Open MacAmp at login", isOn: Binding(
+                            get: { openAtLogin },
+                            set: { newValue in
+                                LoginItem.setEnabled(newValue)
+                                openAtLogin = LoginItem.isEnabled
+                                loginStatus = LoginItem.statusText
+                            }
+                        ))
+                        if let loginStatus {
+                            Text(loginStatus).font(.system(size: 10)).foregroundColor(.secondary).padding(.leading, 19)
+                        }
+                        Win32Checkbox("Show MacAmp in the menu bar", isOn: Binding(
+                            get: { showMenuBarIcon },
+                            set: { newValue in
+                                showMenuBarIcon = newValue
+                                PersistenceManager.shared.state.showMenuBarIcon = newValue
+                                PersistenceManager.shared.saveSession()
+                                StatusBarManager.shared.setVisible(newValue)
+                            }
+                        ))
+                    }
+                }
+
+                Win32GroupBox("Internet settings") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Win32RadioButton("Use the system Internet connection", isSelected: !offline) { setOffline(false) }
+                        Win32RadioButton("No Internet connection available", isSelected: offline) { setOffline(true) }
+                        Win32GroupBox("HTTP proxy: 'Server:Port' (blank for none)") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Win32TextField(text: Binding(
+                                    get: { proxy },
+                                    set: { newValue in
+                                        proxy = newValue
+                                        PersistenceManager.shared.state.httpProxy = newValue
+                                        PersistenceManager.shared.scheduleSave()
+                                    }
+                                ))
+                                if !proxy.trimmingCharacters(in: .whitespaces).isEmpty && MacAmpNetwork.parseProxy(proxy) == nil {
+                                    Text("Use the form server:port, e.g. proxy.example.com:8080")
+                                        .font(.system(size: 10)).foregroundColor(.red)
+                                }
+                            }
+                        }
+                        .disabled(offline)
+                    }
+                }
+            }
+        }
+    }
+
+    private func setOffline(_ value: Bool) {
+        offline = value
+        PersistenceManager.shared.state.networkOffline = value
+        PersistenceManager.shared.saveSession()
+    }
+}
+
+/// "Open at login" through ServiceManagement (macOS 13+).
+import ServiceManagement
+enum LoginItem {
+    static var isEnabled: Bool { SMAppService.mainApp.status == .enabled }
+
+    static var statusText: String? {
+        switch SMAppService.mainApp.status {
+        case .requiresApproval: return "Allow MacAmp in System Settings ▸ General ▸ Login Items"
+        default: return nil
+        }
+    }
+
+    static func setEnabled(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            print("MacAmp: login item change failed: \(error)")
+        }
+    }
+}
+

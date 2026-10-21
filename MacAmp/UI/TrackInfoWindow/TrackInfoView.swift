@@ -145,8 +145,7 @@ public struct TrackInfoView: View {
                 .fixedSize(horizontal: false, vertical: true)
             
             // Property-sheet style tabs with a raised page underneath
-            VStack(spacing: 0) {
-                Win32TabHeader(tabs: TrackInfoViewModel.InfoTab.allCases, selectedTab: $viewModel.selectedTab)
+            Win32TabView(tabs: TrackInfoViewModel.InfoTab.allCases, selectedTab: $viewModel.selectedTab) {
                 ZStack(alignment: .topLeading) {
                     switch viewModel.selectedTab {
                     case .id3v2:
@@ -157,9 +156,7 @@ public struct TrackInfoView: View {
                         artworkSection
                     }
                 }
-                .padding(8)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .win32Raised()
+                .padding(10)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             
@@ -175,7 +172,7 @@ public struct TrackInfoView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
-        .frame(minWidth: 520, maxWidth: .infinity, minHeight: 490, maxHeight: .infinity)
+        .frame(minWidth: 570, maxWidth: .infinity, minHeight: 490, maxHeight: .infinity)
         .background(Win32Colors.dialogBg)
     }
     
@@ -392,22 +389,24 @@ public struct TrackInfoView: View {
     // MARK: - Bottom Controls Bar
     private var bottomButtonBar: some View {
         HStack(spacing: 6) {
-            Win32Button("◄ Prev", width: 60) { viewModel.prevTrack() }
+            Win32ArrowButton("Prev", direction: .left, width: 62) { viewModel.prevTrack() }
                 .disabled(viewModel.trackIndex <= 0)
-            Win32Button("Next ►", width: 60) { viewModel.nextTrack() }
+            Win32ArrowButton("Next", direction: .right, width: 62) { viewModel.nextTrack() }
                 .disabled(viewModel.trackIndex + 1 >= viewModel.totalTracks)
             
             Text("\(viewModel.trackIndex + 1) of \(viewModel.totalTracks)")
                 .font(.system(size: 11))
                 .foregroundColor(Win32Colors.text)
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.leading, 4)
             
             Spacer()
             
-            Win32Button("Copy to ID3v1", width: 95) { viewModel.copyToID3v1() }
-            Win32Button("Undo", width: 60) { viewModel.undo() }
-            Win32Button("Cancel") { onClose?() }
-            Win32Button("Update", isDefault: true) {
+            Win32Button("Copy to ID3v1", width: 92) { viewModel.copyToID3v1() }
+            Win32Button("Undo", width: 58) { viewModel.undo() }
+            Win32Button("Cancel", width: 70) { onClose?() }
+            Win32Button("Update", width: 70, isDefault: true) {
                 if viewModel.save() {
                     onClose?()
                 }

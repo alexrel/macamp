@@ -62,7 +62,7 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
     public func start() {
         stop()
         
-        let config = URLSessionConfiguration.default
+        let config = MacAmpNetwork.configuration() // user's HTTP proxy, if any
         config.timeoutIntervalForRequest = 20
         config.timeoutIntervalForResource = 0 // Continuous streaming
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
@@ -259,7 +259,7 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
         request.timeoutInterval = 10
         request.setValue("WinampMPEG/2.91", forHTTPHeaderField: "User-Agent")
         
-        guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+        guard let (data, _) = try? await MacAmpNetwork.session.data(for: request) else {
             return url
         }
         let content = TextEncoding.decode(data)

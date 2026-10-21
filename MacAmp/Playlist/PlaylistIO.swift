@@ -112,7 +112,7 @@ public enum PlaylistIO {
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
         request.setValue("WinampMPEG/2.91", forHTTPHeaderField: "User-Agent")
-        guard let (data, _) = try? await URLSession.shared.data(for: request) else {
+        guard let (data, _) = try? await MacAmpNetwork.session.data(for: request) else {
             return []
         }
         let content = TextEncoding.decode(data)

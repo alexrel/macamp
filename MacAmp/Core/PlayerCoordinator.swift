@@ -50,6 +50,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         setupBindings()
         restoreState()
         showWindows()
+        isStarted = true
+        processPendingFinderOpens()
     }
     
     // MARK: - Window Setup
@@ -674,7 +676,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             } catch {
                 print("Failed to load track \(track.url): \(error)")
                 await MainActor.run {
-                    self.mainView.marquee.showTemporaryMessage(track.url.isFileURL ? "Cannot open file" : "Stream Error")
+                    let offline = (error as? URLError)?.code == .notConnectedToInternet && MacAmpNetwork.isOffline
+                    self.mainView.marquee.showTemporaryMessage(offline ? "Internet disabled (Preferences > Setup)" : (track.url.isFileURL ? "Cannot open file" : "Stream Error"))
                 }
             }
         }
@@ -918,53 +921,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     
     // MARK: - Drag & Drop Handling
     public func handleDroppedFiles(_ paths: [String]) {
-        var tracksToAdd: [TrackItem] = []
-        let audioExtensions = AppConstants.Audio.supportedExtensions
-        let skinExtensions = AppConstants.Audio.skinExtensions
-        let playlistExtensions = AppConstants.Audio.playlistExtensions
-        
-        for path in paths {
-            let url = URL(fileURLWithPath: path)
-            let ext = url.pathExtension.lowercased()
-            
-            if skinExtensions.contains(ext) {
-                if let installedURL = skinManager.installSkin(from: url) {
-                    persistence.state.activeSkinPath = installedURL.path
-                    persistence.saveSession()
-                }
-            } else if playlistExtensions.contains(ext) {
-                let loaded = PlaylistIO.loadPlaylist(from: url)
-                tracksToAdd.append(contentsOf: loaded)
-            } else {
-                var isDir: ObjCBool = false
-                if FileManager.default.fileExists(atPath: path, isDirectory: &isDir) {
-                    if isDir.boolValue {
-                        // Check if unpacked skin folder
-                        let mainBmp1 = url.appendingPathComponent("MAIN.BMP")
-                        let mainBmp2 = url.appendingPathComponent("main.bmp")
-                        if FileManager.default.fileExists(atPath: mainBmp1.path) || FileManager.default.fileExists(atPath: mainBmp2.path) {
-                            if let installedURL = skinManager.installSkin(from: url) {
-                                persistence.state.activeSkinPath = installedURL.path
-                                persistence.saveSession()
-                            }
-                            continue
-                        }
-                        
-                        // Recursively scan for audio files
-                        if let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: nil) {
-                            for case let fileURL as URL in enumerator {
-                                if audioExtensions.contains(fileURL.pathExtension.lowercased()) {
-                                    tracksToAdd.append(TrackItem.create(from: fileURL))
-                                }
-                            }
-                        }
-                    } else if audioExtensions.contains(ext) {
-                        tracksToAdd.append(TrackItem.create(from: url))
-                    }
-                }
-            }
-        }
-        
+        let tracksToAdd = collectTracks(fromPaths: paths)
         if !tracksToAdd.isEmpty {
             let wasEmpty = playlist.tracks.isEmpty
             let wasStopped = (audioEngine.status == .stopped)
@@ -974,6 +931,91 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             if wasEmpty || wasStopped, let first = playlist.currentTrack ?? playlist.tracks.first {
                 loadAndPlay(track: first)
             }
+        }
+    }
+    
+    /// Turns dropped / opened paths into playlist entries: audio files, folders (recursively), M3U/PLS.
+    /// Skins (.wsz/.zip or an unpacked skin folder) are installed and applied instead.
+    func collectTracks(fromPaths paths: [String]) -> [TrackItem] {
+        var tracks: [TrackItem] = []
+        let audioExtensions = AppConstants.Audio.supportedExtensions
+        let skinExtensions = AppConstants.Audio.skinExtensions
+        let playlistExtensions = AppConstants.Audio.playlistExtensions
+        
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            let ext = url.pathExtension.lowercased()
+            
+            if skinExtensions.contains(ext) {
+                installAndApplySkin(at: url)
+            } else if playlistExtensions.contains(ext) {
+                tracks.append(contentsOf: PlaylistIO.loadPlaylist(from: url))
+            } else {
+                var isDir: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { continue }
+                if isDir.boolValue {
+                    // Unpacked skin folder?
+                    let fm = FileManager.default
+                    if fm.fileExists(atPath: url.appendingPathComponent("MAIN.BMP").path) || fm.fileExists(atPath: url.appendingPathComponent("main.bmp").path) {
+                        installAndApplySkin(at: url)
+                        continue
+                    }
+                    // Recursively scan for audio files, in name order like Winamp's "Add directory"
+                    var found: [URL] = []
+                    if let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: nil) {
+                        for case let fileURL as URL in enumerator where audioExtensions.contains(fileURL.pathExtension.lowercased()) {
+                            found.append(fileURL)
+                        }
+                    }
+                    found.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                    tracks.append(contentsOf: found.map { TrackItem.create(from: $0) })
+                } else if audioExtensions.contains(ext) {
+                    tracks.append(TrackItem.create(from: url))
+                }
+            }
+        }
+        return tracks
+    }
+    
+    private func installAndApplySkin(at url: URL) {
+        if let installedURL = skinManager.installSkin(from: url) {
+            persistence.state.activeSkinPath = installedURL.path
+            persistence.saveSession()
+        }
+    }
+    
+    // MARK: - Opening from Finder (double-click, Open With, Services)
+    
+    private var isStarted = false
+    private var pendingFinderOpens: [(paths: [String], enqueue: Bool)] = []
+    
+    /// Files opened from Finder. Winamp semantics: play them, or just add them when
+    /// "Enqueue as default action" is on (or the Enqueue service was used).
+    public func openFromFinder(_ paths: [String], enqueue: Bool? = nil) {
+        let shouldEnqueue = enqueue ?? persistence.state.enqueueAsDefaultAction
+        // Launching MacAmp by double-clicking a file delivers it before the windows exist
+        guard isStarted else {
+            pendingFinderOpens.append((paths, shouldEnqueue))
+            return
+        }
+        let tracks = collectTracks(fromPaths: paths)
+        guard !tracks.isEmpty else { return }
+        playlist.add(tracks: tracks)
+        plView.needsDisplay = true
+        if !shouldEnqueue || audioEngine.status == .stopped && playlist.tracks.count == tracks.count {
+            loadAndPlay(track: tracks[0])
+            if let idx = playlist.tracks.firstIndex(where: { $0.id == tracks[0].id }) {
+                plView.scrollToTrack(idx, centered: false)
+            }
+        }
+        bringAllWindowsToFront()
+    }
+    
+    private func processPendingFinderOpens() {
+        let pending = pendingFinderOpens
+        pendingFinderOpens.removeAll()
+        for item in pending {
+            openFromFinder(item.paths, enqueue: item.enqueue)
         }
     }
     

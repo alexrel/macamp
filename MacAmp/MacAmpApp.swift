@@ -4,10 +4,18 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainMenuManager.shared.setupMenu()
-        StatusBarManager.shared.setup()
+        StatusBarManager.shared.setVisible(PersistenceManager.shared.state.showMenuBarIcon)
         MediaKeyController.shared.setup()
         GlobalHotkeysController.shared.setup()
         PlayerCoordinator.shared.start()
+        // Finder ▸ Services ▸ "Play in MacAmp" / "Enqueue in MacAmp"
+        NSApp.servicesProvider = FinderServicesProvider.shared
+        NSUpdateDynamicServices()
+        Task { @MainActor in
+            await FileAssociationManager.shared.reapplyOnLaunchIfNeeded()
+            // A rebuild restores the default document icons; put the chosen ones back
+            await DocumentIconManager.shared.reapplyOnLaunchIfNeeded()
+        }
         NSApp.activate(ignoringOtherApps: true)
         
         DispatchQueue.main.async {
@@ -41,22 +49,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        for file in filenames {
-            let url = URL(fileURLWithPath: file)
-            let ext = url.pathExtension.lowercased()
-            if ext == "wsz" || ext == "zip" {
-                if let installed = SkinManager.shared.installSkin(from: url) {
-                    PersistenceManager.shared.state.activeSkinPath = installed.path
-                    PersistenceManager.shared.saveSession()
-                }
-            } else if ext == "m3u" || ext == "pls" {
-                let tracks = PlaylistIO.loadPlaylist(from: url)
-                PlayerCoordinator.shared.playlist.add(tracks: tracks)
-            } else {
-                let track = TrackItem.create(from: url)
-                PlayerCoordinator.shared.playlist.add(track: track)
-            }
-        }
+        // Double-click / Open With from Finder: play (or enqueue, per Preferences ▸ Setup ▸ File types)
+        PlayerCoordinator.shared.openFromFinder(filenames)
+        sender.reply(toOpenOrPrint: .success)
     }
     
     // MARK: - macOS Dock Menu
@@ -127,5 +122,24 @@ struct MacAmpApp: App {
         Settings {
             EmptyView()
         }
+    }
+}
+
+/// Handles the NSServices declared in Info.plist (Winamp's "Play in Winamp" / "Enqueue in Winamp").
+final class FinderServicesProvider: NSObject {
+    static let shared = FinderServicesProvider()
+
+    @objc func playFiles(_ pboard: NSPasteboard, userData: String, error: AutoreleasingUnsafeMutablePointer<NSString>) {
+        open(pboard, enqueue: false)
+    }
+
+    @objc func enqueueFiles(_ pboard: NSPasteboard, userData: String, error: AutoreleasingUnsafeMutablePointer<NSString>) {
+        open(pboard, enqueue: true)
+    }
+
+    private func open(_ pboard: NSPasteboard, enqueue: Bool) {
+        let urls = (pboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+        guard !urls.isEmpty else { return }
+        PlayerCoordinator.shared.openFromFinder(urls.map(\.path), enqueue: enqueue)
     }
 }

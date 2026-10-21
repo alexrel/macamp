@@ -62,7 +62,7 @@ build_debug() {
         mkdir -p "$BUILD_DIR"
         rm -rf "$BUILD_DIR/$APP_NAME.app"
         cp -R "$DEBUG_APP" "$BUILD_DIR/"
-        ln -sf "$BUILD_DIR/$APP_NAME.app" "./$APP_NAME.app"
+        ln -sfn "$BUILD_DIR/$APP_NAME.app" "./$APP_NAME.app" # -n: replace the link, never write inside the bundle
         log_ok "Debug build succeeded: $BUILD_DIR/$APP_NAME.app (and ./$APP_NAME.app)"
     else
         log_err "Debug build failed"
@@ -81,7 +81,7 @@ build_release() {
         mkdir -p "$BUILD_DIR"
         rm -rf "$BUILD_DIR/$APP_NAME.app"
         cp -R "$RELEASE_APP" "$BUILD_DIR/"
-        ln -sf "$BUILD_DIR/$APP_NAME.app" "./$APP_NAME.app"
+        ln -sfn "$BUILD_DIR/$APP_NAME.app" "./$APP_NAME.app" # -n: replace the link, never write inside the bundle
         log_ok "Release build succeeded: $BUILD_DIR/$APP_NAME.app (and ./$APP_NAME.app)"
     else
         log_err "Release build failed"

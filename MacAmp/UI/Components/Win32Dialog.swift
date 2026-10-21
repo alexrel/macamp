@@ -72,7 +72,7 @@ public enum Win32Dialog {
                     .font(.system(size: 11))
                     .foregroundColor(Win32Colors.text)
                     .fixedSize(horizontal: false, vertical: true)
-                Win32TextField(text: $model.text)
+                Win32TextField(text: $model.text, autoFocus: .selectAll) // focused with text selected, like a Win32 prompt
                 HStack(spacing: 6) {
                     Spacer()
                     Win32Button(okTitle, isDefault: true) { finish(true) }

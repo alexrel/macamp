@@ -37,14 +37,14 @@ public class TrackInfoWindowController: NSWindowController, NSWindowDelegate {
         self.currentTrackIndex = trackIndex
         
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 570),
+            contentRect: NSRect(x: 0, y: 0, width: 580, height: 570),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "MPEG Audio Info Box + ID3 Tag Editor"
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 520, height: 490)
+        window.minSize = NSSize(width: 570, height: 490)
         window.center()
         
         // Ensure Track Info window always stays on top of player windows

@@ -93,8 +93,7 @@ public struct JumpToFileView: View {
                     .font(.system(size: 11))
                     .foregroundColor(Win32Colors.text)
                 
-                SearchInputField(text: $viewModel.searchText)
-                    .frame(height: 20)
+                Win32TextField(text: $viewModel.searchText, autoFocus: .cursor)
             }
             .padding(.top, 4)
             
@@ -198,50 +197,6 @@ private struct JumpTrackRowView: View {
         }
         .onTapGesture(count: 1) {
             onSelect()
-        }
-    }
-}
-
-// MARK: - Auto-focusing NSTextField wrapper
-private struct SearchInputField: NSViewRepresentable {
-    @Binding var text: String
-    
-    func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
-        field.font = NSFont.systemFont(ofSize: 11)
-        field.isBordered = false
-        field.isBezeled = false
-        field.drawsBackground = false
-        field.focusRingType = .none
-        field.delegate = context.coordinator
-        
-        // Auto focus when window appears
-        DispatchQueue.main.async {
-            field.window?.makeFirstResponder(field)
-        }
-        return field
-    }
-    
-    func updateNSView(_ nsView: NSTextField, context: Context) {
-        if nsView.stringValue != text {
-            nsView.stringValue = text
-        }
-    }
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    class Coordinator: NSObject, NSTextFieldDelegate {
-        var parent: SearchInputField
-        
-        init(_ parent: SearchInputField) {
-            self.parent = parent
-        }
-        
-        func controlTextDidChange(_ obj: Notification) {
-            guard let field = obj.object as? NSTextField else { return }
-            parent.text = field.stringValue
         }
     }
 }

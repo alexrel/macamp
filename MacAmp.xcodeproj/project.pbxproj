@@ -54,12 +54,19 @@
 		AA836AC777451C59AB95C33A /* StatusBarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA4A12DEC63F8C5A2597ACE9 /* StatusBarManager.swift */; };
 		AA7915404346F35EF3A845E4 /* WinampWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAE9F927208E8E5D3EA7E7A3 /* WinampWindow.swift */; };
 		AA18E74F7E8CB5528B921B69 /* WindowLayoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA93E0F3DA84105657AB1CCA /* WindowLayoutManager.swift */; };
+		AAB30301AFC2DAF68138D1B9 /* WinampAudioFile.icns in Resources */ = {isa = PBXBuildFile; fileRef = AA04AC56F1DC09A5377AC512 /* WinampAudioFile.icns */; };
+		AA1439011306C7704675E1C9 /* WinampPlaylist.icns in Resources */ = {isa = PBXBuildFile; fileRef = AA82159D5E1FC971DD090475 /* WinampPlaylist.icns */; };
+		AA19012C99F123220CCB3149 /* WinampSkin.icns in Resources */ = {isa = PBXBuildFile; fileRef = AADC824D32AEE8B01AAC3A5C /* WinampSkin.icns */; };
+		AADC170587A89F4091446E8E /* DocumentIconChoices in Resources */ = {isa = PBXBuildFile; fileRef = AA7724DF12051809CF150D4D /* DocumentIconChoices */; };
 		AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */ = {isa = PBXBuildFile; fileRef = AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */; };
 		BDC069482B887D910009C001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDC069472B887D910009C001 /* Assets.xcassets */; };
 		BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDC0694A2B887D910009C001 /* Preview Assets.xcassets */; };
 		AAEE792FED080B14A71932A6 /* TextEncoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAEF3EA851E4615920CAD18C /* TextEncoding.swift */; };
 		AA44A560CFB8767ABE74192C /* StreamDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF62A9AAAA8BC001D825328 /* StreamDecoder.swift */; };
 		AA3120102721273206913D7D /* Win32Dialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA6B540ED59888531424241 /* Win32Dialog.swift */; };
+		AADB0851B80A783027FF2DFB /* FileAssociationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3D82961B6FAC94F43B75D1 /* FileAssociationManager.swift */; };
+		AA3C91FDED6774422B41A404 /* DocumentIconManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA466F9A66ACD7BC92C4FDD0 /* DocumentIconManager.swift */; };
+		AAE3548D0386B294262440E0 /* MacAmpNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6F767C53DC44A8F4F93E11 /* MacAmpNetwork.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -110,6 +117,10 @@
 		AA4A12DEC63F8C5A2597ACE9 /* StatusBarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatusBarManager.swift"; sourceTree = "<group>"; };
 		AAE9F927208E8E5D3EA7E7A3 /* WinampWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WinampWindow.swift"; sourceTree = "<group>"; };
 		AA93E0F3DA84105657AB1CCA /* WindowLayoutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WindowLayoutManager.swift"; sourceTree = "<group>"; };
+		AA04AC56F1DC09A5377AC512 /* WinampAudioFile.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = "Resources/DocumentIcons/WinampAudioFile.icns"; sourceTree = "<group>"; };
+		AA82159D5E1FC971DD090475 /* WinampPlaylist.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = "Resources/DocumentIcons/WinampPlaylist.icns"; sourceTree = "<group>"; };
+		AADC824D32AEE8B01AAC3A5C /* WinampSkin.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = "Resources/DocumentIcons/WinampSkin.icns"; sourceTree = "<group>"; };
+		AA7724DF12051809CF150D4D /* DocumentIconChoices */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DocumentIconChoices; path = Resources/DocumentIcons/Choices; sourceTree = "<group>"; };
 		AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */ = {isa = PBXFileReference; lastKnownFileType = file; path = "base-2.91.wsz"; sourceTree = "<group>"; };
 		BDC069402B887D8B0009C001 /* MacAmp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacAmp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BDC069472B887D910009C001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -118,6 +129,9 @@
 		AAEF3EA851E4615920CAD18C /* TextEncoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEncoding.swift; sourceTree = "<group>"; };
 		AAF62A9AAAA8BC001D825328 /* StreamDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamDecoder.swift; sourceTree = "<group>"; };
 		AAA6B540ED59888531424241 /* Win32Dialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Win32Dialog.swift; sourceTree = "<group>"; };
+		AA3D82961B6FAC94F43B75D1 /* FileAssociationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAssociationManager.swift; sourceTree = "<group>"; };
+		AA466F9A66ACD7BC92C4FDD0 /* DocumentIconManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentIconManager.swift; sourceTree = "<group>"; };
+		AA6F767C53DC44A8F4F93E11 /* MacAmpNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAmpNetwork.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -159,6 +173,10 @@
 				AA467705E65615588891A2B1 /* State */,
 				AA69FDE20A9A6E5FEABD7AC7 /* MacAmpApp.swift */,
 				AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */,
+				AA7724DF12051809CF150D4D /* DocumentIconChoices */,
+				AA04AC56F1DC09A5377AC512 /* WinampAudioFile.icns */,
+				AA82159D5E1FC971DD090475 /* WinampPlaylist.icns */,
+				AADC824D32AEE8B01AAC3A5C /* WinampSkin.icns */,
 				BDC069472B887D910009C001 /* Assets.xcassets */,
 				BDC0694C2B887D910009C001 /* MacAmp.entitlements */,
 				BDC069492B887D910009C001 /* Preview Content */,
@@ -183,6 +201,9 @@
 				AA2EE4C01E58DA5839980F70 /* MediaKeyController.swift */,
 				AAC2BB3C6AE0885E199BF702 /* PlayerCoordinator.swift */,
 							AAEF3EA851E4615920CAD18C /* TextEncoding.swift */,
+				AA3D82961B6FAC94F43B75D1 /* FileAssociationManager.swift */,
+				AA466F9A66ACD7BC92C4FDD0 /* DocumentIconManager.swift */,
+				AA6F767C53DC44A8F4F93E11 /* MacAmpNetwork.swift */,
 );
 			path = "Core";
 			sourceTree = "<group>";
@@ -411,6 +432,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */,
+				AADC170587A89F4091446E8E /* DocumentIconChoices in Resources */,
+				AAB30301AFC2DAF68138D1B9 /* WinampAudioFile.icns in Resources */,
+				AA1439011306C7704675E1C9 /* WinampPlaylist.icns in Resources */,
+				AA19012C99F123220CCB3149 /* WinampSkin.icns in Resources */,
 
 
 
@@ -489,6 +514,9 @@
 							AAEE792FED080B14A71932A6 /* TextEncoding.swift in Sources */,
 				AA44A560CFB8767ABE74192C /* StreamDecoder.swift in Sources */,
 				AA3120102721273206913D7D /* Win32Dialog.swift in Sources */,
+				AADB0851B80A783027FF2DFB /* FileAssociationManager.swift in Sources */,
+				AA3C91FDED6774422B41A404 /* DocumentIconManager.swift in Sources */,
+				AAE3548D0386B294262440E0 /* MacAmpNetwork.swift in Sources */,
 );
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -625,6 +653,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"MacAmp/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MacAmp/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 MacAmp. All rights reserved.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -652,6 +681,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"MacAmp/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MacAmp/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 MacAmp. All rights reserved.";
 				LD_RUNPATH_SEARCH_PATHS = (

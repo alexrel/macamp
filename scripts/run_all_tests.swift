@@ -2,6 +2,7 @@ import Cocoa
 import Foundation
 import AVFoundation
 import Network
+import UniformTypeIdentifiers
 @testable import MacAmp
 
 func testGroup(_ name: String, _ block: () throws -> Void) {
@@ -1263,6 +1264,276 @@ testGroup("Playlist MISC: Path Sort, PLS Save, HTML Export") {
     assertTrue(html.contains("Кино - Кукушка (6:41)"), "HTML lists 'Artist - Title (time)'")
     assertTrue(html.contains("&lt;b&gt;&amp;&lt;/b&gt;") && !html.contains("<b>&</b>"), "HTML escapes titles")
     assertTrue(html.contains("<b>3</b> tracks"), "HTML shows the track count")
+}
+
+// 21. File types: associations, Info.plist, Finder integration
+final class FakeLaunchServices: DefaultAppProvider {
+    var defaults: [String: URL] = [:]
+    var installed: [URL] = []
+    var setCalls: [(String, URL)] = []
+    func defaultApplication(for type: UTType) -> URL? { defaults[type.identifier] }
+    func applications(for type: UTType) -> [URL] { installed }
+    func setDefaultApplication(_ app: URL, for type: UTType) async throws {
+        setCalls.append((type.identifier, app))
+        defaults[type.identifier] = app
+    }
+}
+
+func runMain(_ work: @escaping @MainActor () async -> Void) {
+    var done = false
+    Task { @MainActor in await work(); done = true }
+    _ = spinRunLoop(until: { done }, timeout: 10)
+}
+
+testGroup("File Type Associations") {
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/apps", isDirectory: true)
+    let vlc = tmp.appendingPathComponent("VLC.app"), music = tmp.appendingPathComponent("Music.app"), macamp = tmp.appendingPathComponent("MacAmp.app")
+    for app in [vlc, music, macamp] { try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true) }
+    let mp3 = UTType(filenameExtension: "mp3")!.identifier, aiff = UTType(filenameExtension: "aiff")!.identifier
+    let fake = FakeLaunchServices()
+    fake.defaults = [mp3: vlc, aiff: music]
+    fake.installed = [macamp, music, vlc]
+    PersistenceManager.shared.state.fileAssociations = []
+    PersistenceManager.shared.state.fileAssociationPrevious = [:]
+    
+    runMain {
+        let manager = FileAssociationManager(provider: fake, appURL: macamp, bundleIdentifier: "test.macamp")
+        assertTrue(manager.entries.contains { $0.ext == "mp3" } && manager.entries.contains { $0.ext == "wsz" }, "List covers audio, playlists and skins")
+        assertTrue(!manager.entries.contains { $0.ext == "alac" }, "'alac' is not a real file extension and is not listed")
+        assertTrue(!manager.isAssociated("mp3"), "mp3 starts with VLC")
+        
+        await manager.setAssociated("mp3", true)
+        assertEqual(fake.defaults[mp3]?.path, macamp.path, "MacAmp becomes the default app for .mp3")
+        assertTrue(manager.isAssociated("mp3"), "List shows mp3 as associated")
+        assertEqual(PersistenceManager.shared.state.fileAssociationPrevious[mp3], vlc.path, "Previous handler (VLC) remembered")
+        
+        await manager.setAssociated("aif", true)
+        assertTrue(manager.isAssociated("aif") && manager.isAssociated("aiff"), "aif and aiff share a type and switch together")
+        assertEqual(fake.setCalls.filter { $0.0 == aiff }.count, 1, "Shared type is set only once")
+        
+        await manager.setAssociated("mp3", false)
+        assertEqual(fake.defaults[mp3]?.path, vlc.path, "Unchecking gives .mp3 back to VLC")
+        assertTrue(!manager.isAssociated("mp3"), "mp3 no longer associated")
+        
+        // Remembered app was deleted -> any other app that can open the type
+        PersistenceManager.shared.state.fileAssociationPrevious[aiff] = "/Applications/Deleted.app"
+        await manager.setAssociated("aiff", false)
+        assertEqual(fake.defaults[aiff]?.path, music.path, "Falls back to another installed app when the previous one is gone")
+        
+        // Register types on start: take mp3 back after another app grabbed it
+        await manager.setAssociated("mp3", true)
+        fake.defaults[mp3] = vlc
+        PersistenceManager.shared.state.registerFileTypesOnStart = false
+        await manager.reapplyOnLaunchIfNeeded()
+        assertEqual(fake.defaults[mp3]?.path, vlc.path, "No re-registration when the option is off")
+        PersistenceManager.shared.state.registerFileTypesOnStart = true
+        await manager.reapplyOnLaunchIfNeeded()
+        assertEqual(fake.defaults[mp3]?.path, macamp.path, "Re-registered on launch")
+    }
+    
+    // Old session.json without the new keys still decodes with defaults
+    let data = try JSONEncoder().encode(AppState())
+    var legacy = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    for key in ["fileAssociationsStorage", "fileAssociationPreviousStorage", "registerFileTypesOnStartStorage", "enqueueAsDefaultActionStorage"] { legacy.removeValue(forKey: key) }
+    let old = try JSONDecoder().decode(AppState.self, from: JSONSerialization.data(withJSONObject: legacy))
+    assertEqual(old.registerFileTypesOnStart, true, "Register on start defaults to on (Winamp default)")
+    assertEqual(old.enqueueAsDefaultAction, false, "Finder opens play by default")
+}
+
+testGroup("Info.plist: ATS, Document Types, Services") {
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let plistURL = root.appendingPathComponent("MacAmp/Info.plist")
+    let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: plistURL), format: nil) as! [String: Any]
+    let ats = plist["NSAppTransportSecurity"] as? [String: Any]
+    assertEqual(ats?["NSAllowsArbitraryLoads"] as? Bool, true, "http:// radio allowed (ATS)")
+    let docs = plist["CFBundleDocumentTypes"] as! [[String: Any]]
+    for doc in docs {
+        let icon = doc["CFBundleTypeIconFile"] as? String
+        assertTrue(icon != nil, "\(doc["CFBundleTypeName"]!) has an icon")
+        assertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("MacAmp/Resources/DocumentIcons/\(icon!).icns").path), "Icon \(icon!).icns exists")
+        assertTrue((doc["LSHandlerRank"] as? String) != "Default", "MacAmp never claims types without the user's choice")
+    }
+    let types = docs.flatMap { ($0["LSItemContentTypes"] as? [String]) ?? [] }
+    for ext in ["mp3", "m4a", "flac", "wav", "aiff", "m3u", "pls"] {
+        let t = UTType(filenameExtension: ext)!
+        assertTrue(types.contains { t.conforms(to: UTType($0) ?? .data) }, ".\(ext) is declared as openable")
+    }
+    let services = (plist["NSServices"] as! [[String: Any]]).compactMap { $0["NSMessage"] as? String }
+    assertEqual(services, ["playFiles", "enqueueFiles"], "Finder services: Play / Enqueue in MacAmp")
+    // Icons are the original Winamp pixel art at every size
+    let icon = NSImage(contentsOf: root.appendingPathComponent("MacAmp/Resources/DocumentIcons/WinampAudioFile.icns"))!
+    assertTrue(icon.representations.count >= 8, "Audio file icon has all icns sizes (\(icon.representations.count))")
+}
+
+testGroup("Audio Output Device List") {
+    AudioDeviceManager.shared.refreshDevices()
+    let names = AudioDeviceManager.shared.availableDevices.map(\.name)
+    assertTrue(!names.contains { $0.hasPrefix("CADefaultDeviceAggregate") }, "Core Audio private aggregate devices are hidden: \(names)")
+}
+
+// 22. Document icon chooser, Setup page settings
+final class RecordingInstaller: BundleIconInstaller {
+    let real = SystemBundleIconInstaller()
+    var registered: [URL] = []
+    func install(icon: URL, as target: URL) throws { try real.install(icon: icon, as: target) }
+    func resign(bundle: URL) throws { try real.resign(bundle: bundle) }
+    func register(bundle: URL) { registered.append(bundle) } // never touch Launch Services in tests
+    func verify(bundle: URL) -> Bool { real.verify(bundle: bundle) }
+}
+
+testGroup("Document Icon Chooser (File icon / Playlist icon sliders)") {
+    let built = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("DerivedData/Build/Products/Debug/MacAmp.app")
+    let copy = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/IconTest/MacAmp.app")
+    try? FileManager.default.removeItem(at: copy)
+    try FileManager.default.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.copyItem(at: built, to: copy)
+    assertTrue(DocumentIconManager.isLocallySigned(copy), "Local Debug build is ad-hoc signed and writable")
+    assertEqual(DocumentIconManager.resourceIDs.count, 10, "Ten original Winamp document icons on the slider")
+    for id in DocumentIconManager.resourceIDs {
+        assertTrue(FileManager.default.fileExists(atPath: copy.appendingPathComponent("Contents/Resources/Choices/winamp-icon-\(id).icns").path), "Choice #\(id) is in the bundle")
+    }
+    PersistenceManager.shared.state.documentIconIDs = [:]
+    let installer = RecordingInstaller()
+    runMain {
+        let manager = DocumentIconManager(bundleURL: copy, installer: installer, canModifyBundle: true)
+        assertEqual(manager.resourceID(for: .audio), 131, "Default file icon is #131 (page with bolt)")
+        assertEqual(manager.resourceID(for: .playlist), 102, "Default playlist icon is #102 (bolt)")
+        let mp3Index = DocumentIconManager.resourceIDs.firstIndex(of: 182)!
+        await manager.select(mp3Index, for: .audio)
+        assertEqual(manager.lastError, nil, "Applying the icon succeeded")
+        let applied = try! Data(contentsOf: copy.appendingPathComponent("Contents/Resources/WinampAudioFile.icns"))
+        let chosen = try! Data(contentsOf: copy.appendingPathComponent("Contents/Resources/Choices/winamp-icon-182.icns"))
+        assertTrue(applied == chosen, "Bundle's audio document icon is now #182")
+        assertEqual(PersistenceManager.shared.state.documentIconIDs["audio"], 182, "Choice persisted")
+        assertEqual(installer.registered.count, 1, "Re-registered with Launch Services once")
+        
+        // A rebuild brings back the default icon: launch re-applies the choice
+        try! FileManager.default.copyItem(at: copy.appendingPathComponent("Contents/Resources/Choices/winamp-icon-131.icns"),
+                                          to: copy.appendingPathComponent("Contents/Resources/Reset.icns"))
+        try! installer.install(icon: copy.appendingPathComponent("Contents/Resources/Reset.icns"), as: copy.appendingPathComponent("Contents/Resources/WinampAudioFile.icns"))
+        try! FileManager.default.removeItem(at: copy.appendingPathComponent("Contents/Resources/Reset.icns"))
+        try! installer.resign(bundle: copy) // a rebuild produces a freshly signed bundle
+        await manager.reapplyOnLaunchIfNeeded()
+        assertTrue((try! Data(contentsOf: copy.appendingPathComponent("Contents/Resources/WinampAudioFile.icns"))) == chosen, "Choice restored after a rebuild")
+        
+        let locked = DocumentIconManager(bundleURL: copy, installer: installer, canModifyBundle: false)
+        await locked.select(4, for: .playlist) // a different icon than the current one
+        assertEqual(installer.registered.count, 2, "Non-local builds never modify the bundle")
+    }
+    // build.sh used to drop a symlink inside the bundle root: codesign refuses to sign such a bundle.
+    // The icon change must fail cleanly and leave the old icon and a valid signature behind.
+    let stray = copy.appendingPathComponent("MacAmp.app")
+    try FileManager.default.createSymbolicLink(atPath: stray.path, withDestinationPath: "build/MacAmp.app")
+    runMain {
+        let manager = DocumentIconManager(bundleURL: copy, installer: installer, canModifyBundle: true)
+        let before = try! Data(contentsOf: copy.appendingPathComponent("Contents/Resources/WinampPlaylist.icns"))
+        await manager.select(DocumentIconManager.resourceIDs.firstIndex(of: 179)!, for: .playlist)
+        assertTrue(manager.lastError != nil, "Signing failure is reported")
+        assertTrue(!(manager.lastError ?? "").contains("/Users/"), "Message is short, without raw codesign paths: \(manager.lastError ?? "")")
+        let after = try! Data(contentsOf: copy.appendingPathComponent("Contents/Resources/WinampPlaylist.icns"))
+        assertTrue(before == after, "Icon rolled back after the failed re-sign")
+        assertEqual(manager.resourceID(for: .playlist), 102, "Slider shows the icon that is really in the bundle")
+    }
+    try FileManager.default.removeItem(at: stray)
+    
+    // Dragging only previews; the bundle changes once, on release
+    runMain {
+        let manager = DocumentIconManager(bundleURL: copy, installer: installer, canModifyBundle: true)
+        let registeredBefore = installer.registered.count
+        for index in 0..<5 { manager.preview(index, for: .playlist) }
+        assertEqual(installer.registered.count, registeredBefore, "Dragging over five ticks applies nothing yet")
+        await manager.commit(for: .playlist)
+        assertEqual(installer.registered.count, registeredBefore + 1, "Release applies exactly once")
+        assertEqual(PersistenceManager.shared.state.documentIconIDs["playlist"], DocumentIconManager.resourceIDs[4], "Released position saved")
+    }
+    // A choice saved by an older build (XP composites 1131/1102) falls back to the Winamp default
+    PersistenceManager.shared.state.documentIconIDs = ["audio": 1131, "playlist": 1102]
+    runMain {
+        let manager = DocumentIconManager(bundleURL: copy, installer: installer, canModifyBundle: false)
+        assertEqual(manager.resourceID(for: .audio), 131, "Unknown saved icon -> #131")
+        assertEqual(manager.resourceID(for: .playlist), 102, "Unknown saved icon -> #102")
+    }
+    PersistenceManager.shared.state.documentIconIDs = [:]
+    
+    // The re-signed bundle is still valid
+    let verify = Process()
+    verify.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+    verify.arguments = ["--verify", "--deep", "--strict", copy.path]
+    try verify.run(); verify.waitUntilExit()
+    assertEqual(verify.terminationStatus, 0, "codesign --verify passes after the icon change")
+    try? FileManager.default.removeItem(at: copy.deletingLastPathComponent())
+}
+
+testGroup("Document Icons Use the 256-Color Frames") {
+    // Each .icns's 32 px image must be exactly the 256-color source frame, not the 16-color one
+    let dir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("MacAmp/Resources/DocumentIcons")
+    func pixels(_ image: CGImage) -> [UInt8] {
+        let ctx = CGContext(data: nil, width: 32, height: 32, bitsPerComponent: 8, bytesPerRow: 128, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.interpolationQuality = .none
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: 32, height: 32))
+        return Array(UnsafeBufferPointer(start: ctx.data!.assumingMemoryBound(to: UInt8.self), count: 32 * 32 * 4))
+    }
+    for id in DocumentIconManager.resourceIDs {
+        let png = CGImageSourceCreateImageAtIndex(CGImageSourceCreateWithURL(dir.appendingPathComponent("Source/winamp-icon-\(id).png") as CFURL, nil)!, 0, nil)!
+        let icnsSource = CGImageSourceCreateWithURL(dir.appendingPathComponent("Choices/winamp-icon-\(id).icns") as CFURL, nil)!
+        let frame32 = (0..<CGImageSourceGetCount(icnsSource)).compactMap { CGImageSourceCreateImageAtIndex(icnsSource, $0, nil) }.first { $0.width == 32 }!
+        let a = pixels(png), b = pixels(frame32)
+        let diff = zip(a, b).filter { abs(Int($0) - Int($1)) > 2 }.count
+        assertTrue(diff == 0, "Icon #\(id): 32 px frame matches the 256-color source (\(diff) channel values differ)")
+    }
+}
+
+testGroup("Icon Slider: Press, Drag, Release") {
+    // Real mouse events through AppKit's tracking loop (the slider used to move one tick per click only)
+    let win = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 100, height: 100), styleMask: [.titled], backing: .buffered, defer: false)
+    let slider = Win32VerticalTickSliderView(frame: NSRect(x: 10, y: 10, width: 28, height: 64))
+    slider.count = 10
+    slider.position = 1
+    var changes: [Int] = []
+    var commits = 0
+    slider.onChange = { changes.append($0) }
+    slider.onCommit = { commits += 1 }
+    win.contentView!.addSubview(slider)
+    win.orderFrontRegardless()
+    let frame = slider.convert(slider.bounds, to: nil)
+    func ev(_ type: NSEvent.EventType, _ yFromTop: CGFloat) -> NSEvent {
+        NSEvent.mouseEvent(with: type, location: NSPoint(x: frame.minX + 8, y: frame.maxY - yFromTop), modifierFlags: [],
+                           timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber, context: nil,
+                           eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)!
+    }
+    for y in stride(from: 14.0, through: 58.0, by: 4.0) { NSApp.postEvent(ev(.leftMouseDragged, CGFloat(y)), atStart: false) }
+    NSApp.postEvent(ev(.leftMouseUp, 58), atStart: false)
+    win.sendEvent(ev(.leftMouseDown, 11))
+    assertEqual(slider.position, 9, "Press-and-drag moves the thumb all the way down")
+    assertTrue(changes.count >= 5, "Thumb follows the mouse through the ticks (\(changes))")
+    assertEqual(commits, 1, "One commit, on release")
+    slider.isEnabled = false
+    NSApp.postEvent(ev(.leftMouseUp, 5), atStart: false)
+    win.sendEvent(ev(.leftMouseDown, 5))
+    assertEqual(slider.position, 9, "Disabled slider ignores the mouse")
+    win.orderOut(nil)
+}
+
+testGroup("Setup: Internet Settings") {
+    assertTrue(MacAmpNetwork.parseProxy("") == nil, "Blank proxy = none")
+    assertTrue(MacAmpNetwork.parseProxy("proxy.example.com:8080")! == ("proxy.example.com", 8080), "server:port")
+    assertTrue(MacAmpNetwork.parseProxy("http://10.0.0.1:3128/")! == ("10.0.0.1", 3128), "Tolerates http:// and trailing slash")
+    assertTrue(MacAmpNetwork.parseProxy("host:99999") == nil, "Invalid port rejected")
+    PersistenceManager.shared.state.httpProxy = "proxy.example.com:8080"
+    let dict = MacAmpNetwork.configuration().connectionProxyDictionary
+    assertEqual(dict?["HTTPProxy"] as? String, "proxy.example.com", "Proxy host applied to stream sessions")
+    assertEqual(dict?["HTTPPort"] as? Int, 8080, "Proxy port applied")
+    PersistenceManager.shared.state.httpProxy = ""
+    assertTrue(MacAmpNetwork.configuration().connectionProxyDictionary == nil, "No proxy -> system settings")
+    
+    PersistenceManager.shared.state.networkOffline = true
+    defer { PersistenceManager.shared.state.networkOffline = false }
+    var thrown: Error?
+    Task { @MainActor in
+        do { _ = try await AudioEngine.shared.load(url: URL(string: "http://radio.example.com/stream")!) } catch { thrown = error }
+    }
+    _ = spinRunLoop(until: { thrown != nil }, timeout: 5)
+    assertEqual((thrown as? URLError)?.code, .notConnectedToInternet, "Offline mode refuses to open streams")
 }
 
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")

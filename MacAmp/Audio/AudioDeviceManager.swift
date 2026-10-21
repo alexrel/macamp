@@ -105,6 +105,11 @@ public final class AudioDeviceManager: ObservableObject {
             
             let name = fetchDeviceName(deviceID: devID)
             let uid = fetchDeviceUID(deviceID: devID)
+            // Core Audio's private aggregates (e.g. "CADefaultDeviceAggregate-85254-0") and hidden devices
+            // are implementation details, not choices for the user
+            if uid.hasPrefix("CADefaultDeviceAggregate") || name.hasPrefix("CADefaultDeviceAggregate") || isHidden(deviceID: devID) {
+                continue
+            }
             let rawTransport = fetchTransportType(deviceID: devID)
             let transport = AudioDeviceTransportType.from(rawTransport: rawTransport)
             let isDef = (devID == defaultID)
@@ -245,6 +250,18 @@ public final class AudioDeviceManager: ObservableObject {
         let fetchStatus = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &dataSize, &deviceIDs)
         guard fetchStatus == noErr else { return [] }
         return deviceIDs
+    }
+    
+    private func isHidden(deviceID: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyIsHidden,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var hidden: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &hidden) == noErr else { return false }
+        return hidden != 0
     }
     
     private func fetchDefaultOutputDeviceID() -> AudioDeviceID {

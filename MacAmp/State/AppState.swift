@@ -14,6 +14,57 @@ public struct AppState: Codable {
     
     public var visualizerMode: VisualizerMode = .spectrum
     public var visualizerShowPeaks: Bool = true
+    // Setup (Optional storage so session.json files from older versions still decode)
+    public var documentIconIDsStorage: [String: Int]? = nil
+    public var networkOfflineStorage: Bool? = nil
+    public var httpProxyStorage: String? = nil
+    public var showMenuBarIconStorage: Bool? = nil
+    /// Winamp "File icon" / "Playlist icon" choice: kind -> winamp.exe icon resource ID
+    public var documentIconIDs: [String: Int] {
+        get { documentIconIDsStorage ?? [:] }
+        set { documentIconIDsStorage = newValue }
+    }
+    /// Winamp "No Internet connection available": never open network streams
+    public var networkOffline: Bool {
+        get { networkOfflineStorage ?? false }
+        set { networkOfflineStorage = newValue }
+    }
+    /// Winamp "HTTP proxy: 'Server:Port' (blank for none)"
+    public var httpProxy: String {
+        get { httpProxyStorage ?? "" }
+        set { httpProxyStorage = newValue }
+    }
+    public var showMenuBarIcon: Bool {
+        get { showMenuBarIconStorage ?? true }
+        set { showMenuBarIconStorage = newValue }
+    }
+    
+    // Setup ▸ File types (Optional storage so session.json files from older versions still decode)
+    public var fileAssociationsStorage: [String]? = nil
+    public var fileAssociationPreviousStorage: [String: String]? = nil
+    public var registerFileTypesOnStartStorage: Bool? = nil
+    public var enqueueAsDefaultActionStorage: Bool? = nil
+    /// Extensions the user wants opened by MacAmp
+    public var fileAssociations: [String] {
+        get { fileAssociationsStorage ?? [] }
+        set { fileAssociationsStorage = newValue }
+    }
+    /// UTI -> path of the app that was the default before MacAmp took the type over
+    public var fileAssociationPrevious: [String: String] {
+        get { fileAssociationPreviousStorage ?? [:] }
+        set { fileAssociationPreviousStorage = newValue }
+    }
+    /// Winamp "Register types on Winamp start" (on by default, as in Winamp)
+    public var registerFileTypesOnStart: Bool {
+        get { registerFileTypesOnStartStorage ?? true }
+        set { registerFileTypesOnStartStorage = newValue }
+    }
+    /// Winamp "Enqueue as default action": files opened from Finder are added to the playlist instead of played
+    public var enqueueAsDefaultAction: Bool {
+        get { enqueueAsDefaultActionStorage ?? false }
+        set { enqueueAsDefaultActionStorage = newValue }
+    }
+    
     /// Winamp "Manual playlist advance": don't start the next track when one ends (Optional for decode compatibility)
     public var manualPlaylistAdvanceStorage: Bool? = nil
     public var manualPlaylistAdvance: Bool {
