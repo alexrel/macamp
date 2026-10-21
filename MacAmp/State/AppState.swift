@@ -109,7 +109,8 @@ public struct AppState: Codable {
     public var isAlwaysOnTop: Bool = false
     
     public var windowPositions: [String: [Double]] = [:]
-    public var playlistWindowSize: [Double] = [Double(AppConstants.Window.width), Double(AppConstants.Window.height)]
+    /// Winamp's default playlist: minimum height plus 4 resize steps of 29 px (275 × 232)
+    public var playlistWindowSize: [Double] = [Double(AppConstants.Window.width), Double(AppConstants.Window.height) + 4 * 29]
     
     public var lastPlayedTrackURL: String? = nil
     public var lastPlayedTrackIndex: Int? = nil

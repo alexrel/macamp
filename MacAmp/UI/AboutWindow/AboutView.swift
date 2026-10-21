@@ -80,7 +80,7 @@ public struct AboutView: View {
                     .font(.system(size: 11))
                     .foregroundColor(Win32Colors.text)
                 
-                Text("MacAmp v2.91 (macOS) - Oct 17 2026")
+                Text("MacAmp v\(AppConstants.App.version) (macOS), based on \(AppConstants.App.basedOn)")
                     .font(.system(size: 11))
                     .foregroundColor(Win32Colors.text)
                 
@@ -110,11 +110,11 @@ public struct AboutView: View {
     private var creditsTabContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 6) {
-                Text("MacAmp 2.91 for macOS")
+                Text("MacAmp \(AppConstants.App.version) for macOS")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.blue)
                 
-                Text("Pixel-perfect Winamp 2.91 reproduction on Swift, AppKit & SwiftUI.\nAudio Engine: AVAudioEngine 10-Band EQ & 60fps FFT spectrum/waveform.\nSkin Engine: Classic WSZ/BMP decompilation with dynamic REGION transparency.")
+                Text("Pixel-perfect \(AppConstants.App.basedOn) reproduction on Swift, AppKit & SwiftUI.\nAudio Engine: AVAudioEngine 10-Band EQ & 60fps FFT spectrum/waveform.\nSkin Engine: Classic WSZ/BMP decompilation with dynamic REGION transparency.")
                     .font(.system(size: 11))
                     .foregroundColor(Win32Colors.text)
                     .padding(.bottom, 4)
@@ -195,7 +195,7 @@ public struct AboutView: View {
     private var historyTabContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Winamp 2.91 (Canonical Baseline):")
+                Text("\(AppConstants.App.basedOn) (Canonical Baseline):")
                     .font(.system(size: 11, weight: .bold))
                 Text("* Full classic 275x116 window layout with 275x14 shade mode.\n* 10-band graphic equalizer with preamp and dynamic frequency response curve.\n* Real-time 60fps spectrum analyzer and oscilloscope.\n* Authentic pseudo-random shuffle memory.\n* WSZ/ZIP skin loader with REGION.TXT transparency masking.")
                     .font(.system(size: 10, design: .monospaced))
@@ -203,7 +203,7 @@ public struct AboutView: View {
                 
                 Divider()
                 
-                Text("MacAmp 2.91 for macOS:")
+                Text("MacAmp \(AppConstants.App.version) for macOS:")
                     .font(.system(size: 11, weight: .bold))
                 Text("* Built specifically for modern macOS (Apple Silicon & Intel).\n* Pixel-perfect 1x and 2x Retina scale factors.\n* Magnetic window docking with edge-snapping and unified dragging.\n* Integrated ID3v1/ID3v2 MPEG Audio Info editor (⌥3).\n* Winamp Preferences dialog (⌘, / ⌃P).")
                     .font(.system(size: 10, design: .monospaced))

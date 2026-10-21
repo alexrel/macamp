@@ -31,7 +31,6 @@ ehthumbs.db
 .claude
 .agent
 .codex
-AGENTS.md
 .ai-factory
 .ai-factory.json
 .mcp.json   
@@ -55,8 +54,8 @@ fastlane/test_output
 # Artifacts
 webamp-master/
 ClassicSkins/
-docs/*
-!docs/*.md
+# Internal notes, screenshots, reverse-engineering material (not published)
+docs/
 /skin/
 scratch/
 __pycache__/

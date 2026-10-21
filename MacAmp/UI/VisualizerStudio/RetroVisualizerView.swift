@@ -520,7 +520,7 @@ public final class RetroVisualizerView: NSView {
         let statusStr = (status == .playing) ? "PLAYING" : ((status == .paused) ? "PAUSED" : "STOPPED")
         
         let titleStr = track?.title ?? "Winamp Studio"
-        let artistStr = track?.artist ?? "MacAmp 2.91"
+        let artistStr = track?.artist ?? "MacAmp \(AppConstants.App.version)"
         
         let curM = Int(time) / 60
         let curS = Int(time) % 60
@@ -558,7 +558,7 @@ public final class RetroVisualizerView: NSView {
         
         (artistStr as NSString).draw(at: CGPoint(x: 28, y: 72), withAttributes: subAttrs)
         (titleStr as NSString).draw(at: CGPoint(x: 28, y: 48), withAttributes: titleAttrs)
-        let subLine = "[\(statusStr)]  \(timeStr)  •  Winamp 2.91 AVS Studio"
+        let subLine = "[\(statusStr)]  \(timeStr)  •  MacAmp AVS Studio"
         (subLine as NSString).draw(at: CGPoint(x: 28, y: 30), withAttributes: subAttrs)
         
         let helpLine = "[Space / Click]: Change Preset   |   [F]: Fullscreen   |   [Esc]: Exit   |   [←/→]: Tracks   |   [↑/↓]: Volume"

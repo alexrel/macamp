@@ -11,7 +11,7 @@ import AppKit
 /// and `isScrollingActive` (playing and window visible). Otherwise the marquee costs no CPU.
 public class MarqueeView: WinampControlView {
     /// Persistent song title or default text.
-    public var text: String = "MACAMP 2.91 (CLASSIC)" {
+    public var text: String = "MACAMP \(AppConstants.App.version)" {
         didSet {
             if temporaryMessage == nil {
                 currentDisplayText = text
@@ -22,7 +22,7 @@ public class MarqueeView: WinampControlView {
     }
     
     /// Currently displayed text in ticker (temporary status message or song title).
-    public private(set) var currentDisplayText: String = "MACAMP 2.91 (CLASSIC)"
+    public private(set) var currentDisplayText: String = "MACAMP \(AppConstants.App.version)"
     
     /// Set by PlayerCoordinator: false while paused/stopped or when the window is hidden/minimized.
     public var isScrollingActive: Bool = true {

@@ -72,7 +72,7 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
         
         var request = URLRequest(url: streamURL)
         request.setValue("1", forHTTPHeaderField: "Icy-MetaData")
-        request.setValue("WinampMPEG/2.91", forHTTPHeaderField: "User-Agent")
+        request.setValue(AppConstants.App.streamUserAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("*/*", forHTTPHeaderField: "Accept")
         
         let task = session.dataTask(with: request)
@@ -257,7 +257,7 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
         
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
-        request.setValue("WinampMPEG/2.91", forHTTPHeaderField: "User-Agent")
+        request.setValue(AppConstants.App.streamUserAgent, forHTTPHeaderField: "User-Agent")
         
         guard let (data, _) = try? await MacAmpNetwork.session.data(for: request) else {
             return url

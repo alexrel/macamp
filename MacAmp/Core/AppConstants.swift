@@ -1,9 +1,19 @@
 import Foundation
 import CoreGraphics
 
-/// Canonical constants and layout coordinates for Winamp 2.91 emulation.
-/// All values are based directly on original Winamp 2.91 specs, NSIS extraction, and Webamp references.
+/// Canonical constants and layout coordinates for the Winamp 2.95 reproduction.
+/// Values come from the original winamp.exe 2.95 (docs/winamp295-extracted), its base skin and Webamp references.
 public enum AppConstants {
+    
+    // MARK: - Version
+    public enum App {
+        /// MacAmp's own version (MARKETING_VERSION, major.minor), e.g. "1.0"
+        public static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        /// The Winamp release MacAmp reproduces
+        public static let basedOn = "Winamp 2.95"
+        /// What Winamp 2.95's in_mp3 sends to SHOUTcast / Icecast servers
+        public static let streamUserAgent = "WinampMPEG/2.9"
+    }
     
     // MARK: - Window Dimensions (1x Base Scale)
     public enum Window {

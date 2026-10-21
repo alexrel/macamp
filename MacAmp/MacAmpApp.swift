@@ -73,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let displayName = name.isEmpty ? track.url.lastPathComponent : name
             titleItem = NSMenuItem(title: prefix + displayName, action: nil, keyEquivalent: "")
         } else {
-            titleItem = NSMenuItem(title: "MacAmp 2.91 [Stopped]", action: nil, keyEquivalent: "")
+            titleItem = NSMenuItem(title: "MacAmp \(AppConstants.App.version) [Stopped]", action: nil, keyEquivalent: "")
         }
         titleItem.isEnabled = false
         menu.addItem(titleItem)

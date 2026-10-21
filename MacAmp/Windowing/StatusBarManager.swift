@@ -38,7 +38,7 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
                 appIcon.size = NSSize(width: 18, height: 18)
                 button.image = appIcon
             }
-            button.toolTip = "MacAmp 2.91"
+            button.toolTip = "MacAmp \(AppConstants.App.version)"
         }
         
         item.menu = buildMenu()
@@ -50,7 +50,7 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
         menu.delegate = self
         
         // 1. Current track title header
-        let trackTitle = NSMenuItem(title: "MacAmp 2.91", action: nil, keyEquivalent: "")
+        let trackTitle = NSMenuItem(title: "MacAmp \(AppConstants.App.version)", action: nil, keyEquivalent: "")
         trackTitle.isEnabled = false
         self.titleItem = trackTitle
         menu.addItem(trackTitle)
@@ -136,8 +136,8 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
             titleItem?.toolTip = displayName
             statusItem?.button?.toolTip = "MacAmp: " + displayName
         } else {
-            titleItem?.title = "MacAmp 2.91 [Stopped]"
-            statusItem?.button?.toolTip = "MacAmp 2.91"
+            titleItem?.title = "MacAmp \(AppConstants.App.version) [Stopped]"
+            statusItem?.button?.toolTip = "MacAmp \(AppConstants.App.version)"
         }
         
         playPauseItem?.title = isPlaying ? "Pause" : "Play"

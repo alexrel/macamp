@@ -11,7 +11,7 @@ public class SkinManager: ObservableObject {
     
     public let skinDidChange = PassthroughSubject<Skin, Never>()
     
-    /// True if the current skin is the built-in base Winamp 2.91 skin
+    /// True if the current skin is the built-in Winamp base skin (base-2.91.wsz)
     public var isBaseSkinActive: Bool {
         return currentSkinURL == nil || currentSkin?.name == "base-2.91"
     }
@@ -181,7 +181,7 @@ public class SkinManager: ObservableObject {
         return true
     }
     
-    /// Reverts to the built-in base Winamp 2.91 skin.
+    /// Reverts to the built-in Winamp base skin.
     public func resetToBaseSkin() {
         self.currentSkinURL = nil
         if let base = baseSkin {

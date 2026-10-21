@@ -16,7 +16,7 @@ public enum PlaylistIO {
         } else {
             var request = URLRequest(url: url)
             request.timeoutInterval = 10
-            request.setValue("WinampMPEG/2.91", forHTTPHeaderField: "User-Agent")
+            request.setValue(AppConstants.App.streamUserAgent, forHTTPHeaderField: "User-Agent")
             guard let (remote, _) = try? await MacAmpNetwork.session.data(for: request) else { return [] }
             data = remote
         }

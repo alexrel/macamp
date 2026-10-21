@@ -1042,7 +1042,7 @@ public struct PreferencesView: View {
                                 HStack {
                                     Text(isBaseSelected ? "●" : "○")
                                         .font(.system(size: 9))
-                                    Text("Classic Winamp 2.91 (Base Skin)")
+                                    Text("Winamp Classic (Base Skin)")
                                         .font(.system(size: 11, weight: isBaseSelected ? .bold : .regular))
                                     Spacer()
                                     Text("[Bundled]")

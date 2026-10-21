@@ -16,13 +16,13 @@ set -euo pipefail
 
 APP_NAME="MacAmp"
 SCHEME="MacAmp"
-VERSION="2.91"
 
 BUILD_DIR="build"
 DERIVED_DATA="DerivedData"
 DEBUG_APP="$DERIVED_DATA/Build/Products/Debug/$APP_NAME.app"
 RELEASE_APP="$DERIVED_DATA/Build/Products/Release/$APP_NAME.app"
-DMG_PATH="$BUILD_DIR/${APP_NAME}-v${VERSION}.dmg"
+# Named after the app's own version (CFBundleShortVersionString), set once the Release build exists
+DMG_PATH=""
 
 # Colors
 RED='\033[0;31m'
@@ -40,7 +40,7 @@ log_err()   { echo -e "${RED}❌ $1${NC}" >&2; }
 
 print_banner() {
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BOLD}${CYAN}   MacAmp 2.91 macOS — Build Tool${NC}"
+    echo -e "${BOLD}${CYAN}   MacAmp macOS — Build Tool${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 }
 
@@ -48,6 +48,30 @@ clean_artifacts() {
     log_step "Cleaning build artifacts"
     rm -rf "$DERIVED_DATA" "$BUILD_DIR"
     log_ok "Build artifacts cleaned"
+}
+
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
+# build/MacAmp.app and ./MacAmp.app point at the built bundle instead of being copies of it: macOS indexes every
+# copy, marks duplicates launch-disabled and, with stale ones around, opens files in another app instead.
+link_and_register() {
+    local app bundle_id
+    app="$(cd "$1" && pwd -P)"
+    mkdir -p "$BUILD_DIR"
+    rm -rf "$BUILD_DIR/$APP_NAME.app"
+    ln -sfn "$app" "$BUILD_DIR/$APP_NAME.app"
+    ln -sfn "$BUILD_DIR/$APP_NAME.app" "./$APP_NAME.app" # -n: replace the link, never write inside the bundle
+
+    # Forget every other MacAmp copy Launch Services knows (deleted builds, the other configuration, DMG volumes)
+    bundle_id="$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app/Contents/Info.plist")"
+    "$LSREGISTER" -dump 2>/dev/null | awk -v id="$bundle_id" '
+        /^-{20,}/ { if (found && path != "") print path; found = 0; path = ""; next }
+        /^path:/ { sub(/^path: */, ""); sub(/ \(0x[0-9a-f]+\)$/, ""); path = $0 }
+        /^identifier:/ { if ($2 == id) found = 1 }
+    ' | sort -u | while IFS= read -r other; do
+        [ "$other" != "$app" ] && "$LSREGISTER" -u "$other" 2>/dev/null || true
+    done
+    "$LSREGISTER" -f "$app"
 }
 
 build_debug() {
@@ -59,10 +83,7 @@ build_debug() {
                build | grep -E '\*\*\s*BUILD|error:|warning:' || true
     
     if [ -d "$DEBUG_APP" ]; then
-        mkdir -p "$BUILD_DIR"
-        rm -rf "$BUILD_DIR/$APP_NAME.app"
-        cp -R "$DEBUG_APP" "$BUILD_DIR/"
-        ln -sfn "$BUILD_DIR/$APP_NAME.app" "./$APP_NAME.app" # -n: replace the link, never write inside the bundle
+        link_and_register "$DEBUG_APP"
         log_ok "Debug build succeeded: $BUILD_DIR/$APP_NAME.app (and ./$APP_NAME.app)"
     else
         log_err "Debug build failed"
@@ -72,16 +93,15 @@ build_debug() {
 
 build_release() {
     log_step "Building Release configuration"
+    # generic destination: Apple Silicon + Intel in one binary (not just this Mac's architecture)
     xcodebuild -scheme "$SCHEME" \
                -configuration Release \
+               -destination "generic/platform=macOS" \
                -derivedDataPath "$DERIVED_DATA" \
                build | grep -E '\*\*\s*BUILD|error:|warning:' || true
     
     if [ -d "$RELEASE_APP" ]; then
-        mkdir -p "$BUILD_DIR"
-        rm -rf "$BUILD_DIR/$APP_NAME.app"
-        cp -R "$RELEASE_APP" "$BUILD_DIR/"
-        ln -sfn "$BUILD_DIR/$APP_NAME.app" "./$APP_NAME.app" # -n: replace the link, never write inside the bundle
+        link_and_register "$RELEASE_APP"
         log_ok "Release build succeeded: $BUILD_DIR/$APP_NAME.app (and ./$APP_NAME.app)"
     else
         log_err "Release build failed"
@@ -108,6 +128,7 @@ run_app() {
 build_dmg() {
     build_release
     
+    DMG_PATH="$BUILD_DIR/${APP_NAME}-$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$RELEASE_APP/Contents/Info.plist").dmg"
     log_step "Creating DMG package"
     mkdir -p "$BUILD_DIR"
     
