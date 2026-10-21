@@ -1925,4 +1925,88 @@ testGroup("Crossfade Between Tracks") {
     assertTrue(list.hasNext, "Repeat wraps around")
 }
 
+testGroup("CUE Sheets") {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/cue/Альбом", isDirectory: true)
+    try? FileManager.default.removeItem(at: dir)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let wav = try makeTestWAV(named: "cue-album.wav", seconds: 4.0)
+    let album = dir.appendingPathComponent("album.wav")
+    try FileManager.default.copyItem(at: wav, to: album)
+    try FileManager.default.copyItem(at: wav, to: dir.appendingPathComponent("bonus.wav"))
+    // Sheet written for a FLAC rip that sits next to it as .wav; pregap on track 2; a data track
+    let cue = """
+    REM GENRE Rock
+    PERFORMER "Кино"
+    TITLE "Группа крови"
+    FILE "album.flac" WAVE
+      TRACK 01 AUDIO
+        TITLE "Группа крови"
+        INDEX 01 00:00:00
+      TRACK 02 AUDIO
+        TITLE "Закрой за мной дверь"
+        PERFORMER "Виктор Цой"
+        INDEX 00 00:01:00
+        INDEX 01 00:01:37
+      TRACK 03 AUDIO
+        TITLE "Последний герой"
+        INDEX 01 00:03:00
+      TRACK 04 MODE1/2352
+        INDEX 01 00:03:50
+    """
+    let cueURL = dir.appendingPathComponent("album.cue")
+    try cue.write(to: cueURL, atomically: true, encoding: .utf8)
+
+    let entries = CueSheet.parse(content: cue, baseURL: dir)
+    assertEqual(entries.count, 3, "Audio tracks only (data track skipped)")
+    assertEqual(entries.map(\.title), ["Группа крови", "Закрой за мной дверь", "Последний герой"], "Track titles")
+    assertEqual(entries.map(\.artist), ["Кино", "Виктор Цой", "Кино"], "Track performer, else the album performer")
+    assertEqual(entries[0].url.withoutPlaybackRange.standardizedFileURL, album.standardizedFileURL, "FILE .flac found as the .wav next to the sheet")
+    assertTrue(abs((entries[1].url.playbackRange?.start ?? 0) - (1 + 37.0 / 75)) < 0.001, "Starts at INDEX 01 (mm:ss:ff, 75 frames/s)")
+    assertTrue(abs(entries[0].duration - (1 + 37.0 / 75)) < 0.001, "Ends where the next track's INDEX 01 starts (pregap stays with the previous track)")
+    assertTrue(entries[2].url.playbackRange?.end == nil, "Last track runs to the end of the file")
+    assertTrue(entries[0].url != entries[1].url, "Each track has its own URL")
+
+    // UTF-8 with BOM and CRLF line ends (like EAC / foobar sheets); album PERFORMER on the first line
+    let bomCue = "PERFORMER \"Enigma\"\r\nFILE \"album.wav\" WAVE\r\n  TRACK 01 AUDIO\r\n    TITLE \"Morphing Thru Time\"\r\n    INDEX 01 01:57:73\r\n"
+    let bomEntries = PlaylistIO.parse(data: Data([0xEF, 0xBB, 0xBF]) + Data(bomCue.utf8), ext: "cue", baseURL: dir)
+    assertEqual(bomEntries.first?.artist, "Enigma", "BOM doesn't hide the first line")
+    assertTrue(abs((bomEntries.first?.url.playbackRange?.start ?? 0) - (117 + 73.0 / 75)) < 0.001, "CRLF sheet parses (01:57:73)")
+    let bomM3U = PlaylistIO.parse(data: Data([0xEF, 0xBB, 0xBF]) + Data("#EXTM3U\r\nalbum.wav\r\n".utf8), ext: "m3u", baseURL: dir)
+    assertEqual(bomM3U.map(\.url.lastPathComponent), ["album.wav"], "M3U with a BOM: #EXTM3U isn't taken for a file")
+
+    let ranged = album.withPlaybackRange(start: 61.5, end: 120)
+    assertTrue(ranged.playbackRange?.start == 61.5 && ranged.playbackRange?.end == 120, "Range round-trips through the URL")
+    assertEqual(ranged.withoutPlaybackRange, album, "Range strips back to the file")
+    assertTrue(album.playbackRange == nil, "Plain files have no range")
+    let saved = try JSONDecoder().decode(TrackItem.self, from: JSONEncoder().encode(entries[1]))
+    assertEqual(saved.url, entries[1].url, "The range survives the saved playlist")
+
+    let loaded = awaitValue { await PlaylistIO.loadPlaylist(from: cueURL) }
+    assertEqual(loaded.map(\.title), entries.map(\.title), "Loading the sheet keeps its titles (not the file's tags)")
+    assertTrue(abs(loaded[2].duration - (4 - 3)) < 0.05, "Open-ended last track gets the rest of the file (\(loaded[2].duration))")
+
+    // Folder add: the sheet's tracks instead of the big file; other files stay
+    let scanned = awaitValue { await PlayerCoordinator.scanPaths([dir.path]) }.tracks
+    assertEqual(scanned.map(\.title), ["Группа крови", "Закрой за мной дверь", "Последний герой", "bonus"], "Folder: CUE tracks replace album.wav, bonus.wav kept")
+
+    // Playback of one track's range
+    let engine = AudioEngine.shared
+    let savedFinished = engine.onPlaybackFinished
+    defer { engine.onPlaybackFinished = savedFinished; engine.stop() }
+    AudioDeviceManager.shared.selectDevice(uid: nil)
+    engine.setOutputDevice(deviceID: AudioDeviceManager.shared.defaultDevice?.id)
+    var finished = 0
+    engine.onPlaybackFinished = { finished += 1 }
+    let meta = try loadSync(engine, entries[1].url)
+    assertTrue(abs(meta.duration - (3 - (1 + 37.0 / 75))) < 0.01, "Engine reports the track's length, not the file's (\(meta.duration))")
+    assertEqual(meta.title, "", "Album-file tags aren't used for a CUE track")
+    engine.seek(to: 1.0)
+    engine.play()
+    _ = spinRunLoop(until: { false }, timeout: 0.15)
+    assertTrue(engine.currentTime >= 1.0 && engine.currentTime < 1.4, "Time counts from the track's start (\(engine.currentTime))")
+    let began = Date()
+    assertTrue(spinRunLoop(until: { finished == 1 }, timeout: 3), "Track ends at its range end")
+    assertTrue(Date().timeIntervalSince(began) < 0.9, "Stops at the next track's start, not the end of the file")
+}
+
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")

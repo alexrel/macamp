@@ -36,6 +36,14 @@ extension PlayerCoordinator {
     }
     
     // MARK: - Playback Handling
+    /// Artist / title to show: the file's tags, except for a CUE track, whose file tags describe the whole
+    /// album (the engine then reports none and the sheet's names are kept).
+    func trackTags(_ meta: TrackMetadata, for track: TrackItem) -> (artist: String, title: String) {
+        guard track.url.playbackRange != nil else { return (meta.artist, meta.title) }
+        audioEngine.updateCurrentMetadata(title: track.title, artist: track.artist)
+        return (track.artist, track.title)
+    }
+    
     public func loadAndPlay(track: TrackItem) {
         if !track.url.isFileURL {
             mainView.marquee.text = "[Connecting...] \(track.title)"
@@ -62,8 +70,9 @@ extension PlayerCoordinator {
                         self.persistence.state.lastPlayedTrackTime = 0.0
                         self.persistence.saveSession()
                     }
-                    self.playlist.updateTrack(url: track.url, duration: meta.duration, artist: meta.artist, title: meta.title)
-                    self.mainView.marquee.text = TrackItem.displayName(artist: meta.artist, title: meta.title)
+                    let (artist, title) = self.trackTags(meta, for: track)
+                    self.playlist.updateTrack(url: track.url, duration: meta.duration, artist: artist, title: title)
+                    self.mainView.marquee.text = TrackItem.displayName(artist: artist, title: title)
                     self.mainView.marquee.resetScroll()
                     self.mainView.timeDisplay.totalDuration = meta.duration
                     self.mainView.timeDisplay.status = .playing
@@ -111,10 +120,11 @@ extension PlayerCoordinator {
             do {
                 let meta = try await audioEngine.load(url: track.url)
                 await MainActor.run {
-                    self.playlist.updateTrack(url: track.url, duration: meta.duration, artist: meta.artist, title: meta.title)
+                    let (artist, title) = self.trackTags(meta, for: track)
+                    self.playlist.updateTrack(url: track.url, duration: meta.duration, artist: artist, title: title)
                     self.audioEngine.preparePaused(at: savedTime)
                     
-                    self.mainView.marquee.text = TrackItem.displayName(artist: meta.artist, title: meta.title)
+                    self.mainView.marquee.text = TrackItem.displayName(artist: artist, title: title)
                     self.mainView.marquee.resetScroll()
                     self.mainView.timeDisplay.totalDuration = meta.duration
                     self.mainView.timeDisplay.currentTime = savedTime

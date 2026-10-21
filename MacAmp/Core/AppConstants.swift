@@ -264,7 +264,7 @@ public enum AppConstants {
             "mp3", "flac", "wav", "aiff", "aif", "m4a", "aac", "alac", "ogg", "oga", "opus"
         ]
         public static let skinExtensions: Set<String> = ["wsz", "zip"]
-        public static let playlistExtensions: Set<String> = ["m3u", "m3u8", "pls", "xspf"] // xspf: VLC's own format
+        public static let playlistExtensions: Set<String> = ["m3u", "m3u8", "pls", "xspf", "cue"] // xspf: VLC's own format
     }
     
     // MARK: - macOS Keyboard Codes

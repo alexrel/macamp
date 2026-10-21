@@ -278,7 +278,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             let action = PlayerCoordinator.actionAfterTrackEnd(stopAfterCurrent: self.stopAfterCurrent,
                                                                manualAdvance: self.persistence.state.manualPlaylistAdvance,
                                                                isRepeat: self.playlist.isRepeat)
-            return action == .advance && self.playlist.hasNext
+            // A CUE album plays continuously (live / gapless albums), so its tracks don't crossfade
+            return action == .advance && self.playlist.hasNext && self.playlist.currentTrack?.url.playbackRange == nil
         }
         
         // 2. Transport actions

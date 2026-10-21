@@ -66,6 +66,12 @@ public struct TrackItem: Codable, Identifiable, Equatable {
         await withTaskGroup(of: (Int, TrackItem).self) { group in
             for (i, entry) in entries.enumerated() {
                 group.addTask {
+                    // CUE track: the sheet already gave title and artist; only an open-ended last track needs the file's length
+                    if let range = entry.url.playbackRange {
+                        let duration = entry.duration > 0 ? entry.duration
+                            : max(0, await resolveDuration(from: entry.url.withoutPlaybackRange) - range.start)
+                        return (i, TrackItem(id: entry.id, url: entry.url, title: entry.title, artist: entry.artist, duration: duration))
+                    }
                     let item = await create(from: entry.url, titleFallback: entry.title, durationFallback: entry.duration)
                     return (i, TrackItem(id: entry.id, url: item.url, title: item.title, artist: item.artist, duration: item.duration))
                 }

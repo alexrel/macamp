@@ -23,7 +23,8 @@ public enum TextEncoding {
     /// Decodes raw text bytes of unknown encoding: UTF-8 if valid, else CP1251 when the bytes look Cyrillic, else Latin-1.
     public static func decode(_ data: Data) -> String {
         if let utf8 = String(data: data, encoding: .utf8) {
-            return utf8
+            // A UTF-8 byte-order mark (Windows editors, CUE rippers) isn't text
+            return utf8.hasPrefix("\u{FEFF}") ? String(utf8.dropFirst()) : utf8
         }
         let latin1 = String(data: data, encoding: .isoLatin1) ?? ""
         return repairCyrillic(latin1)

@@ -26,6 +26,9 @@ public enum PlaylistIO {
     /// Playlist entries with the titles / durations the file gives (no audio files read).
     static func parse(data: Data, ext: String, baseURL: URL) -> [TrackItem] {
         let content = TextEncoding.decode(data)
+        if ext == "cue" {
+            return CueSheet.parse(content: content, baseURL: baseURL)
+        }
         if ext == "xspf" || content.contains("<playlist") && content.contains("xspf.org") {
             return parseXSPF(data: data, baseURL: baseURL)
         } else if ext == "pls" || content.lowercased().contains("[playlist]") {

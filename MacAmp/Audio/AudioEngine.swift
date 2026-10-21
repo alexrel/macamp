@@ -56,6 +56,10 @@ public class AudioEngine {
     private var fileDuration: TimeInterval = 0
     private var sampleRate: Double = 44100
     private var startFrameOffset: AVAudioFramePosition = 0
+    /// CUE track inside the file: frames played are [rangeStartFrame, rangeEndFrame); the whole file otherwise.
+    /// `fileDuration` and all times below are relative to the range start.
+    private var rangeStartFrame: AVAudioFramePosition = 0
+    private var rangeEndFrame: AVAudioFramePosition = 0
     private var currentTrackTime: TimeInterval = 0
     /// Invalidates completion handlers of segments scheduled before a stop/seek/new track.
     private var playbackGeneration: Int = 0
@@ -491,8 +495,9 @@ public class AudioEngine {
             return meta
         }
 
-        // Local audio file
-        let localURL = url
+        // Local audio file (a CUE track plays a range of it)
+        let localURL = url.withoutPlaybackRange
+        let range = url.playbackRange
         let file = try AVAudioFile(forReading: localURL)
 
         var duration: TimeInterval = 0
@@ -500,11 +505,15 @@ public class AudioEngine {
             duration = Double(file.length) / file.processingFormat.sampleRate
         }
 
-        // Extract metadata and duration asynchronously using unified TrackItem resolver
-        let (resolvedDur, artist, title) = await TrackItem.resolveMetadataAsync(from: localURL)
-        guard loadToken == loadGeneration else { throw CancellationError() }
-        if resolvedDur > 0 {
-            duration = resolvedDur
+        // Tags of a CUE track's file describe the album; the playlist entry has the track's own
+        var (artist, title) = ("", "")
+        if range == nil {
+            let (resolvedDur, resolvedArtist, resolvedTitle) = await TrackItem.resolveMetadataAsync(from: localURL)
+            guard loadToken == loadGeneration else { throw CancellationError() }
+            if resolvedDur > 0 {
+                duration = resolvedDur
+            }
+            (artist, title) = (resolvedArtist, resolvedTitle)
         }
 
         self.audioFile = file
@@ -517,6 +526,17 @@ public class AudioEngine {
         let channels = file.processingFormat.channelCount
         let channelMode: AudioChannelMode = channels > 1 ? .stereo : .mono
         let approxBitrate = duration > 0 ? Int((Double(file.length * 2 * Int64(channels)) / duration) * 8 / 1000) : 128
+
+        let totalFrames = file.length > 0 ? file.length : AVAudioFramePosition(duration * sampleRate)
+        if let range {
+            rangeStartFrame = min(totalFrames, AVAudioFramePosition(range.start * sampleRate))
+            rangeEndFrame = range.end.map { min(totalFrames, AVAudioFramePosition($0 * sampleRate)) } ?? totalFrames
+            rangeEndFrame = max(rangeStartFrame, rangeEndFrame)
+            duration = Double(rangeEndFrame - rangeStartFrame) / sampleRate
+        } else {
+            rangeStartFrame = 0
+            rangeEndFrame = totalFrames
+        }
 
         self.fileDuration = duration
 
@@ -772,9 +792,8 @@ public class AudioEngine {
         playerNode.stop()
         ensureEngineRunning()
 
-        let totalFrames = (file.length > 0) ? file.length : AVAudioFramePosition(fileDuration * sampleRate)
-        let startFrame = AVAudioFramePosition(max(0, min(currentTrackTime, fileDuration)) * sampleRate)
-        let frameCount = AVAudioFrameCount(max(0, totalFrames - startFrame))
+        let startFrame = rangeStartFrame + AVAudioFramePosition(max(0, min(currentTrackTime, fileDuration)) * sampleRate)
+        let frameCount = AVAudioFrameCount(max(0, rangeEndFrame - startFrame))
         guard frameCount > 0 else {
             handlePlaybackCompletion()
             return
@@ -886,7 +905,7 @@ public class AudioEngine {
         }
         // playerTime counts in the node's output rate, which can differ from the file's rate (44.1k file on a 48k device)
         let played = Double(playerTime.sampleTime) / playerTime.sampleRate
-        let calculated = Double(startFrameOffset) / sampleRate + played
+        let calculated = Double(startFrameOffset - rangeStartFrame) / sampleRate + played
         return max(0, min(calculated, fileDuration))
     }
 
@@ -967,9 +986,8 @@ public class AudioEngine {
         cutCrossfade()
         playerNode.stop()
 
-        let totalFrames = (file.length > 0) ? file.length : AVAudioFramePosition(fileDuration * sampleRate)
-        let targetFrame = AVAudioFramePosition(clampedTime * sampleRate)
-        let frameCount = AVAudioFrameCount(max(0, totalFrames - targetFrame))
+        let targetFrame = rangeStartFrame + AVAudioFramePosition(clampedTime * sampleRate)
+        let frameCount = AVAudioFrameCount(max(0, rangeEndFrame - targetFrame))
         startFrameOffset = targetFrame
 
         if frameCount > 0 {
@@ -1005,9 +1023,8 @@ public class AudioEngine {
         playerNode.stop()
 
         if let file = audioFile {
-            let totalFrames = (file.length > 0) ? file.length : AVAudioFramePosition(fileDuration * sampleRate)
-            let targetFrame = AVAudioFramePosition(clampedTime * sampleRate)
-            let frameCount = AVAudioFrameCount(max(0, totalFrames - targetFrame))
+            let targetFrame = rangeStartFrame + AVAudioFramePosition(clampedTime * sampleRate)
+            let frameCount = AVAudioFrameCount(max(0, rangeEndFrame - targetFrame))
             startFrameOffset = targetFrame
 
             if frameCount > 0 {

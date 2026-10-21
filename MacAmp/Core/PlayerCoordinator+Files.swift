@@ -158,9 +158,20 @@ extension PlayerCoordinator {
                     }
                     // Recursively scan for audio files, in name order like Winamp's "Add directory"
                     let all = fm.enumerator(at: url, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? []
-                    var found = all.filter { audioExtensions.contains($0.pathExtension.lowercased()) }
+                    // An album rip with a CUE sheet is listed as its tracks, not as one long file
+                    let sheets = all.filter { $0.pathExtension.lowercased() == "cue" }
+                        .compactMap { cue in (try? Data(contentsOf: cue)).map { (cue, TextEncoding.decode($0)) } }
+                    let covered = Set(sheets.flatMap { CueSheet.referencedFiles(content: $0.1, baseURL: $0.0.deletingLastPathComponent()) })
+                    var found = all.filter { audioExtensions.contains($0.pathExtension.lowercased()) && !covered.contains($0.standardizedFileURL) }
+                        + sheets.map(\.0)
                     found.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-                    entries.append(contentsOf: found.map { TrackItem.entry(url: $0) })
+                    for file in found {
+                        if let sheet = sheets.first(where: { $0.0 == file }) {
+                            entries.append(contentsOf: CueSheet.parse(content: sheet.1, baseURL: file.deletingLastPathComponent()))
+                        } else {
+                            entries.append(TrackItem.entry(url: file))
+                        }
+                    }
                 } else if audioExtensions.contains(ext) {
                     entries.append(TrackItem.entry(url: url))
                 }
