@@ -8,7 +8,7 @@ public struct GlobalHotkey {
     /// Mac-style label, e.g. "⌃⌥X"
     public let label: String
     let keyCode: UInt32
-    let perform: () -> Void
+    let perform: @MainActor () -> Void
 }
 
 /// Classic Winamp global hotkeys (Ctrl+Alt+key on Windows, ⌃⌥+key on the Mac), working while MacAmp is in the background.
@@ -37,8 +37,8 @@ public final class GlobalHotkeysController: ObservableObject {
     public static let modifierLabel = "⌃⌥"
 
     public let hotkeys: [GlobalHotkey] = {
-        let coord = { PlayerCoordinator.shared }
-        func key(_ action: String, _ symbol: String, _ code: Int, _ perform: @escaping () -> Void) -> GlobalHotkey {
+        let coord: @MainActor () -> PlayerCoordinator = { PlayerCoordinator.shared }
+        func key(_ action: String, _ symbol: String, _ code: Int, _ perform: @escaping @MainActor () -> Void) -> GlobalHotkey {
             GlobalHotkey(action: action, label: GlobalHotkeysController.modifierLabel + symbol, keyCode: UInt32(code), perform: perform)
         }
         return [

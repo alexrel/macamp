@@ -2,20 +2,36 @@ import Foundation
 
 public enum PlaylistIO {
     
-    /// Parses an M3U or PLS file from a URL.
-    public static func loadPlaylist(from url: URL) -> [TrackItem] {
-        guard let data = try? Data(contentsOf: url) else {
-            return []
-        }
-        let content = TextEncoding.decode(data)
-        
-        let ext = url.pathExtension.lowercased()
-        if ext == "xspf" || content.contains("<playlist") && content.contains("xspf.org") {
-            return parseXSPF(data: data, baseURL: url.deletingLastPathComponent())
-        } else if ext == "pls" {
-            return parsePLS(content: content, baseURL: url.deletingLastPathComponent())
+    /// Loads an M3U / PLS / XSPF playlist (local file or URL) and reads its tracks' tags.
+    public static func loadPlaylist(from url: URL) async -> [TrackItem] {
+        await TrackItem.resolveAll(loadEntries(from: url))
+    }
+    
+    /// The playlist's entries as the file lists them, without reading the audio files.
+    public static func loadEntries(from url: URL) async -> [TrackItem] {
+        let data: Data
+        if url.isFileURL {
+            guard let local = try? Data(contentsOf: url) else { return [] }
+            data = local
         } else {
-            return parseM3U(content: content, baseURL: url.deletingLastPathComponent())
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 10
+            request.setValue("WinampMPEG/2.91", forHTTPHeaderField: "User-Agent")
+            guard let (remote, _) = try? await MacAmpNetwork.session.data(for: request) else { return [] }
+            data = remote
+        }
+        return parse(data: data, ext: url.pathExtension.lowercased(), baseURL: url.deletingLastPathComponent())
+    }
+    
+    /// Playlist entries with the titles / durations the file gives (no audio files read).
+    static func parse(data: Data, ext: String, baseURL: URL) -> [TrackItem] {
+        let content = TextEncoding.decode(data)
+        if ext == "xspf" || content.contains("<playlist") && content.contains("xspf.org") {
+            return parseXSPF(data: data, baseURL: baseURL)
+        } else if ext == "pls" || content.lowercased().contains("[playlist]") {
+            return parsePLS(content: content, baseURL: baseURL)
+        } else {
+            return parseM3U(content: content, baseURL: baseURL)
         }
     }
     
@@ -43,7 +59,7 @@ public enum PlaylistIO {
                 let trackURL = resolveEntry(line, baseURL: baseURL)
                 
                 let title = nextTitle.isEmpty ? trackURL.deletingPathExtension().lastPathComponent : displayTitle(nextTitle, for: trackURL)
-                let item = TrackItem.create(from: trackURL, titleFallback: title, durationFallback: nextDuration)
+                let item = TrackItem.entry(url: trackURL, title: title, duration: nextDuration)
                 items.append(item)
                 
                 nextTitle = ""
@@ -134,7 +150,7 @@ public enum PlaylistIO {
             let url = resolveEntry(entry.location, baseURL: baseURL)
             let title = entry.title.isEmpty ? url.deletingPathExtension().lastPathComponent
                 : (entry.creator.isEmpty ? entry.title : "\(entry.creator) - \(entry.title)")
-            return TrackItem.create(from: url, titleFallback: title, durationFallback: entry.durationMs / 1000)
+            return TrackItem.entry(url: url, title: title, duration: entry.durationMs / 1000)
         }
     }
     
@@ -170,30 +186,10 @@ public enum PlaylistIO {
             let trackURL = resolveEntry(path, baseURL: baseURL)
             let title = titles[idx] ?? trackURL.deletingPathExtension().lastPathComponent
             let dur = lengths[idx] ?? 0
-            items.append(TrackItem.create(from: trackURL, titleFallback: title, durationFallback: dur))
+            items.append(TrackItem.entry(url: trackURL, title: title, duration: dur))
         }
         
         return items
-    }
-    
-    /// Asynchronously loads and parses a remote or local playlist
-    public static func loadPlaylistAsync(from url: URL) async -> [TrackItem] {
-        if url.isFileURL {
-            return loadPlaylist(from: url)
-        }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 10
-        request.setValue("WinampMPEG/2.91", forHTTPHeaderField: "User-Agent")
-        guard let (data, _) = try? await MacAmpNetwork.session.data(for: request) else {
-            return []
-        }
-        let content = TextEncoding.decode(data)
-        let ext = url.pathExtension.lowercased()
-        if ext == "pls" || content.lowercased().contains("[playlist]") {
-            return parsePLS(content: content, baseURL: url.deletingLastPathComponent())
-        } else {
-            return parseM3U(content: content, baseURL: url.deletingLastPathComponent())
-        }
     }
     
     /// Playlist entry location: file path for local files, full URL for streams

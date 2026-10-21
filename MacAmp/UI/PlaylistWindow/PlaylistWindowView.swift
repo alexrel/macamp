@@ -706,29 +706,14 @@ public class PlaylistWindowView: WinampControlView {
             if let url = URL(string: urlString) {
                 let wasEmpty = playlist.tracks.isEmpty
                 let ext = url.pathExtension.lowercased()
-                if ext == "m3u" || ext == "pls" || ext == "m3u8" {
-                    Task {
-                        let tracks = await PlaylistIO.loadPlaylistAsync(from: url)
-                        await MainActor.run { [weak self] in
-                            guard let self = self else { return }
-                            if !tracks.isEmpty {
-                                self.playlist.add(tracks: tracks)
-                            } else {
-                                let track = TrackItem.create(from: url)
-                                self.playlist.add(track: track)
-                            }
-                            self.needsDisplay = true
-                            if wasEmpty, let first = self.playlist.tracks.first {
-                                PlayerCoordinator.shared.loadAndPlay(track: first)
-                            }
-                        }
-                    }
-                } else {
-                    let track = TrackItem.create(from: url)
-                    playlist.add(track: track)
-                    needsDisplay = true
-                    if wasEmpty {
-                        PlayerCoordinator.shared.loadAndPlay(track: track)
+                Task { @MainActor [weak self] in
+                    let isPlaylist = ext == "m3u" || ext == "pls" || ext == "m3u8"
+                    let tracks = isPlaylist ? await PlaylistIO.loadPlaylist(from: url) : []
+                    guard let self else { return }
+                    self.playlist.add(tracks: tracks.isEmpty ? [TrackItem.entry(url: url)] : tracks)
+                    self.needsDisplay = true
+                    if wasEmpty, let first = self.playlist.tracks.first {
+                        PlayerCoordinator.shared.loadAndPlay(track: first)
                     }
                 }
             }

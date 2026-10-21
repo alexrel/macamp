@@ -152,7 +152,7 @@ public struct Win32ButtonStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .offset(x: configuration.isPressed ? 1 : 0, y: configuration.isPressed ? 1 : 0)
-            .onChange(of: configuration.isPressed) { pressed in
+            .onChange(of: configuration.isPressed) { _, pressed in
                 isPressed = pressed
             }
     }

@@ -2,6 +2,28 @@ import Foundation
 import AVFoundation
 import AudioToolbox
 
+/// A tag with its values already loaded (AVFoundation loads them asynchronously).
+public struct MetadataValues: Sendable {
+    public let key: String
+    public let commonKey: AVMetadataKey?
+    public let string: String?
+    public let number: NSNumber?
+    public let data: Data?
+    
+    /// The asset's metadata items with their values; with `common`, the common-key items come first.
+    public static func load(from asset: AVAsset, common: Bool = false) async -> [MetadataValues] {
+        var items = (try? await asset.load(.metadata)) ?? []
+        if common { items = ((try? await asset.load(.commonMetadata)) ?? []) + items }
+        var result: [MetadataValues] = []
+        for item in items {
+            let key = (item.key as? String) ?? item.commonKey?.rawValue ?? item.identifier?.rawValue ?? ""
+            let (string, number, data) = (try? await item.load(.stringValue, .numberValue, .dataValue)) ?? (nil, nil, nil)
+            result.append(MetadataValues(key: key, commonKey: item.commonKey, string: string, number: number, data: data))
+        }
+        return result
+    }
+}
+
 public struct TrackItem: Codable, Identifiable, Equatable {
     public let id: UUID
     public let url: URL
@@ -17,89 +39,72 @@ public struct TrackItem: Codable, Identifiable, Equatable {
         self.duration = duration
     }
     
-    /// Creates a TrackItem and resolves duration and ID3 metadata immediately
-    public static func create(from url: URL, titleFallback: String? = nil, durationFallback: TimeInterval = 0) -> TrackItem {
-        if !url.isFileURL {
-            let fallbackName = url.lastPathComponent.isEmpty ? (url.host ?? url.absoluteString) : url.lastPathComponent
-            let title = titleFallback ?? fallbackName
-            return TrackItem(url: url, title: title, artist: "Internet Stream", duration: durationFallback)
+    /// Entry for a playlist line before its file is read: the title / duration the playlist file gave.
+    public static func entry(url: URL, title: String? = nil, duration: TimeInterval = 0) -> TrackItem {
+        guard url.isFileURL else {
+            let name = url.lastPathComponent.isEmpty ? (url.host ?? url.absoluteString) : url.lastPathComponent
+            return TrackItem(url: url, title: title ?? name, artist: "Internet Stream", duration: duration)
         }
-        
-        let isSecurityScoped = url.startAccessingSecurityScopedResource()
-        defer {
-            if isSecurityScoped {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-        
-        var duration = resolveDuration(from: url)
-        if duration <= 0 && durationFallback > 0 {
-            duration = durationFallback
-        }
-        
-        var (artist, title) = resolveArtistAndTitle(from: url)
+        return TrackItem(url: url, title: title ?? url.deletingPathExtension().lastPathComponent, duration: duration)
+    }
+    
+    /// Creates a TrackItem with duration and tags read from the file. Tags win over the playlist's
+    /// title; its duration is used only when the file has none.
+    public static func create(from url: URL, titleFallback: String? = nil, durationFallback: TimeInterval = 0) async -> TrackItem {
+        guard url.isFileURL else { return entry(url: url, title: titleFallback, duration: durationFallback) }
+        let resolved = await resolveMetadataAsync(from: url)
+        var title = resolved.title
         if let fallback = titleFallback, !fallback.isEmpty, title == url.deletingPathExtension().lastPathComponent {
             title = fallback
         }
-        
-        return TrackItem(url: url, title: title, artist: artist, duration: duration)
+        let duration = resolved.duration > 0 ? resolved.duration : durationFallback
+        return TrackItem(url: url, title: title, artist: resolved.artist, duration: duration)
     }
     
-    /// Reads many files in parallel (tag parsing is mostly waiting on disk), keeping their order.
-    public static func createAll(from urls: [URL]) -> [TrackItem] {
-        var items = [TrackItem?](repeating: nil, count: urls.count)
-        let lock = NSLock()
-        DispatchQueue.concurrentPerform(iterations: urls.count) { i in
-            let item = create(from: urls[i])
-            lock.lock(); items[i] = item; lock.unlock()
+    /// Reads the files of playlist entries in parallel (mostly waiting on disk), keeping their order and IDs.
+    public static func resolveAll(_ entries: [TrackItem]) async -> [TrackItem] {
+        await withTaskGroup(of: (Int, TrackItem).self) { group in
+            for (i, entry) in entries.enumerated() {
+                group.addTask {
+                    let item = await create(from: entry.url, titleFallback: entry.title, durationFallback: entry.duration)
+                    return (i, TrackItem(id: entry.id, url: item.url, title: item.title, artist: item.artist, duration: item.duration))
+                }
+            }
+            var items = entries
+            for await (i, item) in group { items[i] = item }
+            return items
         }
-        return items.compactMap { $0 }
     }
     
-    /// shortcut: uses AVAsset's deprecated blocking getters so playlist loading stays synchronous; callers run
-    /// it off the main thread. Switch to `resolveMetadataAsync` if PlaylistIO / TrackItem.create become async.
-    public static func resolveDuration(from url: URL) -> TimeInterval {
+    public static func createAll(from urls: [URL]) async -> [TrackItem] {
+        await resolveAll(urls.map { TrackItem(url: $0, title: "") })
+    }
+    
+    /// AudioToolbox estimated duration (fastest & most resilient for MP3/AAC/VBR), then AVFoundation, then the PCM length.
+    public static func resolveDuration(from url: URL) async -> TimeInterval {
         let estimated = estimatedDuration(of: url)
         if estimated > 0 { return estimated }
-        return fallbackDuration(of: url)
+        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        if let time = try? await asset.load(.duration), time.seconds.isFinite, time.seconds > 0 {
+            return time.seconds
+        }
+        if let file = try? AVAudioFile(forReading: url), file.processingFormat.sampleRate > 0, file.length > 0 {
+            let d = Double(file.length) / file.processingFormat.sampleRate
+            if d.isFinite && d > 0 { return d }
+        }
+        return 0
     }
     
-    /// AudioToolbox estimated duration (fastest & most resilient for MP3/AAC/VBR); 0 if unknown.
+    /// AudioToolbox estimated duration; 0 if unknown.
     static func estimatedDuration(of url: URL) -> TimeInterval {
         var fileID: AudioFileID?
-        if AudioFileOpenURL(url as CFURL, .readPermission, 0, &fileID) == noErr, let fileID = fileID {
-            defer { AudioFileClose(fileID) }
-            var estimatedDuration: Float64 = 0
-            var propSize = UInt32(MemoryLayout<Float64>.size)
-            if AudioFileGetProperty(fileID, kAudioFilePropertyEstimatedDuration, &propSize, &estimatedDuration) == noErr {
-                if estimatedDuration.isFinite && estimatedDuration > 0 {
-                    return TimeInterval(estimatedDuration)
-                }
-            }
-        }
-        return 0
-    }
-    
-    private static func fallbackDuration(of url: URL) -> TimeInterval {
-        // AVURLAsset duration
-        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-        let assetDur = CMTimeGetSeconds(asset.duration)
-        if assetDur.isFinite && assetDur > 0 {
-            return assetDur
-        }
-        
-        // AVAudioFile length / sampleRate
-        if let file = try? AVAudioFile(forReading: url) {
-            let sr = file.processingFormat.sampleRate
-            if sr > 0 && file.length > 0 {
-                let d = Double(file.length) / sr
-                if d.isFinite && d > 0 {
-                    return d
-                }
-            }
-        }
-        
-        return 0
+        guard AudioFileOpenURL(url as CFURL, .readPermission, 0, &fileID) == noErr, let fileID else { return 0 }
+        defer { AudioFileClose(fileID) }
+        var estimatedDuration: Float64 = 0
+        var propSize = UInt32(MemoryLayout<Float64>.size)
+        guard AudioFileGetProperty(fileID, kAudioFilePropertyEstimatedDuration, &propSize, &estimatedDuration) == noErr,
+              estimatedDuration.isFinite, estimatedDuration > 0 else { return 0 }
+        return TimeInterval(estimatedDuration)
     }
     
     /// "Artist - Title", or just the title when the artist is unknown (Winamp shows untagged files by file name).
@@ -112,43 +117,27 @@ public struct TrackItem: Codable, Identifiable, Equatable {
     /// Placeholder older versions stored for untagged files; treated as "no artist".
     public static let legacyUnknownArtist = "Unknown Artist"
     
-    /// Reads title/artist tags (blocking; see the shortcut note on resolveDuration). Without tags the artist stays empty and the title is the file name,
+    /// Reads title/artist tags. Without tags the artist stays empty and the title is the file name,
     /// like Winamp: no guessing from separators, because file names don't follow one order
     /// ("Song - Artist - Cover [id]", "Song ｜ Artist ｜ Cover [id]", "Artist - Song", ...).
-    public static func resolveArtistAndTitle(from url: URL) -> (artist: String, title: String) {
-        var artist = ""
+    public static func resolveArtistAndTitle(from url: URL) async -> (artist: String, title: String) {
         let fileBaseName = url.deletingPathExtension().lastPathComponent
-        var title = fileBaseName
-        
-        let asset = AVURLAsset(url: url)
-        for item in asset.commonMetadata {
-            if item.commonKey == .commonKeyTitle, let val = item.stringValue, !val.trimmingCharacters(in: .whitespaces).isEmpty {
-                title = TextEncoding.repairCyrillic(val.trimmingCharacters(in: .whitespaces))
-            } else if item.commonKey == .commonKeyArtist, let val = item.stringValue, !val.trimmingCharacters(in: .whitespaces).isEmpty {
-                artist = TextEncoding.repairCyrillic(val.trimmingCharacters(in: .whitespaces))
+        var artist = "", title = fileBaseName
+        // Common keys first, then raw ID3 / iTunes frames
+        for item in await MetadataValues.load(from: AVURLAsset(url: url), common: true) {
+            let isTitle = item.commonKey == .commonKeyTitle || item.key.contains("TIT2") || item.key.hasSuffix("©nam")
+            let isArtist = item.commonKey == .commonKeyArtist || item.key.contains("TPE1") || item.key.hasSuffix("©ART")
+            guard let value = item.string?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { continue }
+            if isTitle && title == fileBaseName {
+                title = TextEncoding.repairCyrillic(value)
+            } else if isArtist && artist.isEmpty {
+                artist = TextEncoding.repairCyrillic(value)
             }
         }
-        
-        if artist.isEmpty || title == fileBaseName {
-            for item in asset.metadata {
-                let keyStr = (item.key as? String) ?? item.commonKey?.rawValue ?? item.identifier?.rawValue ?? ""
-                if (keyStr == "TIT2" || keyStr.contains("TIT2") || keyStr.hasSuffix("©nam")) && title == fileBaseName {
-                    if let val = item.stringValue, !val.trimmingCharacters(in: .whitespaces).isEmpty {
-                        title = TextEncoding.repairCyrillic(val.trimmingCharacters(in: .whitespaces))
-                    }
-                } else if (keyStr == "TPE1" || keyStr.contains("TPE1") || keyStr.hasSuffix("©ART")) && artist.isEmpty {
-                    if let val = item.stringValue, !val.trimmingCharacters(in: .whitespaces).isEmpty {
-                        artist = TextEncoding.repairCyrillic(val.trimmingCharacters(in: .whitespaces))
-                    }
-                }
-            }
-        }
-        
         if title == fileBaseName {
             // Names extracted from old ZIP/CD rips may themselves be CP1251 mojibake
             title = TextEncoding.repairCyrillic(fileBaseName)
         }
-        
         return (artist, title)
     }
     
@@ -159,32 +148,9 @@ public struct TrackItem: Codable, Identifiable, Equatable {
                 url.stopAccessingSecurityScopedResource()
             }
         }
-        
-        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-        var duration = estimatedDuration(of: url)
-        if duration <= 0, let cmTime = try? await asset.load(.duration), cmTime.seconds.isFinite && cmTime.seconds > 0 {
-            duration = cmTime.seconds
-        }
-        
-        // Same order as resolveArtistAndTitle: common keys first, then raw ID3 / iTunes frames
-        let fileBaseName = url.deletingPathExtension().lastPathComponent
-        var artist = "", title = fileBaseName
-        let common = (try? await asset.load(.commonMetadata)) ?? []
-        let all = (try? await asset.load(.metadata)) ?? []
-        for item in common + all {
-            let keyStr = (item.key as? String) ?? item.commonKey?.rawValue ?? item.identifier?.rawValue ?? ""
-            let isTitle = item.commonKey == .commonKeyTitle || keyStr.contains("TIT2") || keyStr.hasSuffix("©nam")
-            let isArtist = item.commonKey == .commonKeyArtist || keyStr.contains("TPE1") || keyStr.hasSuffix("©ART")
-            guard (isTitle && title == fileBaseName) || (isArtist && artist.isEmpty),
-                  let raw = try? await item.load(.stringValue) else { continue }
-            let value = raw.trimmingCharacters(in: .whitespaces)
-            guard !value.isEmpty else { continue }
-            if isTitle { title = TextEncoding.repairCyrillic(value) } else { artist = TextEncoding.repairCyrillic(value) }
-        }
-        if title == fileBaseName {
-            title = TextEncoding.repairCyrillic(fileBaseName)
-        }
-        return (duration, artist, title)
+        async let duration = resolveDuration(from: url)
+        let (artist, title) = await resolveArtistAndTitle(from: url)
+        return (await duration, artist, title)
     }
     
     public var formattedDuration: String {
@@ -354,10 +320,14 @@ public class PlaylistModel: ObservableObject {
             return
         }
         Task.detached(priority: .utility) { [weak self] in
-            let resolved = suspects.map { ($0.id, TrackItem.resolveArtistAndTitle(from: $0.url)) }
+            var resolved: [(UUID, (artist: String, title: String))] = []
+            for track in suspects {
+                resolved.append((track.id, await TrackItem.resolveArtistAndTitle(from: track.url)))
+            }
             guard let model = self else { return }
+            let finalResolved = resolved
             await MainActor.run {
-                model.applyMigratedMetadata(resolved)
+                model.applyMigratedMetadata(finalResolved)
                 completion?()
             }
         }
@@ -547,8 +517,8 @@ public class PlaylistModel: ObservableObject {
             var resolved: [(UUID, (artist: String, title: String))] = []
             var durations: [UUID: TimeInterval] = [:]
             for track in targets {
-                resolved.append((track.id, TrackItem.resolveArtistAndTitle(from: track.url)))
-                durations[track.id] = TrackItem.resolveDuration(from: track.url)
+                resolved.append((track.id, await TrackItem.resolveArtistAndTitle(from: track.url)))
+                durations[track.id] = await TrackItem.resolveDuration(from: track.url)
             }
             guard let model = self else { return }
             let finalResolved = resolved

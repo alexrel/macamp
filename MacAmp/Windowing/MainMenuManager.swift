@@ -1,5 +1,6 @@
 import Cocoa
 
+@MainActor
 public final class MainMenuManager: NSObject, NSMenuDelegate {
     public static let shared = MainMenuManager()
     

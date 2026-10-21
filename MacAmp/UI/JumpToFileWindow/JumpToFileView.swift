@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 
+@MainActor
 public protocol JumpToFileKeyDelegate: AnyObject {
     func moveSelectionUp()
     func moveSelectionDown()
@@ -8,6 +9,7 @@ public protocol JumpToFileKeyDelegate: AnyObject {
     func performEnqueue()
 }
 
+@MainActor
 public class JumpToFileViewModel: ObservableObject, JumpToFileKeyDelegate {
     @Published public var searchText: String = "" {
         didSet {

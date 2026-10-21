@@ -39,6 +39,7 @@ public enum PrefTreeItem: String, CaseIterable, Identifiable {
 }
 
 // MARK: - Preferences View Model
+@MainActor
 public class PreferencesViewModel: ObservableObject {
     @Published public var selectedTreeItem: PrefTreeItem = .display
     

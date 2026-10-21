@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 
+@MainActor
 public class JumpToTimeViewModel: ObservableObject {
     @Published public var minutes: Int = 0
     @Published public var seconds: Int = 0

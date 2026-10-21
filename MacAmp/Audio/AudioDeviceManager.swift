@@ -146,7 +146,7 @@ public final class AudioDeviceManager: ObservableObject {
     
     // MARK: - Device Selection
     
-    public func selectDevice(uid: String?) {
+    @MainActor public func selectDevice(uid: String?) {
         self.selectedDeviceUID = uid
         PersistenceManager.shared.state.selectedAudioOutputDeviceUID = uid
         PersistenceManager.shared.saveSession()

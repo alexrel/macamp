@@ -191,7 +191,7 @@ public class AudioMetadataService {
     // MARK: - Public Read API
     
     /// Fully reads audio stream specifications, ID3v1, ID3v2, and embedded cover art for a track URL.
-    public func readMetadata(from url: URL) -> AudioFileMetadata {
+    public func readMetadata(from url: URL) async -> AudioFileMetadata {
         var metadata = AudioFileMetadata(url: url)
         
         let isSecurityScoped = url.startAccessingSecurityScopedResource()
@@ -213,13 +213,14 @@ public class AudioMetadataService {
         }
         
         // 2. Read technical stream properties (AudioToolbox / CoreAudio)
-        readTechnicalAudioInfo(from: url, into: &metadata.techInfo)
+        await readTechnicalAudioInfo(from: url, into: &metadata.techInfo)
         
         // 3. Read ID3v1 tag from last 128 bytes of file (for MP3)
         readID3v1(from: url, into: &metadata.id3v1)
         
         // 4. Read ID3v2 & AVMetadata (TIT2, TPE1, APIC/Cover, etc.)
-        readAVAndID3v2Metadata(from: url, into: &metadata.id3v2, artwork: &metadata.artwork)
+        let items = await MetadataValues.load(from: AVURLAsset(url: url))
+        readAVAndID3v2Metadata(items, into: &metadata.id3v2, artwork: &metadata.artwork)
         
         // 5. If ID3v1 is empty but ID3v2 exists, populate ID3v1 draft values so user can easily toggle on
         if !metadata.id3v1.hasTag && metadata.id3v2.hasTag {
@@ -282,7 +283,7 @@ public class AudioMetadataService {
     
     // MARK: - Internal Technical Stream Extraction
     
-    private func readTechnicalAudioInfo(from url: URL, into tech: inout AudioTechnicalInfo) {
+    private func readTechnicalAudioInfo(from url: URL, into tech: inout AudioTechnicalInfo) async {
         var fileID: AudioFileID?
         let openStatus = AudioFileOpenURL(url as CFURL, .readPermission, 0, &fileID)
         if openStatus == noErr, let fileID = fileID {
@@ -337,7 +338,7 @@ public class AudioMetadataService {
         // Fallback duration and bitrate via AVURLAsset if AudioToolbox yielded 0
         if tech.duration <= 0 || tech.bitrate <= 0 {
             let asset = AVURLAsset(url: url)
-            let dur = CMTimeGetSeconds(asset.duration)
+            let dur = (try? await asset.load(.duration)).map(CMTimeGetSeconds) ?? 0
             if dur.isFinite && dur > 0 {
                 tech.duration = dur
                 if tech.bitrate <= 0 && tech.fileSize > 0 {
@@ -468,63 +469,59 @@ public class AudioMetadataService {
     
     // MARK: - AVFoundation & ID3v2 Reader
     
-    private func readAVAndID3v2Metadata(from url: URL, into id3v2: inout ID3v2Tag, artwork: inout ArtworkInfo?) {
-        let asset = AVURLAsset(url: url)
-        
-        // Inspect all metadata items
-        for item in asset.metadata {
-            guard let keyStr = (item.key as? String) ?? item.commonKey?.rawValue ?? item.identifier?.rawValue else {
-                continue
-            }
+    private func readAVAndID3v2Metadata(_ items: [MetadataValues], into id3v2: inout ID3v2Tag, artwork: inout ArtworkInfo?) {
+        for item in items {
+            let keyStr = item.key
+            guard !keyStr.isEmpty else { continue }
             
             // Title (TIT2, ©nam)
             if keyStr == "TIT2" || keyStr.contains("TIT2") || keyStr.hasSuffix("©nam") || item.commonKey == .commonKeyTitle {
-                if let val = item.stringValue.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.title.isEmpty {
+                if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.title.isEmpty {
                     id3v2.title = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     id3v2.hasTag = true
                 }
             }
             // Artist (TPE1, ©ART)
             else if keyStr == "TPE1" || keyStr.contains("TPE1") || keyStr.hasSuffix("©ART") || item.commonKey == .commonKeyArtist {
-                if let val = item.stringValue.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.artist.isEmpty {
+                if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.artist.isEmpty {
                     id3v2.artist = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     id3v2.hasTag = true
                 }
             }
             // Album (TALB, ©alb)
             else if keyStr == "TALB" || keyStr.contains("TALB") || keyStr.hasSuffix("©alb") || item.commonKey == .commonKeyAlbumName {
-                if let val = item.stringValue.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.album.isEmpty {
+                if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.album.isEmpty {
                     id3v2.album = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     id3v2.hasTag = true
                 }
             }
             // Year (TYER, TDRC, ©day)
             else if keyStr == "TYER" || keyStr == "TDRC" || keyStr.contains("TYER") || keyStr.contains("TDRC") || keyStr.hasSuffix("©day") {
-                if let val = item.stringValue.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.year.isEmpty {
+                if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.year.isEmpty {
                     id3v2.year = String(val.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4))
                     id3v2.hasTag = true
                 }
             }
             // Track Number (TRCK, trkn)
             else if keyStr == "TRCK" || keyStr.contains("TRCK") || keyStr.hasSuffix("trkn") {
-                if let val = item.stringValue.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.trackNumber.isEmpty {
+                if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.trackNumber.isEmpty {
                     id3v2.trackNumber = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     id3v2.hasTag = true
-                } else if let num = item.numberValue, id3v2.trackNumber.isEmpty {
+                } else if let num = item.number, id3v2.trackNumber.isEmpty {
                     id3v2.trackNumber = "\(num)"
                     id3v2.hasTag = true
                 }
             }
             // Disc Number (TPOS, disk)
             else if keyStr == "TPOS" || keyStr.contains("TPOS") || keyStr.hasSuffix("disk") {
-                if let val = item.stringValue.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.discNumber.isEmpty {
+                if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.discNumber.isEmpty {
                     id3v2.discNumber = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     id3v2.hasTag = true
                 }
             }
             // Genre (TCON, ©gen, gnre)
             else if keyStr == "TCON" || keyStr.contains("TCON") || keyStr.hasSuffix("©gen") || keyStr.hasSuffix("gnre") {
-                if let val = item.stringValue.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.genre.isEmpty {
+                if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.genre.isEmpty {
                     // Normalize standard ID3 genre (e.g. "(17)" -> "Rock")
                     var g = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     if g.hasPrefix("(") && g.hasSuffix(")") {
@@ -539,49 +536,49 @@ public class AudioMetadataService {
             }
             // Composer (TCOM, ©wrt)
             else if keyStr == "TCOM" || keyStr.contains("TCOM") || keyStr.hasSuffix("©wrt") {
-                if let val = item.stringValue.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.composer.isEmpty {
+                if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.composer.isEmpty {
                     id3v2.composer = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     id3v2.hasTag = true
                 }
             }
             // Original Artist (TOPE)
             else if keyStr == "TOPE" || keyStr.contains("TOPE") {
-                if let val = item.stringValue.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.originalArtist.isEmpty {
+                if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.originalArtist.isEmpty {
                     id3v2.originalArtist = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     id3v2.hasTag = true
                 }
             }
             // Copyright (TCOP, cprt)
             else if keyStr == "TCOP" || keyStr.contains("TCOP") || keyStr.hasSuffix("cprt") {
-                if let val = item.stringValue.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.copyright.isEmpty {
+                if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.copyright.isEmpty {
                     id3v2.copyright = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     id3v2.hasTag = true
                 }
             }
             // URL (WXXX, WOAR, WCOP)
             else if keyStr.hasPrefix("W") || keyStr.contains("WXXX") {
-                if let val = item.stringValue.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.url.isEmpty {
+                if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.url.isEmpty {
                     id3v2.url = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     id3v2.hasTag = true
                 }
             }
             // Encoded By (TENC, ©too)
             else if keyStr == "TENC" || keyStr.contains("TENC") || keyStr.hasSuffix("©too") {
-                if let val = item.stringValue.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.encodedBy.isEmpty {
+                if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.encodedBy.isEmpty {
                     id3v2.encodedBy = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     id3v2.hasTag = true
                 }
             }
             // Comment (COMM, ©cmt)
             else if keyStr == "COMM" || keyStr.contains("COMM") || keyStr.hasSuffix("©cmt") {
-                if let val = item.stringValue.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.comment.isEmpty {
+                if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.comment.isEmpty {
                     id3v2.comment = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     id3v2.hasTag = true
                 }
             }
             // Artwork / Cover Art (APIC, covr, artwork)
             else if keyStr == "APIC" || keyStr.contains("APIC") || keyStr.hasSuffix("covr") || item.commonKey == .commonKeyArtwork {
-                if artwork == nil, let data = item.dataValue {
+                if artwork == nil, let data = item.data {
                     let mime = (data.prefix(3) == Data([0xFF, 0xD8, 0xFF])) ? "image/jpeg" : "image/png"
                     artwork = ArtworkInfo(imageData: data, mimeType: mime)
                     id3v2.hasTag = true

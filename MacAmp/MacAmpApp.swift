@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainMenuManager.shared.setupMenu()
@@ -130,6 +131,7 @@ struct MacAmpApp: App {
 }
 
 /// Handles the NSServices declared in Info.plist (Winamp's "Play in Winamp" / "Enqueue in Winamp").
+@MainActor
 final class FinderServicesProvider: NSObject {
     static let shared = FinderServicesProvider()
 

@@ -69,11 +69,19 @@ public class TrackInfoWindowController: NSWindowController, NSWindowDelegate {
         let track = playlist.tracks[index]
         
         window?.title = "Track Info - \(track.url.lastPathComponent)"
-        
+        Task { @MainActor [weak self] in
+            let metadata = await AudioMetadataService.shared.readMetadata(from: track.url)
+            // Arrows pressed again while reading: only the latest track is shown
+            guard let self, self.currentTrackIndex == index else { return }
+            self.show(metadata, at: index, totalTracks: playlist.tracks.count)
+        }
+    }
+    
+    private func show(_ metadata: AudioFileMetadata, at index: Int, totalTracks: Int) {
         let viewModel = TrackInfoViewModel(
-            url: track.url,
+            metadata: metadata,
             trackIndex: index,
-            totalTracks: playlist.tracks.count,
+            totalTracks: totalTracks,
             onTrackChanged: { [weak self] newIndex in
                 self?.loadTrack(at: newIndex)
             },

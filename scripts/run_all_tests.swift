@@ -5,10 +5,11 @@ import Network
 import UniformTypeIdentifiers
 @testable import MacAmp
 
-func testGroup(_ name: String, _ block: () throws -> Void) {
+/// Test groups run on the main thread, where the app's UI and coordinator live.
+func testGroup(_ name: String, _ block: @MainActor () throws -> Void) {
     print("\n📦 Test Suite: \(name)")
     do {
-        try block()
+        try MainActor.assumeIsolated { try block() }
         print("  ✅ All tests in '\(name)' passed successfully.")
     } catch {
         print("  ❌ Test suite '\(name)' FAILED: \(error)")
@@ -544,6 +545,15 @@ testGroup("AudioDeviceManager & Output Hotplugging") {
 
 
 // MARK: - Playback regression helpers
+/// Runs async work on the main actor and waits for its result, pumping the run loop meanwhile.
+@MainActor
+func awaitValue<T>(_ work: @escaping @MainActor () async -> T) -> T {
+    var result: T?
+    Task { @MainActor in result = await work() }
+    _ = spinRunLoop(until: { result != nil }, timeout: 30)
+    return result!
+}
+
 func spinRunLoop(until condition: () -> Bool, timeout: TimeInterval) -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
     while !condition() && Date() < deadline {
@@ -753,7 +763,7 @@ testGroup("CP1251 Cyrillic Auto-Detection") {
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let m3uURL = dir.appendingPathComponent("cp1251.m3u")
     try m3u.data(using: TextEncoding.windows1251)!.write(to: m3uURL)
-    let loaded = PlaylistIO.loadPlaylist(from: m3uURL)
+    let loaded = awaitValue { await PlaylistIO.loadPlaylist(from: m3uURL) }
     assertEqual(loaded.count, 1, "CP1251 M3U parsed")
     assertEqual(loaded.first?.title, "Кино - Звезда по имени Солнце", "CP1251 M3U title decoded as Cyrillic")
 }
@@ -1096,10 +1106,10 @@ testGroup("Untagged File Titles & Playlist Scroll") {
     let barURL = try makeTestWAV(named: barName + ".wav", seconds: 0.2)
     
     for (url, name) in [(dashURL, dashName), (barURL, barName)] {
-        let meta = TrackItem.resolveArtistAndTitle(from: url)
+        let meta = awaitValue { await TrackItem.resolveArtistAndTitle(from: url) }
         assertEqual(meta.artist, "", "No tags: no guessed artist for '\(name)'")
         assertEqual(meta.title, name, "No tags: title is the file name")
-        let item = TrackItem.create(from: url)
+        let item = awaitValue { await TrackItem.create(from: url) }
         assertEqual(item.displayName, name, "Playlist shows the plain file name, whatever the separator")
     }
     assertEqual(TrackItem.displayName(artist: "Unknown Artist", title: "X"), "X", "Legacy 'Unknown Artist' is never displayed")
@@ -1637,7 +1647,7 @@ testGroup("Playlist Paths: Absolute, Relative, VLC, Windows") {
     let m3u = "#EXTM3U\n#EXTINF:123,Группа крови\nmp3/%231%20%D0%93%D1%80%D1%83%D0%BF%D0%BF%D0%B0%20%D0%BA%D1%80%D0%BE%D0%B2%D0%B8%20%5Bx%5D.mp3\n#EXTINF:60,Кукушка\nКукушка.mp3\n"
     let m3uURL = music.appendingPathComponent("vlc.m3u")
     try m3u.write(to: m3uURL, atomically: true, encoding: .utf8)
-    let loaded = PlaylistIO.loadPlaylist(from: m3uURL)
+    let loaded = awaitValue { await PlaylistIO.loadPlaylist(from: m3uURL) }
     assertEqual(loaded.count, 2, "Both entries loaded")
     assertEqual(PlaylistIO.displayTitle("Reggae - Янка [a0VMeWSTyQY].mp3", for: URL(fileURLWithPath: "/x/Reggae.mp3")), "Reggae - Янка [a0VMeWSTyQY]", "VLC's file-name titles lose the extension")
     assertEqual(PlaylistIO.displayTitle("Кино - Звезда", for: URL(fileURLWithPath: "/x/a.mp3")), "Кино - Звезда", "Normal titles untouched")
@@ -1666,7 +1676,7 @@ testGroup("VLC Playlists: XSPF and M3U8") {
     """
     let xspfURL = dir.appendingPathComponent("vlc.xspf")
     try xspf.write(to: xspfURL, atomically: true, encoding: .utf8)
-    let items = PlaylistIO.loadPlaylist(from: xspfURL)
+    let items = awaitValue { await PlaylistIO.loadPlaylist(from: xspfURL) }
     assertEqual(items.count, 3, "All three XSPF tracks loaded")
     assertEqual(items[0].url.standardizedFileURL.path, abs.standardizedFileURL.path, "Absolute file:// URI with Cyrillic")
     assertEqual(items[1].url.standardizedFileURL.path, rel.standardizedFileURL.path, "Relative percent-encoded location")
@@ -1676,7 +1686,7 @@ testGroup("VLC Playlists: XSPF and M3U8") {
     
     let m3u8URL = dir.appendingPathComponent("vlc.m3u8")
     try "#EXTM3U\n#EXTINF:245,Кино - Звезда\n\(abs.absoluteString)\nmp3/%232%20%D0%9F%D0%B5%D1%81%D0%BD%D1%8F%20%5By%5D.mp3\n".write(to: m3u8URL, atomically: true, encoding: .utf8)
-    let m3u8 = PlaylistIO.loadPlaylist(from: m3u8URL)
+    let m3u8 = awaitValue { await PlaylistIO.loadPlaylist(from: m3u8URL) }
     assertEqual(m3u8.count, 2, "M3U8 entries loaded")
     assertTrue(m3u8.allSatisfy { FileManager.default.fileExists(atPath: $0.url.path) }, "M3U8: file:// and relative encoded paths both found")
 }

@@ -1,0 +1,224 @@
+import Cocoa
+import UniformTypeIdentifiers
+
+extension PlayerCoordinator {
+    // MARK: - Dialogs & File Opening
+    public func openFileDialog() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = AppConstants.Audio.supportedExtensions.compactMap {
+            UTType(filenameExtension: $0)
+        }
+        
+        if panel.runModal() == .OK {
+            let paths = panel.urls.map { $0.path }
+            handleDroppedFiles(paths)
+        }
+    }
+    
+    public func openDirectoryDialog() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        if panel.runModal() == .OK {
+            let paths = panel.urls.map { $0.path }
+            handleDroppedFiles(paths)
+        }
+    }
+    
+    public func openURLDialog() {
+        plView.promptAddURL()
+    }
+    
+    public func openSkinChooser() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = AppConstants.Audio.skinExtensions.compactMap {
+            UTType(filenameExtension: $0)
+        }
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            if let installedURL = skinManager.installSkin(from: url) {
+                persistence.state.activeSkinPath = installedURL.path
+                persistence.saveSession()
+            }
+        }
+    }
+    
+    /// Opens the MPEG Audio Info Box + ID3 Tag Editor (Alt+3) for the specified or selected track.
+    public func showTrackInfoWindow(trackIndex: Int? = nil) {
+        guard !playlist.tracks.isEmpty else {
+            mainView?.marquee.showTemporaryMessage("No track in playlist")
+            return
+        }
+        
+        let targetIndex: Int = {
+            if let idx = trackIndex, idx >= 0, idx < playlist.tracks.count {
+                return idx
+            }
+            if let sel = playlist.selectedIndices.first, sel < playlist.tracks.count {
+                return sel
+            }
+            if let cur = playlist.currentIndex, cur < playlist.tracks.count {
+                return cur
+            }
+            return 0
+        }()
+        
+        TrackInfoWindow.show(trackIndex: targetIndex)
+    }
+    
+    /// Opens the Winamp Preferences (Ctrl+P / Cmd+,) dialog.
+    public func showPreferencesWindow(category: PreferencesCategory = .titles) {
+        PreferencesWindow.show(category: category)
+    }
+    
+    /// Opens the Jump to File (J / F3) dialog.
+    public func showJumpToFileWindow() {
+        JumpToFileWindow.show()
+    }
+    
+    /// Opens the Jump to Time (Ctrl+J) dialog.
+    public func showJumpToTimeWindow() {
+        JumpToTimeWindow.show()
+    }
+    
+    // MARK: - Drag & Drop Handling
+    /// Files dropped on the main or equalizer window: appended to the playlist; if nothing is playing,
+    /// the first dropped track starts.
+    public func handleDroppedFiles(_ paths: [String]) {
+        Task { @MainActor in
+            let tracksToAdd = await collectTracks(fromPaths: paths)
+            guard !tracksToAdd.isEmpty else { return }
+            let wasStopped = (audioEngine.status == .stopped)
+            playlist.add(tracks: tracksToAdd)
+            plView.needsDisplay = true
+            if wasStopped {
+                loadAndPlay(track: tracksToAdd[0])
+            }
+        }
+    }
+    
+    /// Files dropped into the playlist editor: inserted where they were dropped (Winamp behavior).
+    /// Playback starts only if the playlist was empty and nothing was playing.
+    public func handleFilesDroppedInPlaylist(_ paths: [String], at index: Int) {
+        Task { @MainActor in
+            let tracks = await collectTracks(fromPaths: paths)
+            guard !tracks.isEmpty else { return }
+            let wasEmpty = playlist.tracks.isEmpty
+            playlist.insert(tracks: tracks, at: min(index, playlist.tracks.count))
+            plView.needsDisplay = true
+            if wasEmpty && audioEngine.status == .stopped {
+                loadAndPlay(track: tracks[0])
+            }
+        }
+    }
+    
+    /// File URLs on a drag pasteboard (files, folders, playlists, skins).
+    public static func droppedFileURLs(from pasteboard: NSPasteboard) -> [URL] {
+        (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+    }
+    
+    /// Turns dropped / opened paths into playlist entries: audio files, folders (recursively), M3U/PLS.
+    /// Skins (.wsz/.zip or an unpacked skin folder) are installed and applied instead.
+    /// Tags are read off the main thread, so a big folder doesn't freeze the windows.
+    func collectTracks(fromPaths paths: [String]) async -> [TrackItem] {
+        let (tracks, skins) = await Task.detached(priority: .userInitiated) {
+            await PlayerCoordinator.scanPaths(paths)
+        }.value
+        skins.forEach(installAndApplySkin)
+        return tracks
+    }
+
+    nonisolated static func scanPaths(_ paths: [String]) async -> (tracks: [TrackItem], skins: [URL]) {
+        var entries: [TrackItem] = []
+        var skins: [URL] = []
+        let audioExtensions = AppConstants.Audio.supportedExtensions
+        let skinExtensions = AppConstants.Audio.skinExtensions
+        let playlistExtensions = AppConstants.Audio.playlistExtensions
+        
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            let ext = url.pathExtension.lowercased()
+            
+            if skinExtensions.contains(ext) {
+                skins.append(url)
+            } else if playlistExtensions.contains(ext) {
+                entries.append(contentsOf: await PlaylistIO.loadEntries(from: url))
+            } else {
+                var isDir: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { continue }
+                if isDir.boolValue {
+                    // Unpacked skin folder?
+                    let fm = FileManager.default
+                    if fm.fileExists(atPath: url.appendingPathComponent("MAIN.BMP").path) || fm.fileExists(atPath: url.appendingPathComponent("main.bmp").path) {
+                        skins.append(url)
+                        continue
+                    }
+                    // Recursively scan for audio files, in name order like Winamp's "Add directory"
+                    let all = fm.enumerator(at: url, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? []
+                    var found = all.filter { audioExtensions.contains($0.pathExtension.lowercased()) }
+                    found.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+                    entries.append(contentsOf: found.map { TrackItem.entry(url: $0) })
+                } else if audioExtensions.contains(ext) {
+                    entries.append(TrackItem.entry(url: url))
+                }
+            }
+        }
+        // Read all tags at once, in parallel
+        return (await TrackItem.resolveAll(entries), skins)
+    }
+    
+    func installAndApplySkin(at url: URL) {
+        if let installedURL = skinManager.installSkin(from: url) {
+            persistence.state.activeSkinPath = installedURL.path
+            persistence.saveSession()
+        }
+    }
+    
+    // MARK: - Opening from Finder (double-click, Open With, Services)
+    
+    
+    /// Files opened from Finder. Winamp semantics: play them, or just add them when
+    /// "Enqueue as default action" is on (or the Enqueue service was used).
+    public func openFromFinder(_ paths: [String], enqueue: Bool? = nil) {
+        let shouldEnqueue = enqueue ?? persistence.state.enqueueAsDefaultAction
+        // Launching MacAmp by double-clicking a file delivers it before the windows exist
+        guard isStarted else {
+            pendingFinderOpens.append((paths, shouldEnqueue))
+            return
+        }
+        Task { @MainActor in
+            let tracks = await collectTracks(fromPaths: paths)
+            guard !tracks.isEmpty else { return }
+            addOpenedTracks(tracks, fromPaths: paths, enqueue: shouldEnqueue)
+        }
+    }
+
+    func addOpenedTracks(_ tracks: [TrackItem], fromPaths paths: [String], enqueue shouldEnqueue: Bool) {
+        // Winamp: "Play" on a playlist file replaces the current list; "Enqueue" appends to it
+        let opensPlaylistFile = paths.contains { AppConstants.Audio.playlistExtensions.contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) }
+        if opensPlaylistFile && !shouldEnqueue {
+            audioEngine.stop()
+            playlist.clear()
+        }
+        playlist.add(tracks: tracks)
+        plView.needsDisplay = true
+        if !shouldEnqueue || audioEngine.status == .stopped && playlist.tracks.count == tracks.count {
+            loadAndPlay(track: tracks[0])
+            if let idx = playlist.tracks.firstIndex(where: { $0.id == tracks[0].id }) {
+                plView.scrollToTrack(idx, centered: false)
+            }
+        }
+        bringAllWindowsToFront()
+    }
+    
+    func processPendingFinderOpens() {
+        let pending = pendingFinderOpens
+        pendingFinderOpens.removeAll()
+        for item in pending {
+            openFromFinder(item.paths, enqueue: item.enqueue)
+        }
+    }
+}

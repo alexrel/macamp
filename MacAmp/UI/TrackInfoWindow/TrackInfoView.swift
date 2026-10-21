@@ -24,13 +24,12 @@ public class TrackInfoViewModel: ObservableObject {
     }
     
     public init(
-        url: URL,
+        metadata meta: AudioFileMetadata,
         trackIndex: Int = 0,
         totalTracks: Int = 1,
         onTrackChanged: ((Int) -> Void)? = nil,
         onMetadataUpdated: ((AudioFileMetadata) -> Void)? = nil
     ) {
-        let meta = AudioMetadataService.shared.readMetadata(from: url)
         self.metadata = meta
         self.initialMetadata = meta
         self.trackIndex = trackIndex

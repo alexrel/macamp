@@ -2,6 +2,7 @@ import Cocoa
 
 /// Manages the macOS Menu Bar Status Item (Tray Icon) with authentic Winamp lightning bolt,
 /// current track status, quick playback controls, and window toggles.
+@MainActor
 public final class StatusBarManager: NSObject, NSMenuDelegate {
     public static let shared = StatusBarManager()
     
