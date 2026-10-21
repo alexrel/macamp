@@ -95,7 +95,7 @@ public final class AudioDeviceManager: ObservableObject {
     // MARK: - Device Enumeration
     
     public func refreshDevices() {
-        let defaultID = fetchDefaultOutputDeviceID()
+        let defaultID = AudioDeviceManager.systemDefaultOutputDeviceID()
         let allIDs = fetchAllDeviceIDs()
         
         var outputs: [AudioOutputDevice] = []
@@ -264,7 +264,8 @@ public final class AudioDeviceManager: ObservableObject {
         return hidden != 0
     }
     
-    private func fetchDefaultOutputDeviceID() -> AudioDeviceID {
+    /// The output device macOS Sound settings currently use (0 if none).
+    public nonisolated static func systemDefaultOutputDeviceID() -> AudioDeviceID {
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultOutputDevice,
             mScope: kAudioObjectPropertyScopeGlobal,

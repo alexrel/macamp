@@ -320,6 +320,7 @@ public struct TrackInfoView: View {
                 
                 Spacer()
             }
+            .padding(.vertical, 2) // same inset as the ID3v2 fields, so switching tabs doesn't move them
             .disabled(!viewModel.metadata.id3v1.hasTag)
         }
     }

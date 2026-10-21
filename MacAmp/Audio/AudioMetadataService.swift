@@ -170,12 +170,16 @@ public struct AudioFileMetadata: Equatable {
     /// Copies fields from ID3v1 into ID3v2
     public mutating func copyFromID3v1() {
         id3v2.hasTag = true
-        if !id3v1.title.isEmpty { id3v2.title = id3v1.title }
-        if !id3v1.artist.isEmpty { id3v2.artist = id3v1.artist }
-        if !id3v1.album.isEmpty { id3v2.album = id3v1.album }
+        // Taggers that can't store Cyrillic in ID3v1 write "?" for each letter; never copy that over real text
+        func usable(_ value: String) -> Bool {
+            !value.isEmpty && !value.allSatisfy { $0 == "?" || $0.isWhitespace || $0.isPunctuation }
+        }
+        if usable(id3v1.title) { id3v2.title = id3v1.title }
+        if usable(id3v1.artist) { id3v2.artist = id3v1.artist }
+        if usable(id3v1.album) { id3v2.album = id3v1.album }
         if !id3v1.year.isEmpty { id3v2.year = id3v1.year }
         if id3v1.trackNumber > 0 { id3v2.trackNumber = "\(id3v1.trackNumber)" }
-        if !id3v1.comment.isEmpty { id3v2.comment = id3v1.comment }
+        if usable(id3v1.comment) { id3v2.comment = id3v1.comment }
         if id3v1.genreIndex < ID3Genre.allGenres.count {
             id3v2.genre = ID3Genre.name(for: id3v1.genreIndex)
         }

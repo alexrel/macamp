@@ -2018,4 +2018,49 @@ testGroup("Status Bar Menu Title") {
     assertEqual(StatusBarManager.truncated("▶ Кино - Кукушка", toWidth: 300), "▶ Кино - Кукушка", "Short title unchanged")
 }
 
+testGroup("Output Device: Back to System Default") {
+    let engine = AudioEngine.shared
+    defer { engine.stop() }
+    func unitDevice() -> AudioDeviceID {
+        var id: AudioDeviceID = 0
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        AudioUnitGetProperty(engine.engineOutputUnit!, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &id, &size)
+        return id
+    }
+    let systemDefault = AudioDeviceManager.systemDefaultOutputDeviceID()
+    assertTrue(systemDefault != 0, "Mac has a default output device")
+    let wav = try makeTestWAV(named: "device-switch.wav", seconds: 6.0)
+    _ = try loadSync(engine, wav)
+    engine.play()
+    _ = spinRunLoop(until: { false }, timeout: 0.3)
+    // Pick a specific device (Built-in), then System Default again: playback must go on
+    assertTrue(engine.setOutputDevice(deviceID: systemDefault), "Specific device selected")
+    _ = spinRunLoop(until: { false }, timeout: 0.3)
+    assertTrue(engine.setOutputDevice(deviceID: nil), "System Default selected")
+    assertEqual(unitDevice(), systemDefault, "System Default routes to macOS's current output, not to device 0 (nothing)")
+    assertTrue(engine.currentOutputDeviceID == nil, "Engine remembers it follows the system default")
+    let before = engine.currentTime
+    _ = spinRunLoop(until: { false }, timeout: 0.5)
+    assertTrue(engine.isEngineRunning && engine.status == .playing, "Still playing after switching back")
+    assertTrue(engine.currentTime > before + 0.3, "Time advances, so audio really plays (\(before) -> \(engine.currentTime))")
+}
+
+testGroup("ID3v1 '?' Placeholders") {
+    var meta = AudioFileMetadata(url: URL(fileURLWithPath: "/tmp/Дилер.mp3"))
+    meta.id3v2.title = "Дилер"
+    meta.id3v2.album = "Не в фокусе"
+    meta.id3v2.trackNumber = "1/10"
+    meta.id3v1.hasTag = true
+    meta.id3v1.title = "?????"           // what that file's v1 tag holds
+    meta.id3v1.album = "?? ? ??????"
+    meta.id3v1.artist = "Dolphin"
+    meta.id3v1.year = "1997"
+    meta.copyFromID3v1()
+    assertEqual(meta.id3v2.title, "Дилер", "'?????' doesn't overwrite the real title")
+    assertEqual(meta.id3v2.album, "Не в фокусе", "'?? ? ??????' doesn't overwrite the real album")
+    assertEqual(meta.id3v2.artist, "Dolphin", "Real v1 text is still copied")
+    assertEqual(meta.id3v2.year, "1997", "Year copied")
+    assertEqual(meta.id3v2.trackNumber, "1/10", "Track 0 in v1 keeps the v2 track")
+}
+
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")

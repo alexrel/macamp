@@ -139,6 +139,8 @@ public class AudioEngine {
     private var playbackTimer: Timer?
     private var isTapInstalled: Bool = false
     public private(set) var currentOutputDeviceID: AudioDeviceID? = nil
+    /// The HAL output unit (exposed for tests).
+    public var engineOutputUnit: AudioUnit? { engine.outputNode.audioUnit }
 
     private init() {
         setupGraph()
@@ -1224,7 +1226,10 @@ public class AudioEngine {
     @discardableResult
     public func setOutputDevice(deviceID: AudioDeviceID?) -> Bool {
         guard let audioUnit = engine.outputNode.audioUnit else { return false }
-        var devID: AudioDeviceID = deviceID ?? 0
+        // "System Default" = the device macOS uses right now (device 0 would mean no output at all);
+        // AudioDeviceManager calls this again when the macOS default changes
+        var devID: AudioDeviceID = deviceID ?? AudioDeviceManager.systemDefaultOutputDeviceID()
+        guard devID != 0 else { return false }
         let err = AudioUnitSetProperty(
             audioUnit,
             kAudioOutputUnitProperty_CurrentDevice,
@@ -1238,7 +1243,7 @@ public class AudioEngine {
             return false
         }
 
-        currentOutputDeviceID = (devID == 0) ? nil : devID
+        currentOutputDeviceID = deviceID
 
         let wasPlaying = (status == .playing)
         let savedTime = currentTime
