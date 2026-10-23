@@ -9,6 +9,7 @@ extension PlayerCoordinator {
         mainWindow?.level = level
         eqWindow?.level = level
         plWindow?.level = level
+        for window in [libraryWindow, video?.window, browser?.window] { window?.level = level }
         bringAllWindowsToFront()
         mainView?.alwaysOnTopButton?.isSelected = enabled
     }

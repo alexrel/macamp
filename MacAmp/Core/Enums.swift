@@ -30,6 +30,12 @@ public enum WindowID: String, Codable, CaseIterable {
     case main
     case equalizer
     case playlist
+    case library
+    case video
+    case browser
+    
+    /// Freely resizable windows that stay at 1x in Double Size mode (Winamp's playlist and general-purpose windows)
+    public var keepsOwnSize: Bool { self != .main && self != .equalizer }
 }
 
 public enum ScaleFactor: Int, Codable {

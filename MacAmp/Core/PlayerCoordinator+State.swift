@@ -183,6 +183,12 @@ extension PlayerCoordinator {
         persistence.state.isPlaylistShade = plView.isShadeMode
         persistence.state.isEqWindowVisible = eq.isVisible
         persistence.state.isPlaylistVisible = pl.isVisible
+        saveAuxFrame(video?.window, "video")
+        saveAuxFrame(browser?.window, "browser")
+        if let library = libraryWindow {
+            persistence.state.isLibraryVisible = library.isVisible
+            saveLibraryFrame()
+        }
         persistence.state.isEqAuto = eqView.autoToggle.isOn
         persistence.state.autoGenreEQ = eqView.autoToggle.isOn
         

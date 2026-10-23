@@ -160,7 +160,7 @@ public class SkinLoader {
     private let recognizedSheets = [
         "MAIN", "TITLEBAR", "CBUTTONS", "VOLUME", "BALANCE", "POSBAR",
         "PLAYPAUS", "NUMBERS", "NUMS_EX", "TEXT", "MONOSTER", "SHUFREP",
-        "EQMAIN", "EQ_EX", "PLEDIT", "GEN", "GENEX", "MB"
+        "EQMAIN", "EQ_EX", "PLEDIT", "GEN", "GENEX", "MB", "VIDEO"
     ]
     
     private func loadBitmaps(from dir: URL, into skin: Skin) {
@@ -183,6 +183,10 @@ public class SkinLoader {
     }
     
     private func loadCGImage(from url: URL) -> CGImage? {
+        // RLE-compressed BMPs: our own decoder (ImageIO shifts rows after skip codes)
+        if let data = try? Data(contentsOf: url), let image = BMPDecoder.decodeRLE(data) {
+            return processChromaKey(image)
+        }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             return nil
@@ -281,6 +285,10 @@ public class SkinLoader {
                 if let color = parseHexColor(val) { style.normalBGColor = color }
             case "SELECTEDBG":
                 if let color = parseHexColor(val) { style.selectedBGColor = color }
+            case "MBFG":
+                if let color = parseHexColor(val) { style.minibrowserText = color }
+            case "MBBG":
+                if let color = parseHexColor(val) { style.minibrowserBackground = color }
             case "FONT":
                 style.fontName = val
             default:

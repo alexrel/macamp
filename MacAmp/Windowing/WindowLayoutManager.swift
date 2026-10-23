@@ -257,7 +257,7 @@ public class WindowLayoutManager: NSObject {
     
     public func handleWindowHeightChange(id: WindowID, newHeightUnscaled: CGFloat) {
         guard let win = windows[id] else { return }
-        let scale = (id == .playlist) ? 1.0 : currentScale
+        let scale = id.keepsOwnSize ? 1.0 : currentScale
         let newH = round(newHeightUnscaled * scale)
         let oldFrame = win.frame
         let diff = round(oldFrame.height - newH)
@@ -267,8 +267,8 @@ public class WindowLayoutManager: NSObject {
         let belowWindows = findWindowsBelow(id: id)
         
         // Update target window frame
-        let unscaledW = (id == .playlist) ? round(win.frame.width) : AppConstants.Window.width
-        let newW = (id == .playlist) ? unscaledW : round(unscaledW * scale)
+        let unscaledW = id.keepsOwnSize ? round(win.frame.width) : AppConstants.Window.width
+        let newW = id.keepsOwnSize ? unscaledW : round(unscaledW * scale)
         var newTargetFrame = oldFrame
         newTargetFrame.origin.x = round(newTargetFrame.origin.x)
         newTargetFrame.origin.y = round(newTargetFrame.origin.y + diff)
@@ -321,7 +321,7 @@ public class WindowLayoutManager: NSObject {
         // Target sizes at new scale
         var targetSizes: [WindowID: NSSize] = [:]
         for (id, win) in windows where win.isVisible {
-            if id == .playlist {
+            if id.keepsOwnSize {
                 // Playlist window remains at 1x resolution (canDouble = false in Winamp)
                 targetSizes[id] = NSSize(width: round(win.frame.width), height: round(win.frame.height))
             } else {
@@ -421,7 +421,7 @@ public class WindowLayoutManager: NSObject {
             win.setFrame(newFrame, display: true, animate: false)
             
             if let content = win.contentView {
-                if id == .playlist {
+                if id.keepsOwnSize {
                     content.bounds = NSRect(x: 0, y: 0, width: newFrame.width, height: newFrame.height)
                     content.needsDisplay = true
                 } else {
