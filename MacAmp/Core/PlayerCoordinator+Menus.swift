@@ -78,51 +78,35 @@ extension PlayerCoordinator {
     }
     
     // MARK: - Context Menu
+    /// Skins ▸ as in 2.95: Skin Browser, <Base Skin>, installed skins, << Get more skins! >>; then MacAmp's file actions.
     public func buildSkinsSubmenu() -> NSMenu {
         let skinsMenu = NSMenu(title: "Skins")
-        let baseSkinItem = NSMenuItem(title: "Winamp Classic (Default)", action: #selector(handleResetBaseSkin), keyEquivalent: "")
-        baseSkinItem.target = self
-        baseSkinItem.state = skinManager.isBaseSkinActive ? .on : .off
-        skinsMenu.addItem(baseSkinItem)
-        
+        skinsMenu.autoenablesItems = false
+        skinsMenu.addItem(menuItem("Skin Browser...", #selector(handleSkinBrowser), key: "s", mods: [.option]))
+        skinsMenu.addItem(.separator())
+        skinsMenu.addItem(menuItem("<Base Skin>", #selector(handleResetBaseSkin), checked: skinManager.isBaseSkinActive))
         let installedSkins = skinManager.installedSkins()
-        if !installedSkins.isEmpty {
-            skinsMenu.addItem(NSMenuItem.separator())
-            for skinURL in installedSkins {
-                let name = skinURL.deletingPathExtension().lastPathComponent
-                let item = NSMenuItem(title: name, action: #selector(handleSkinSelected(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = skinURL
-                let isActive = (!skinManager.isBaseSkinActive && (skinManager.currentSkinURL?.path == skinURL.path || skinManager.currentSkin?.name == name))
-                item.state = isActive ? .on : .off
-                skinsMenu.addItem(item)
-            }
+        for skinURL in installedSkins {
+            let name = skinURL.deletingPathExtension().lastPathComponent
+            let isActive = !skinManager.isBaseSkinActive && (skinManager.currentSkinURL?.path == skinURL.path || skinManager.currentSkin?.name == name)
+            let item = menuItem(name, #selector(handleSkinSelected(_:)), checked: isActive)
+            item.representedObject = skinURL
+            skinsMenu.addItem(item)
         }
+        skinsMenu.addItem(menuItem("<< Get more skins! >>", #selector(handleGetMoreSkins)))
         
-        skinsMenu.addItem(NSMenuItem.separator())
-        
-        let loadSkinItem = NSMenuItem(title: "Load Skin...", action: #selector(handleLoadSkin), keyEquivalent: "")
-        loadSkinItem.target = self
-        skinsMenu.addItem(loadSkinItem)
-        
+        skinsMenu.addItem(.separator())
+        skinsMenu.addItem(menuItem("Load Skin...", #selector(handleLoadSkin)))
         if !installedSkins.isEmpty {
             let deleteMenu = NSMenu(title: "Delete Skin")
             for skinURL in installedSkins {
-                let name = skinURL.deletingPathExtension().lastPathComponent
-                let delItem = NSMenuItem(title: name, action: #selector(handleDeleteSkin(_:)), keyEquivalent: "")
-                delItem.target = self
+                let delItem = menuItem(skinURL.deletingPathExtension().lastPathComponent, #selector(handleDeleteSkin(_:)))
                 delItem.representedObject = skinURL
                 deleteMenu.addItem(delItem)
             }
-            let deleteSkinItem = NSMenuItem(title: "Delete Skin", action: nil, keyEquivalent: "")
-            deleteSkinItem.submenu = deleteMenu
-            skinsMenu.addItem(deleteSkinItem)
+            skinsMenu.addItem(submenuItem("Delete Skin", deleteMenu))
         }
-        
-        let openFolderItem = NSMenuItem(title: "Open Skins Folder", action: #selector(handleOpenSkinsFolder), keyEquivalent: "")
-        openFolderItem.target = self
-        skinsMenu.addItem(openFolderItem)
-        
+        skinsMenu.addItem(menuItem("Open Skins Folder", #selector(handleOpenSkinsFolder)))
         return skinsMenu
     }
     
@@ -184,179 +168,132 @@ extension PlayerCoordinator {
         PreferencesWindow.show(treeItem: .output)
     }
     
+    /// One menu item targeting the coordinator (key equivalents are shown like Winamp's; plain letters have no modifier).
+    func menuItem(_ title: String, _ action: Selector?, key: String = "", mods: NSEvent.ModifierFlags = [],
+                  checked: Bool = false, enabled: Bool = true) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.keyEquivalentModifierMask = mods
+        item.target = self
+        item.state = checked ? .on : .off
+        item.isEnabled = enabled
+        return item
+    }
+    
+    func submenuItem(_ title: String, _ submenu: NSMenu) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+    
+    /// Winamp 2.95 main menu (lightning bolt / right click), same order and shortcuts (docs/UI-screens/menu*.png).
     public func buildWinampMenu() -> NSMenu {
         let menu = NSMenu(title: "Winamp Menu")
-        
-        // 1. About
-        let aboutItem = NSMenuItem(title: "MacAmp...", action: #selector(handleAbout), keyEquivalent: "")
-        aboutItem.target = self
-        menu.addItem(aboutItem)
-        
-        // 2. Track Info / ID3 Tag Editor
-        let infoItem = NSMenuItem(title: "View file info...", action: #selector(handleTrackInfo), keyEquivalent: "3")
-        infoItem.keyEquivalentModifierMask = [.option]
-        infoItem.target = self
-        menu.addItem(infoItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // 3. Play submenu
-        let playMenu = NSMenu(title: "Play")
-        let playFileItem = NSMenuItem(title: "File...", action: #selector(handlePlayFile), keyEquivalent: "l")
-        playFileItem.target = self
-        playMenu.addItem(playFileItem)
-        
-        let playDirItem = NSMenuItem(title: "Directory...", action: #selector(handlePlayDirectory), keyEquivalent: "L")
-        playDirItem.target = self
-        playMenu.addItem(playDirItem)
-        
-        let playURLItem = NSMenuItem(title: "URL...", action: #selector(handlePlayURL), keyEquivalent: "u")
-        playURLItem.target = self
-        playMenu.addItem(playURLItem)
-        playMenu.addItem(NSMenuItem.separator())
-        
-        let jumpFileItem = NSMenuItem(title: "Jump to file...", action: #selector(handleJumpToFile), keyEquivalent: "j")
-        jumpFileItem.target = self
-        playMenu.addItem(jumpFileItem)
-        
-        let playMenuItem = NSMenuItem(title: "Play", action: nil, keyEquivalent: "")
-        playMenuItem.submenu = playMenu
-        menu.addItem(playMenuItem)
-        
-        let bookmarksItem = NSMenuItem(title: "Bookmarks", action: nil, keyEquivalent: "")
-        bookmarksItem.submenu = buildBookmarksMenu()
-        menu.addItem(bookmarksItem)
-        menu.addItem(NSMenuItem.separator())
-        
-        // 4. Windows toggles
-        let eqItem = NSMenuItem(title: "Equalizer", action: #selector(handleToggleEqualizer), keyEquivalent: "")
-        eqItem.target = self
-        eqItem.state = mainView.eqToggle.isOn ? .on : .off
-        menu.addItem(eqItem)
-        
-        let plItem = NSMenuItem(title: "Playlist", action: #selector(handleTogglePlaylist), keyEquivalent: "")
-        plItem.target = self
-        plItem.state = mainView.plToggle.isOn ? .on : .off
-        menu.addItem(plItem)
-        menu.addItem(NSMenuItem.separator())
-        
-        // 5. Options submenu
-        let optionsMenu = NSMenu(title: "Options")
-        
-        let prefsItem = NSMenuItem(title: "Preferences...", action: #selector(handlePreferences), keyEquivalent: "p")
-        prefsItem.keyEquivalentModifierMask = [.control]
-        prefsItem.target = self
-        optionsMenu.addItem(prefsItem)
-        optionsMenu.addItem(NSMenuItem.separator())
-        
-        let visItem = NSMenuItem(title: "Visualization", action: nil, keyEquivalent: "")
-        visItem.submenu = buildVisualizationMenu()
-        optionsMenu.addItem(visItem)
-        optionsMenu.addItem(NSMenuItem.separator())
-        
-        let skinsSubmenu = buildSkinsSubmenu()
-        let skinsSubItem = NSMenuItem(title: "Skins", action: nil, keyEquivalent: "")
-        skinsSubItem.submenu = skinsSubmenu
-        optionsMenu.addItem(skinsSubItem)
-        
-        let outputSubmenu = buildAudioOutputSubmenu()
-        let outputSubItem = NSMenuItem(title: "Audio Output", action: nil, keyEquivalent: "")
-        outputSubItem.submenu = outputSubmenu
-        optionsMenu.addItem(outputSubItem)
-        optionsMenu.addItem(NSMenuItem.separator())
-        
-        let topItem = NSMenuItem(title: "Always On Top", action: #selector(handleToggleAlwaysOnTop), keyEquivalent: "")
-        topItem.target = self
-        topItem.state = persistence.state.isAlwaysOnTop ? .on : .off
-        optionsMenu.addItem(topItem)
-        
-        let dblItem = NSMenuItem(title: "Double Size", action: #selector(handleToggleDoubleSize), keyEquivalent: "d")
-        dblItem.keyEquivalentModifierMask = [.control]
-        dblItem.target = self
-        dblItem.state = (windowManager.currentScale == 2.0) ? .on : .off
-        optionsMenu.addItem(dblItem)
-        
-        let optMenuItem = NSMenuItem(title: "Options", action: nil, keyEquivalent: "")
-        optMenuItem.submenu = optionsMenu
-        menu.addItem(optMenuItem)
-        
-        // 6. Skins at root menu
-        let rootSkinsItem = NSMenuItem(title: "Skins", action: nil, keyEquivalent: "")
-        rootSkinsItem.submenu = buildSkinsSubmenu()
-        menu.addItem(rootSkinsItem)
-        
-        // 7. Playback submenu
-        let pbMenu = NSMenu(title: "Playback")
-        let prevItem = NSMenuItem(title: "Previous", action: #selector(handlePrev), keyEquivalent: "z")
-        prevItem.keyEquivalentModifierMask = [] // Winamp: plain letter
-        prevItem.target = self
-        pbMenu.addItem(prevItem)
-        
-        let playItem = NSMenuItem(title: "Play", action: #selector(handlePlay), keyEquivalent: "x")
-        playItem.keyEquivalentModifierMask = [] // Winamp: plain letter
-        playItem.target = self
-        pbMenu.addItem(playItem)
-        
-        let pauseItem = NSMenuItem(title: "Pause", action: #selector(handlePause), keyEquivalent: "c")
-        pauseItem.keyEquivalentModifierMask = [] // Winamp: plain letter
-        pauseItem.target = self
-        pbMenu.addItem(pauseItem)
-        
-        let stopItem = NSMenuItem(title: "Stop", action: #selector(handleStop), keyEquivalent: "v")
-        stopItem.keyEquivalentModifierMask = [] // Winamp: plain letter
-        stopItem.target = self
-        pbMenu.addItem(stopItem)
-        
-        let fadeStopItem = NSMenuItem(title: "Stop w/ fadeout", action: #selector(handleStopWithFadeout), keyEquivalent: "v")
-        fadeStopItem.keyEquivalentModifierMask = [.shift]
-        fadeStopItem.target = self
-        pbMenu.addItem(fadeStopItem)
-        
-        let stopAfterItem = NSMenuItem(title: "Stop after current", action: #selector(handleToggleStopAfterCurrent), keyEquivalent: "v")
-        stopAfterItem.keyEquivalentModifierMask = [.control]
-        stopAfterItem.state = stopAfterCurrent ? .on : .off
-        stopAfterItem.target = self
-        pbMenu.addItem(stopAfterItem)
-        
-        let nextItem = NSMenuItem(title: "Next", action: #selector(handleNext), keyEquivalent: "b")
-        nextItem.keyEquivalentModifierMask = [] // Winamp: plain letter
-        nextItem.target = self
-        pbMenu.addItem(nextItem)
-        pbMenu.addItem(NSMenuItem.separator())
-        
-        let repItem = NSMenuItem(title: "Repeat", action: #selector(handleToggleRepeat), keyEquivalent: "r")
-        repItem.keyEquivalentModifierMask = [] // Winamp: plain letter
-        repItem.target = self
-        repItem.state = playlist.isRepeat ? .on : .off
-        pbMenu.addItem(repItem)
-        
-        let shufItem = NSMenuItem(title: "Shuffle", action: #selector(handleToggleShuffle), keyEquivalent: "s")
-        shufItem.keyEquivalentModifierMask = [] // Winamp: plain letter
-        shufItem.target = self
-        shufItem.state = playlist.isShuffle ? .on : .off
-        pbMenu.addItem(shufItem)
-        
-        let manualItem = NSMenuItem(title: "Manual playlist advance", action: #selector(handleToggleManualAdvance), keyEquivalent: "")
-        manualItem.state = persistence.state.manualPlaylistAdvance ? .on : .off
-        manualItem.target = self
-        pbMenu.addItem(manualItem)
-        pbMenu.addItem(NSMenuItem.separator())
-        
-        let jumpTimeItem = NSMenuItem(title: "Jump to time...", action: #selector(handleJumpToTime), keyEquivalent: "j")
-        jumpTimeItem.keyEquivalentModifierMask = [.control]
-        jumpTimeItem.target = self
-        pbMenu.addItem(jumpTimeItem)
-        
-        let pbMenuItem = NSMenuItem(title: "Playback", action: nil, keyEquivalent: "")
-        pbMenuItem.submenu = pbMenu
-        menu.addItem(pbMenuItem)
-        menu.addItem(NSMenuItem.separator())
-        
-        // 8. Exit
-        let exitItem = NSMenuItem(title: "Exit", action: #selector(handleExit), keyEquivalent: "q")
-        exitItem.target = self
-        menu.addItem(exitItem)
-        
+        menu.autoenablesItems = false
+        menu.addItem(menuItem("MacAmp...", #selector(handleAbout)))
+        menu.addItem(.separator())
+        menu.addItem(submenuItem("Play", buildPlayMenu()))
+        menu.addItem(menuItem("View file info", #selector(handleTrackInfo), key: "3", mods: [.option]))
+        menu.addItem(submenuItem("Bookmarks", buildBookmarksMenu()))
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Main Window", #selector(handleToggleMainWindow), key: "w", mods: [.option], checked: mainWindow?.isVisible ?? true))
+        menu.addItem(menuItem("Playlist Editor", #selector(handleTogglePlaylist), key: "e", mods: [.option], checked: mainView.plToggle.isOn))
+        menu.addItem(menuItem("Equalizer", #selector(handleToggleEqualizer), key: "g", mods: [.option], checked: mainView.eqToggle.isOn))
+        menu.addItem(menuItem("Library", #selector(handleToggleLibrary), key: "l", mods: [.option], checked: libraryWindow?.isVisible ?? false))
+        menu.addItem(menuItem("Minibrowser", #selector(handleToggleBrowser), key: "t", mods: [.option], checked: browser?.window.isVisible ?? false))
+        menu.addItem(menuItem("Video", #selector(handleToggleVideo), key: "v", mods: [.option], checked: video?.window.isVisible ?? false))
+        menu.addItem(.separator())
+        menu.addItem(submenuItem("Options", buildOptionsMenu()))
+        menu.addItem(submenuItem("Playback", buildPlaybackMenu()))
+        menu.addItem(submenuItem("Visualization", buildVisualizationPluginMenu()))
+        menu.addItem(submenuItem("Skins", buildSkinsSubmenu()))
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Exit", #selector(handleExit), key: "q", mods: [.command]))
+        return menu
+    }
+    
+    func buildPlayMenu() -> NSMenu {
+        let menu = NSMenu(title: "Play")
+        menu.autoenablesItems = false
+        menu.addItem(menuItem("File...", #selector(handlePlayFile), key: "l"))
+        menu.addItem(menuItem("Location...", #selector(handlePlayURL), key: "l", mods: [.control]))
+        menu.addItem(menuItem("Directory...", #selector(handlePlayDirectory), key: "l", mods: [.shift]))
+        menu.addItem(.separator())
+        let discs = PlayerCoordinator.mountedAudioCDs()
+        if discs.isEmpty {
+            menu.addItem(menuItem("Audio CD", nil, enabled: false))
+        }
+        for disc in discs {
+            let item = menuItem("Audio CD \(disc.lastPathComponent)", #selector(handlePlayAudioCD(_:)))
+            item.representedObject = disc
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let bookmarks = NSMenu(title: "Bookmark")
+        menu.addItem(submenuItem("Bookmark", bookmarks))
+        for bookmark in BookmarkStore.shared.items {
+            let item = menuItem(bookmark.title, #selector(handleBookmarkSelected(_:)))
+            item.representedObject = bookmark.id
+            bookmarks.addItem(item)
+        }
+        if bookmarks.items.isEmpty {
+            bookmarks.addItem(menuItem("(no bookmarks)", nil, enabled: false))
+        }
+        return menu
+    }
+    
+    func buildOptionsMenu() -> NSMenu {
+        let menu = NSMenu(title: "Options")
+        menu.autoenablesItems = false
+        let remaining = mainView.timeDisplay.mode == .remaining
+        menu.addItem(menuItem("Preferences...", #selector(handlePreferences), key: "p", mods: [.control]))
+        menu.addItem(submenuItem("Skins", buildSkinsSubmenu()))
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Time elapsed (⌃T toggles)", #selector(handleTimeElapsed), checked: !remaining))
+        menu.addItem(menuItem("Time remaining (⌃T toggles)", #selector(handleTimeRemaining), checked: remaining))
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Always On Top", #selector(handleToggleAlwaysOnTop), key: "a", mods: [.control], checked: persistence.state.isAlwaysOnTop))
+        menu.addItem(menuItem("Double Size", #selector(handleToggleDoubleSize), key: "d", mods: [.control], checked: windowManager.currentScale == 2.0))
+        menu.addItem(menuItem("EasyMove", #selector(handleToggleEasyMove), key: "e", mods: [.control], checked: persistence.state.easyMove))
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Repeat", #selector(handleToggleRepeat), key: "r", checked: playlist.isRepeat))
+        menu.addItem(menuItem("Shuffle", #selector(handleToggleShuffle), key: "s", checked: playlist.isShuffle))
+        // MacAmp addition (separate group, principle 5): pick the output device without opening Preferences
+        menu.addItem(.separator())
+        menu.addItem(submenuItem("Audio Output", buildAudioOutputSubmenu()))
+        return menu
+    }
+    
+    func buildPlaybackMenu() -> NSMenu {
+        let menu = NSMenu(title: "Playback")
+        menu.autoenablesItems = false
+        menu.addItem(menuItem("Previous", #selector(handlePrev), key: "z"))
+        menu.addItem(menuItem("Play", #selector(handlePlay), key: "x"))
+        menu.addItem(menuItem("Pause", #selector(handlePause), key: "c"))
+        menu.addItem(menuItem("Stop", #selector(handleStop), key: "v"))
+        menu.addItem(menuItem("Next", #selector(handleNext), key: "b"))
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Stop w/ fadeout", #selector(handleStopWithFadeout), key: "v", mods: [.shift]))
+        menu.addItem(menuItem("Stop after current", #selector(handleToggleStopAfterCurrent), key: "v", mods: [.control], checked: stopAfterCurrent))
+        menu.addItem(menuItem("Back 5 seconds", #selector(handleBack5Seconds), key: "\u{F702}"))
+        menu.addItem(menuItem("Fwd 5 seconds", #selector(handleForward5Seconds), key: "\u{F703}"))
+        menu.addItem(menuItem("Start of list", #selector(handleStartOfList), key: "z", mods: [.control]))
+        menu.addItem(menuItem("10 tracks back", #selector(handleTenTracksBack), key: "1", mods: [.numericPad]))
+        menu.addItem(menuItem("10 tracks fwd", #selector(handleTenTracksForward), key: "3", mods: [.numericPad]))
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Jump to time", #selector(handleJumpToTime), key: "j", mods: [.control]))
+        menu.addItem(menuItem("Jump to file", #selector(handleJumpToFile), key: "j"))
+        return menu
+    }
+    
+    /// Visualization ▸ as in 2.95; the "plug-in" is MacAmp's Retro Visualizer Studio.
+    func buildVisualizationPluginMenu() -> NSMenu {
+        let menu = NSMenu(title: "Visualization")
+        menu.autoenablesItems = false
+        menu.addItem(menuItem("Visualization options...", #selector(handleVisualizationOptions), key: "o", mods: [.option]))
+        menu.addItem(.separator())
+        menu.addItem(menuItem("Start/Stop plug-in", #selector(handleToggleVisualizerStudio), key: "k", mods: [.control, .shift]))
+        menu.addItem(menuItem("Configure plug-in...", #selector(handleConfigureVisPlugin), key: "k", mods: [.option]))
+        menu.addItem(menuItem("Select plug-in...", #selector(handleSelectVisPlugin), key: "k", mods: [.control]))
         return menu
     }
     
@@ -450,6 +387,96 @@ extension PlayerCoordinator {
         NSWorkspace.shared.open(dir)
     }
     
+    // MARK: - Winamp 2.95 menu actions
+    
+    /// ⌥W: show or hide the main window (the others stay).
+    @objc public func handleToggleMainWindow() {
+        guard let mainWindow else { return }
+        if mainWindow.isVisible { mainWindow.orderOut(nil) } else { mainWindow.makeKeyAndOrderFront(nil) }
+        updateActivityState()
+    }
+    
+    @objc public func handleTimeElapsed() { setTimeDisplayMode(.elapsed) }
+    @objc public func handleTimeRemaining() { setTimeDisplayMode(.remaining) }
+    
+    /// ⌃T and the clock click: elapsed <-> remaining.
+    public func toggleTimeDisplayMode() {
+        setTimeDisplayMode(mainView.timeDisplay.mode == .elapsed ? .remaining : .elapsed)
+    }
+    
+    func setTimeDisplayMode(_ mode: TimeDisplayMode) {
+        mainView.timeDisplay.mode = mode
+        persistence.state.timeDisplayMode = mode
+        persistence.scheduleSave()
+    }
+    
+    /// EasyMove: main and equalizer windows drag from anywhere, not only by the title bar.
+    @objc public func handleToggleEasyMove() {
+        persistence.state.easyMove.toggle()
+        persistence.scheduleSave()
+        mainView.marquee.showTemporaryMessage(persistence.state.easyMove ? "EasyMove: ON" : "EasyMove: OFF")
+    }
+    
+    @objc public func handleBack5Seconds() {
+        audioEngine.seek(to: max(0, audioEngine.currentTime - 5))
+    }
+    
+    @objc public func handleForward5Seconds() {
+        guard let duration = audioEngine.currentMetadata?.duration else { return }
+        audioEngine.seek(to: min(duration, audioEngine.currentTime + 5))
+    }
+    
+    /// ⌃Z: first track of the playlist.
+    @objc public func handleStartOfList() {
+        guard let first = playlist.tracks.first else { return }
+        loadAndPlay(track: first)
+    }
+    
+    @objc public func handleTenTracksBack() { jumpTracks(by: -10) }
+    @objc public func handleTenTracksForward() { jumpTracks(by: 10) }
+    
+    /// Num 1 / Num 3: ten tracks back or forward in list order, stopping at the ends.
+    func jumpTracks(by offset: Int) {
+        guard !playlist.tracks.isEmpty else { return }
+        let current = playlist.currentIndex ?? 0
+        let target = min(playlist.tracks.count - 1, max(0, current + offset))
+        loadAndPlay(track: playlist.tracks[target])
+    }
+    
+    @objc public func handleVisualizationOptions() {
+        PreferencesWindow.show(treeItem: .visualization)
+    }
+    
+    /// Configure plug-in: open the visualizer studio (its window holds the settings).
+    @objc public func handleConfigureVisPlugin() {
+        if visualizerStudioWindow?.isVisible != true { toggleVisualizerStudio() }
+    }
+    
+    /// Select plug-in: Preferences (Plug-ins ▸ Visualization once that page exists).
+    @objc public func handleSelectVisPlugin() {
+        PreferencesWindow.show(treeItem: .visualization)
+    }
+    
+    @objc public func handleSkinBrowser() {
+        PreferencesWindow.show(treeItem: .skins)
+    }
+    
+    /// The classic skins archive (Winamp Skin Museum); downloaded .wsz files open straight into MacAmp.
+    @objc public func handleGetMoreSkins() {
+        NSWorkspace.shared.open(URL(string: "https://skins.webamp.org")!)
+    }
+    
+    @objc public func handlePlayAudioCD(_ sender: NSMenuItem) {
+        guard let disc = sender.representedObject as? URL, let cd = AudioCD(volume: disc) else { return }
+        LibraryActions.playCD(cd, tracks: cd.trackItems, enqueue: false)
+    }
+    
+    /// Audio CDs macOS has mounted: volumes with a .TOC.plist (tracks appear as "1 Audio Track.aiff", ...).
+    static func mountedAudioCDs() -> [URL] {
+        let volumes = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil, options: [.skipHiddenVolumes]) ?? []
+        return volumes.filter { FileManager.default.fileExists(atPath: $0.appendingPathComponent(".TOC.plist").path) }
+    }
+    
     @objc public func handleToggleAlwaysOnTop() {
         setAlwaysOnTop(!persistence.state.isAlwaysOnTop)
     }
@@ -463,6 +490,7 @@ extension PlayerCoordinator {
     }
     
     @objc public func handlePlay() {
+        applyRandomSkinIfNeeded()
         if audioEngine.status == .paused {
             audioEngine.play()
             MediaKeyController.shared.updateNowPlayingInfo()
@@ -499,6 +527,7 @@ extension PlayerCoordinator {
     }
     
     @objc public func handleStop() {
+        stopDiskWriter()
         audioEngine.stop()
         persistence.state.lastPlaybackState = .stopped
         persistence.state.lastPlayedTrackTime = 0.0

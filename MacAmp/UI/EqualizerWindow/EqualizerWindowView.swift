@@ -252,6 +252,44 @@ public class EqualizerWindowView: WinampControlView {
     }
     
     // MARK: - Presets Menu
+    /// Winamp equalizer keys (docs/UI-screens/shortkeys.txt): 1–0 raise a band, Q–P lower it, ` / Tab the preamp,
+    /// N toggles the EQ, S (or ⌃S) opens the presets, A toggles Auto. Returns false for keys it doesn't use.
+    public func handleEqualizerKey(characters: String, keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+        let mods = flags.intersection([.command, .control, .option, .shift])
+        let key = characters.lowercased()
+        if mods == [.control] && key == "s" { showPresetsMenu(); return true }
+        guard mods.isEmpty, !isShadeMode else { return false }
+        if let i = "1234567890".firstIndex(where: { String($0) == key }).map({ "1234567890".distance(from: "1234567890".startIndex, to: $0) }) {
+            nudge(bandSliders[i], by: 1)
+            return true
+        }
+        if let i = "qwertyuiop".firstIndex(where: { String($0) == key }).map({ "qwertyuiop".distance(from: "qwertyuiop".startIndex, to: $0) }) {
+            nudge(bandSliders[i], by: -1)
+            return true
+        }
+        switch (key, keyCode) {
+        case ("`", _): nudge(preampSlider, by: 1)
+        case (_, AppConstants.KeyCodes.tab): nudge(preampSlider, by: -1)
+        case ("n", _): flip(onToggle)
+        case ("s", _): showPresetsMenu()
+        case ("a", _): flip(autoToggle)
+        default: return false
+        }
+        return true
+    }
+    
+    /// Moves a slider by `db` decibels as if dragged (engine, readout and saved state follow).
+    private func nudge(_ slider: SkinSlider, by db: Double) {
+        slider.value += db
+        slider.onValueChanged?(slider.value)
+    }
+    
+    private func flip(_ toggle: SkinToggle) {
+        toggle.isOn.toggle()
+        toggle.onChanged?(toggle.isOn)
+        needsDisplay = true
+    }
+    
     private func showPresetsMenu() {
         let menu = NSMenu(title: "Presets")
         menu.autoenablesItems = false
@@ -393,7 +431,7 @@ public class EqualizerWindowView: WinampControlView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
         
-        let isKey = NSApp.isActive && (window?.isKeyWindow ?? false)
+        let isKey = drawsActiveTitleBar
         
         if isShadeMode {
             // Draw EQ shade strip background (EQ_EX.BMP 275x14)
@@ -479,6 +517,8 @@ public class EqualizerWindowView: WinampControlView {
         }
         
         guard let win = self.window as? WinampWindow else { return }
+        // Without EasyMove only the title bar moves the window (Winamp 2.95)
+        if !PersistenceManager.shared.state.easyMove && convert(event.locationInWindow, from: nil).y > AppConstants.Window.shadeHeight { return }
         win.startWindowDrag(with: event)
         trackWindowDrag(with: event, in: win)
     }

@@ -81,8 +81,21 @@ open class WinampControlView: NSView {
         self.layer?.isOpaque = false
     }
     
+    /// Winamp 2.95 gives some controls their own right-click menu (transport buttons, seek bar, time, title...)
+    public var contextMenuProvider: (() -> NSMenu)?
+    
     open override func rightMouseDown(with event: NSEvent) {
-        PlayerCoordinator.shared.showMainContextMenu(at: NSEvent.mouseLocation)
+        if let menu = contextMenuProvider?() {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+        } else {
+            PlayerCoordinator.shared.showMainContextMenu(at: NSEvent.mouseLocation)
+        }
+    }
+    
+    /// Title bars use their inactive sprites when the window isn't key, unless
+    /// Preferences ▸ Display ▸ "Dim titlebars when inactive" is off.
+    public var drawsActiveTitleBar: Bool {
+        !PersistenceManager.shared.state.dimTitlebars || (NSApp.isActive && (window?.isKeyWindow ?? false))
     }
     
     // MARK: Skin cursors
@@ -113,6 +126,8 @@ open class WinampControlView: NSView {
     
     /// Cursor for a point in window coordinates: the deepest control's zone or own cursor wins, like nested cursor rects.
     public func skinCursor(atWindowPoint point: NSPoint) -> NSCursor? {
+        // Preferences ▸ Display ▸ "Use Winamp-styled (skinned) cursors"
+        guard PersistenceManager.shared.state.useSkinnedCursors else { return nil }
         let cursors = SkinManager.shared.currentSkin?.cursors ?? [:]
         var view = hitTest(superview?.convert(point, from: nil) ?? point)
         while let current = view {

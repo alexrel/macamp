@@ -65,8 +65,17 @@ public struct AudioTechnicalInfo: Equatable {
     public var isCopyrighted: Bool = false
     public var isOriginal: Bool = true
     public var emphasis: String = "None"
+    /// Set when an MPEG audio frame header was found (MP3 / MP2 / MP1): the "MPEG info" box applies
+    public var isMPEG: Bool = false
+    /// Samples per MPEG frame (1152 / 576 / 384), for the frame count Winamp shows
+    public var samplesPerFrame: Int = 0
     
     public init() {}
+    
+    public var frameCount: Int {
+        guard samplesPerFrame > 0, duration > 0 else { return 0 }
+        return Int((duration * sampleRate / Double(samplesPerFrame)).rounded())
+    }
     
     public var formattedDuration: String {
         let m = Int(duration) / 60
@@ -95,6 +104,11 @@ public struct ID3v1Tag: Equatable {
     public var genreIndex: UInt8 = 255
     
     public init() {}
+    
+    /// Taggers that can't store Cyrillic in ID3v1 write "?" for every letter ("?????", "?? ? ??????")
+    public static func isPlaceholder(_ value: String) -> Bool {
+        value.contains("?") && value.allSatisfy { $0 == "?" || $0.isWhitespace || $0.isPunctuation }
+    }
 }
 
 // MARK: - ID3v2 Tag
@@ -170,10 +184,8 @@ public struct AudioFileMetadata: Equatable {
     /// Copies fields from ID3v1 into ID3v2
     public mutating func copyFromID3v1() {
         id3v2.hasTag = true
-        // Taggers that can't store Cyrillic in ID3v1 write "?" for each letter; never copy that over real text
-        func usable(_ value: String) -> Bool {
-            !value.isEmpty && !value.allSatisfy { $0 == "?" || $0.isWhitespace || $0.isPunctuation }
-        }
+        // Never copy "?" placeholders (see ID3v1Tag.isPlaceholder) over real text
+        func usable(_ value: String) -> Bool { !value.isEmpty && !ID3v1Tag.isPlaceholder(value) }
         if usable(id3v1.title) { id3v2.title = id3v1.title }
         if usable(id3v1.artist) { id3v2.artist = id3v1.artist }
         if usable(id3v1.album) { id3v2.album = id3v1.album }
@@ -238,6 +250,18 @@ public class AudioMetadataService {
             metadata.id3v1.genreIndex = ID3Genre.index(for: metadata.id3v2.genre)
         }
         
+        // 5b. ID3v1 fields that are only "?" placeholders: offer the ID3v2 text, so Update writes it back in CP1251
+        if metadata.id3v1.hasTag && metadata.id3v2.hasTag {
+            func repaired(_ v1: String, _ v2: String) -> String {
+                ID3v1Tag.isPlaceholder(v1) && !v2.isEmpty ? String(v2.prefix(30)) : v1
+            }
+            metadata.id3v1.title = repaired(metadata.id3v1.title, metadata.id3v2.title)
+            metadata.id3v1.artist = repaired(metadata.id3v1.artist, metadata.id3v2.artist)
+            metadata.id3v1.album = repaired(metadata.id3v1.album, metadata.id3v2.album)
+            metadata.id3v1.comment = ID3v1Tag.isPlaceholder(metadata.id3v1.comment) && !metadata.id3v2.comment.isEmpty
+                ? String(metadata.id3v2.comment.prefix(28)) : metadata.id3v1.comment
+        }
+        
         // 6. If ID3v2 is empty but ID3v1 exists, populate ID3v2
         if !metadata.id3v2.hasTag && metadata.id3v1.hasTag {
             metadata.id3v2.title = metadata.id3v1.title
@@ -299,7 +323,7 @@ public class AudioMetadataService {
             if AudioFileGetProperty(fileID, kAudioFilePropertyDataFormat, &asbdSize, &asbd) == noErr {
                 tech.sampleRate = asbd.mSampleRate
                 tech.channels = Int(asbd.mChannelsPerFrame)
-                tech.channelMode = (tech.channels == 1) ? "Mono" : ((tech.channels == 2) ? "Joint Stereo" : "\(tech.channels) Channels")
+                tech.channelMode = (tech.channels == 1) ? "Mono" : ((tech.channels == 2) ? "Stereo" : "\(tech.channels) Channels") // MPEG header scan refines it
                 
                 switch asbd.mFormatID {
                 case kAudioFormatMPEGLayer3:
@@ -352,7 +376,7 @@ public class AudioMetadataService {
         }
         
         // Scan first MP3 audio frame header to extract detailed MPEG flags
-        if url.pathExtension.lowercased() == "mp3" {
+        if ["mp3", "mp2", "mp1"].contains(url.pathExtension.lowercased()) {
             scanMPEGFrameHeader(from: url, into: &tech)
         }
     }
@@ -388,6 +412,9 @@ public class AudioMetadataService {
                 let verStr = (mpegVersion == 3) ? "1.0" : ((mpegVersion == 2) ? "2.0" : "2.5")
                 let layerStr = (layer == 1) ? "layer 3" : ((layer == 2) ? "layer 2" : "layer 1")
                 tech.formatDescription = "MPEG \(verStr) \(layerStr)"
+                tech.isMPEG = true
+                // Layer I: 384; Layer II: 1152; Layer III: 1152 (MPEG 1) or 576 (MPEG 2 / 2.5)
+                tech.samplesPerFrame = layer == 3 ? 384 : (layer == 2 ? 1152 : (mpegVersion == 3 ? 1152 : 576))
                 
                 // Bitrate lookup table (MPEG 1.0 Layer 3)
                 if mpegVersion == 3 && layer == 1 {
@@ -499,15 +526,15 @@ public class AudioMetadataService {
                     id3v2.hasTag = true
                 }
             }
-            // Year (TYER, TDRC, ©day)
-            else if keyStr == "TYER" || keyStr == "TDRC" || keyStr.contains("TYER") || keyStr.contains("TDRC") || keyStr.hasSuffix("©day") {
+            // Year (TYER, TDRC, ©day, Vorbis DATE)
+            else if keyStr == "DATE" || keyStr == "TYER" || keyStr == "TDRC" || keyStr.contains("TYER") || keyStr.contains("TDRC") || keyStr.hasSuffix("©day") {
                 if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.year.isEmpty {
                     id3v2.year = String(val.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4))
                     id3v2.hasTag = true
                 }
             }
-            // Track Number (TRCK, trkn)
-            else if keyStr == "TRCK" || keyStr.contains("TRCK") || keyStr.hasSuffix("trkn") {
+            // Track Number (TRCK, trkn, Vorbis TRACKNUMBER)
+            else if keyStr == "TRACKNUMBER" || keyStr == "TRCK" || keyStr.contains("TRCK") || keyStr.hasSuffix("trkn") {
                 if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.trackNumber.isEmpty {
                     id3v2.trackNumber = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     id3v2.hasTag = true
@@ -516,15 +543,15 @@ public class AudioMetadataService {
                     id3v2.hasTag = true
                 }
             }
-            // Disc Number (TPOS, disk)
-            else if keyStr == "TPOS" || keyStr.contains("TPOS") || keyStr.hasSuffix("disk") {
+            // Disc Number (TPOS, disk, Vorbis DISCNUMBER)
+            else if keyStr == "DISCNUMBER" || keyStr == "TPOS" || keyStr.contains("TPOS") || keyStr.hasSuffix("disk") {
                 if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.discNumber.isEmpty {
                     id3v2.discNumber = val.trimmingCharacters(in: .whitespacesAndNewlines)
                     id3v2.hasTag = true
                 }
             }
-            // Genre (TCON, ©gen, gnre)
-            else if keyStr == "TCON" || keyStr.contains("TCON") || keyStr.hasSuffix("©gen") || keyStr.hasSuffix("gnre") {
+            // Genre (TCON, ©gen, gnre, Vorbis GENRE)
+            else if keyStr == "GENRE" || keyStr == "TCON" || keyStr.contains("TCON") || keyStr.hasSuffix("©gen") || keyStr.hasSuffix("gnre") {
                 if let val = item.string.map(TextEncoding.repairCyrillic), !val.isEmpty, id3v2.genre.isEmpty {
                     // Normalize standard ID3 genre (e.g. "(17)" -> "Rock")
                     var g = val.trimmingCharacters(in: .whitespacesAndNewlines)

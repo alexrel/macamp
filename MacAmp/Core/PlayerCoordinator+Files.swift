@@ -70,8 +70,8 @@ extension PlayerCoordinator {
     }
     
     /// Opens the Winamp Preferences (Ctrl+P / Cmd+,) dialog.
-    public func showPreferencesWindow(category: PreferencesCategory = .titles) {
-        PreferencesWindow.show(category: category)
+    public func showPreferencesWindow() {
+        PreferencesWindow.show()
     }
     
     /// Opens the Jump to File (J / F3) dialog.

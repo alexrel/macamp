@@ -65,6 +65,182 @@ public struct AppState: Codable {
         set { enqueueAsDefaultActionStorage = newValue }
     }
     
+    /// Winamp Options: titles from file names get %20 / underscores shown as spaces (both on in 2.95)
+    public var convertPercent20Storage: Bool? = nil
+    public var convertUnderscoreStorage: Bool? = nil
+    public var convertPercent20: Bool {
+        get { convertPercent20Storage ?? true }
+        set { convertPercent20Storage = newValue }
+    }
+    public var convertUnderscore: Bool {
+        get { convertUnderscoreStorage ?? true }
+        set { convertUnderscoreStorage = newValue }
+    }
+    /// Winamp Display: "Use Winamp-styled (skinned) cursors"
+    public var useSkinnedCursorsStorage: Bool? = nil
+    public var useSkinnedCursors: Bool {
+        get { useSkinnedCursorsStorage ?? true }
+        set { useSkinnedCursorsStorage = newValue }
+    }
+    /// Winamp Plug-ins: "Auto execute visualization plug-in on play" (the Retro Visualizer Studio)
+    public var autoStartVisPluginStorage: Bool? = nil
+    public var autoStartVisPlugin: Bool {
+        get { autoStartVisPluginStorage ?? false }
+        set { autoStartVisPluginStorage = newValue }
+    }
+    
+    /// Display: "Dim titlebars when inactive" and "Display tooltips in Winamp's main window" (both on in 2.95)
+    public var dimTitlebarsStorage: Bool? = nil
+    public var dimTitlebars: Bool {
+        get { dimTitlebarsStorage ?? true }
+        set { dimTitlebarsStorage = newValue }
+    }
+    public var mainWindowTooltipsStorage: Bool? = nil
+    public var mainWindowTooltips: Bool {
+        get { mainWindowTooltipsStorage ?? true }
+        set { mainWindowTooltipsStorage = newValue }
+    }
+    /// Shuffle morph rate 0 (slow: each pass a slight variation of the last) ... 1 (fast: a new order every pass)
+    public var shuffleMorphRateStorage: Double? = nil
+    public var shuffleMorphRate: Double {
+        get { shuffleMorphRateStorage ?? 0.9 } // 2.95: "The default is very close to 'Fast'"
+        set { shuffleMorphRateStorage = newValue }
+    }
+    /// Skins: "Random skin on play"
+    public var randomSkinOnPlayStorage: Bool? = nil
+    public var randomSkinOnPlay: Bool {
+        get { randomSkinOnPlayStorage ?? false }
+        set { randomSkinOnPlayStorage = newValue }
+    }
+    
+    /// Options ▸ Media Library: double-click / Enter enqueues instead of playing; radio stations to fetch
+    public var libraryDoubleClickEnqueuesStorage: Bool? = nil
+    public var libraryDoubleClickEnqueues: Bool {
+        get { libraryDoubleClickEnqueuesStorage ?? false }
+        set { libraryDoubleClickEnqueuesStorage = newValue }
+    }
+    public var libraryMaxStreamsStorage: Int? = nil
+    public var libraryMaxStreams: Int {
+        get { libraryMaxStreamsStorage ?? 500 }
+        set { libraryMaxStreamsStorage = newValue }
+    }
+    /// Options ▸ Library (2.95 General tab)
+    public var libraryRememberSearchStorage: Bool? = nil
+    public var libraryRememberSearch: Bool { get { libraryRememberSearchStorage ?? false } set { libraryRememberSearchStorage = newValue } }
+    /// Remembered search text per list (Local Media, each view)
+    public var librarySearchesStorage: [String: String]? = nil
+    public var librarySearches: [String: String] { get { librarySearchesStorage ?? [:] } set { librarySearchesStorage = newValue } }
+    public var libraryPlayWholePlaylistStorage: Bool? = nil
+    public var libraryPlayWholePlaylist: Bool { get { libraryPlayWholePlaylistStorage ?? true } set { libraryPlayWholePlaylistStorage = newValue } }
+    public var libraryPlayWholeQueryStorage: Bool? = nil
+    public var libraryPlayWholeQuery: Bool { get { libraryPlayWholeQueryStorage ?? false } set { libraryPlayWholeQueryStorage = newValue } }
+    public var libraryOnLightningBoltStorage: Bool? = nil
+    public var libraryOnLightningBolt: Bool { get { libraryOnLightningBoltStorage ?? true } set { libraryOnLightningBoltStorage = newValue } }
+    public var libraryTVButtonOpensVideoStorage: Bool? = nil
+    public var libraryTVButtonOpensVideo: Bool { get { libraryTVButtonOpensVideoStorage ?? true } set { libraryTVButtonOpensVideoStorage = newValue } }
+    /// Library dividers (dragged, remembered): tree width, Audio page's top panes height, Artist share of their width
+    public var libraryTreeWidthStorage: Double? = nil
+    public var libraryTreeWidth: Double { get { libraryTreeWidthStorage ?? 132 } set { libraryTreeWidthStorage = newValue } }
+    public var libraryPanesHeightStorage: Double? = nil
+    public var libraryPanesHeight: Double { get { libraryPanesHeightStorage ?? 110 } set { libraryPanesHeightStorage = newValue } }
+    public var libraryArtistFractionStorage: Double? = nil
+    public var libraryArtistFraction: Double { get { libraryArtistFractionStorage ?? 0.5 } set { libraryArtistFractionStorage = newValue } }
+    /// Internet Radio tab: how old the cached station list may get (hours; 0 = never refresh by itself)
+    public var radioRefreshHoursStorage: Int? = nil
+    public var radioRefreshHours: Int { get { radioRefreshHoursStorage ?? 1 } set { radioRefreshHoursStorage = newValue } }
+
+    /// Options ▸ Media Library: rescan the library folders at startup
+    public var libraryRescanOnStartStorage: Bool? = nil
+    public var libraryRescanOnStart: Bool {
+        get { libraryRescanOnStartStorage ?? false }
+        set { libraryRescanOnStartStorage = newValue }
+    }
+    
+    /// File types ▸ "Associate with audio CDs": while MacAmp runs, an inserted audio CD plays (macOS keeps its own
+    /// system-wide choice of app for CDs; MacAmp doesn't change it)
+    public var playInsertedAudioCDsStorage: Bool? = nil
+    public var playInsertedAudioCDs: Bool {
+        get { playInsertedAudioCDsStorage ?? false }
+        set { playInsertedAudioCDsStorage = newValue }
+    }
+
+    /// Visualization ▸ Refresh rate (10...40 fps; 2.95's default is 35)
+    public var visualizerFPSStorage: Double? = nil
+    public var visualizerFPS: Double {
+        get { visualizerFPSStorage ?? 35 }
+        set { visualizerFPSStorage = newValue }
+    }
+
+    /// Skins ▸ "Set skins directory..." (nil: Application Support/MacAmp/Skins)
+    public var skinsDirectoryPath: String? = nil
+
+    /// Options ▸ Video (the 2.95 page without its Windows-only overlay / DirectDraw settings)
+    public var videoKeepAspectStorage: Bool? = nil
+    public var videoKeepAspect: Bool { get { videoKeepAspectStorage ?? true } set { videoKeepAspectStorage = newValue } }
+    public var videoAutoOpenStorage: Bool? = nil
+    public var videoAutoOpen: Bool { get { videoAutoOpenStorage ?? true } set { videoAutoOpenStorage = newValue } }
+    public var videoAutoResizeStorage: Bool? = nil
+    public var videoAutoResize: Bool { get { videoAutoResizeStorage ?? true } set { videoAutoResizeStorage = newValue } }
+    public var videoAutoCloseStorage: Bool? = nil
+    public var videoAutoClose: Bool { get { videoAutoCloseStorage ?? true } set { videoAutoCloseStorage = newValue } }
+    public var videoRemoveFullscreenOnStopStorage: Bool? = nil
+    public var videoRemoveFullscreenOnStop: Bool { get { videoRemoveFullscreenOnStopStorage ?? false } set { videoRemoveFullscreenOnStopStorage = newValue } }
+    public var videoDisableScreensaverStorage: Bool? = nil
+    public var videoDisableScreensaver: Bool { get { videoDisableScreensaverStorage ?? true } set { videoDisableScreensaverStorage = newValue } }
+    public var videoStopOnCloseStorage: Bool? = nil
+    public var videoStopOnClose: Bool { get { videoStopOnCloseStorage ?? true } set { videoStopOnCloseStorage = newValue } }
+
+    /// Options ▸ CD Ripping: where, how named, which encoder, tags, add to the library
+    public var cdRipFolderStorage: String? = nil
+    public var cdRipFolder: URL {
+        get { cdRipFolderStorage.map { URL(fileURLWithPath: $0) } ?? FileManager.default.urls(for: .musicDirectory, in: .userDomainMask)[0] }
+        set { cdRipFolderStorage = newValue.path }
+    }
+    public var cdRipTemplateStorage: String? = nil
+    public var cdRipTemplate: String {
+        get { cdRipTemplateStorage ?? "<Artist> - <Album>/<#> - <Title>" }
+        set { cdRipTemplateStorage = newValue }
+    }
+    public var cdRipFormatStorage: DiskWriterFormat? = nil
+    public var cdRipFormat: DiskWriterFormat {
+        get { cdRipFormatStorage ?? .flac }
+        set { cdRipFormatStorage = newValue }
+    }
+    public var cdRipWriteTagsStorage: Bool? = nil
+    public var cdRipWriteTags: Bool {
+        get { cdRipWriteTagsStorage ?? true }
+        set { cdRipWriteTagsStorage = newValue }
+    }
+    public var cdRipAddToLibraryStorage: Bool? = nil
+    public var cdRipAddToLibrary: Bool {
+        get { cdRipAddToLibraryStorage ?? true }
+        set { cdRipAddToLibraryStorage = newValue }
+    }
+    
+    /// Plug-ins ▸ Output: Disk Writer (out_disk) instead of the speakers, with its folder and format
+    public var diskWriterEnabledStorage: Bool? = nil
+    public var diskWriterFolderStorage: String? = nil
+    public var diskWriterFormatStorage: DiskWriterFormat? = nil
+    public var diskWriterEnabled: Bool {
+        get { diskWriterEnabledStorage ?? false }
+        set { diskWriterEnabledStorage = newValue }
+    }
+    public var diskWriterFolder: URL {
+        get { diskWriterFolderStorage.map { URL(fileURLWithPath: $0) } ?? DiskWriter.defaultFolder }
+        set { diskWriterFolderStorage = newValue.path }
+    }
+    public var diskWriterFormat: DiskWriterFormat {
+        get { diskWriterFormatStorage ?? .wav }
+        set { diskWriterFormatStorage = newValue }
+    }
+    
+    /// Winamp EasyMove (on by default in 2.95): drag main / equalizer windows from anywhere, not just the title bar
+    public var easyMoveStorage: Bool? = nil
+    public var easyMove: Bool {
+        get { easyMoveStorage ?? true }
+        set { easyMoveStorage = newValue }
+    }
+    
     /// Crossfade between tracks in seconds, 0 = off (Optional for decode compatibility)
     public var crossfadeSecondsStorage: Double? = nil
     public var crossfadeSeconds: Double {
@@ -105,6 +281,16 @@ public struct AppState: Codable {
     public var isEqWindowVisible: Bool = true
     public var isEqWindowShade: Bool = false
     public var isPlaylistVisible: Bool = true
+    public var isBrowserVisibleStorage: Bool? = nil
+    public var isBrowserVisible: Bool {
+        get { isBrowserVisibleStorage ?? false }
+        set { isBrowserVisibleStorage = newValue }
+    }
+    public var isLibraryVisibleStorage: Bool? = nil
+    public var isLibraryVisible: Bool {
+        get { isLibraryVisibleStorage ?? false }
+        set { isLibraryVisibleStorage = newValue }
+    }
     public var isPlaylistShade: Bool = false
     public var isAlwaysOnTop: Bool = false
     
@@ -158,7 +344,8 @@ public class PersistenceManager {
     
     public var state: AppState = AppState()
     
-    private var baseDir: URL {
+    /// Application Support/MacAmp (session, playlist, library)
+    public var baseDir: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = appSupport.appendingPathComponent("MacAmp")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

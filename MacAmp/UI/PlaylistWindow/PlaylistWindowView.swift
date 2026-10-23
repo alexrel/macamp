@@ -758,9 +758,22 @@ public class PlaylistWindowView: WinampControlView {
         needsDisplay = true
     }
     
-    @objc private func contextClearPlaylist() {
-        playlist.clear()
-        needsDisplay = true
+    /// Winamp "Playlist entry" (⌃E): edit the file name or URL of the selected item.
+    @objc private func contextEditPlaylistEntry() {
+        guard let index = playlist.selectedIndices.min(), playlist.tracks.indices.contains(index) else { return }
+        let old = playlist.tracks[index]
+        let location = old.url.isFileURL ? old.url.path : old.url.absoluteString
+        guard let entered = Win32Dialog.prompt(title: "Playlist entry", message: "Edit playlist entry (file name or URL):",
+                                               defaultValue: location, width: 420)?.trimmingCharacters(in: .whitespaces),
+              !entered.isEmpty, entered != location else { return }
+        let url = PlaylistIO.resolveEntry(entered, baseURL: FileManager.default.homeDirectoryForCurrentUser)
+        Task { @MainActor in
+            let item = await TrackItem.create(from: url)
+            // Same id: selection and the current track stay on this entry
+            guard let current = playlist.tracks.firstIndex(where: { $0.id == old.id }) else { return }
+            playlist.setTrack(at: current, TrackItem(id: old.id, url: item.url, title: item.title, artist: item.artist, duration: item.duration))
+            needsDisplay = true
+        }
     }
     
     @objc private func handleRemoveDeadFiles() {
@@ -920,7 +933,7 @@ public class PlaylistWindowView: WinampControlView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
         
-        let isKey = NSApp.isActive && (window?.isKeyWindow ?? false)
+        let isKey = drawsActiveTitleBar
         typealias Layout = AppConstants.Playlist.Layout
         
         if isShadeMode {
@@ -1166,6 +1179,28 @@ public class PlaylistWindowView: WinampControlView {
         let chars = characters.lowercased()
         let count = playlist.tracks.count
         let extend = flags.contains(.shift)
+        let mods = flags.intersection([.command, .control, .option, .shift])
+        
+        // Winamp 2.95 playlist editor keys (docs/UI-screens/shortkeys.txt)
+        switch (keyCode, mods) {
+        case (AppConstants.KeyCodes.upArrow, [.option]): playlist.moveSelected(by: -1); needsDisplay = true; return true
+        case (AppConstants.KeyCodes.downArrow, [.option]): playlist.moveSelected(by: 1); needsDisplay = true; return true
+        case (AppConstants.KeyCodes.deleteKey, [.option]), (AppConstants.KeyCodes.forwardDelete, [.option]): handleRemoveDeadFiles(); return true
+        case (AppConstants.KeyCodes.deleteKey, [.control, .shift]), (AppConstants.KeyCodes.forwardDelete, [.control, .shift]): handleClearAll(); return true
+        case (AppConstants.KeyCodes.digit1, [.control, .shift]): handleSortTitle(); return true
+        case (AppConstants.KeyCodes.digit2, [.control, .shift]): handleSortFilename(); return true
+        case (AppConstants.KeyCodes.digit3, [.control, .shift]): handleSortPath(); return true
+        default: break
+        }
+        switch (chars, mods) {
+        case ("n", [.control]): handleClearAll(); return true
+        case ("o", [.control]): handleLoadList(); return true
+        case ("s", [.control]): handleSaveList(); return true
+        case ("i", [.control]): handleInvertSelection(); return true
+        case ("r", [.control]): handleReverse(); return true
+        case ("r", [.control, .shift]): handleRandomize(); return true
+        default: break
+        }
         
         switch keyCode {
         case AppConstants.KeyCodes.deleteKey, AppConstants.KeyCodes.forwardDelete:
@@ -1229,6 +1264,10 @@ public class PlaylistWindowView: WinampControlView {
             break
         }
         
+        if chars == "e" && flags.intersection([.command, .control, .option, .shift]) == [.control] {
+            contextEditPlaylistEntry()
+            return true
+        }
         if chars == "a" && (flags.contains(.command) || flags.contains(.control)) {
             playlist.selectAll()
             needsDisplay = true
@@ -1535,39 +1574,22 @@ public class PlaylistWindowView: WinampControlView {
                 needsDisplay = true
             }
             
+            // Winamp 2.95 playlist item menu (docs/UI-screens/playlist item menu.png)
             let menu = NSMenu(title: "Track Context Menu")
-            let playItem = NSMenuItem(title: "Play", action: #selector(contextPlaySelected), keyEquivalent: "\r")
-            playItem.target = self
-            menu.addItem(playItem)
-            
-            menu.addItem(NSMenuItem.separator())
-            
-            let infoItem = NSMenuItem(title: "View file info...", action: #selector(contextViewFileInfo), keyEquivalent: "3")
-            infoItem.keyEquivalentModifierMask = [.option]
-            infoItem.target = self
-            menu.addItem(infoItem)
-            
-            menu.addItem(NSMenuItem.separator())
-            
-            let bookmarkItem = NSMenuItem(title: "Bookmark item(s)", action: #selector(contextBookmarkSelected), keyEquivalent: "i")
-            bookmarkItem.keyEquivalentModifierMask = [.option]
-            bookmarkItem.target = self
-            menu.addItem(bookmarkItem)
-            
-            menu.addItem(NSMenuItem.separator())
-            
-            let removeItem = NSMenuItem(title: "Remove selected", action: #selector(contextRemoveSelected), keyEquivalent: "")
-            removeItem.target = self
-            menu.addItem(removeItem)
-            
-            let cropItem = NSMenuItem(title: "Crop selected", action: #selector(contextCropSelected), keyEquivalent: "")
-            cropItem.target = self
-            menu.addItem(cropItem)
-            
-            let clearItem = NSMenuItem(title: "Clear playlist", action: #selector(contextClearPlaylist), keyEquivalent: "")
-            clearItem.target = self
-            menu.addItem(clearItem)
-            
+            func add(_ title: String, _ action: Selector, _ key: String = "", _ mods: NSEvent.ModifierFlags = []) {
+                let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+                item.keyEquivalentModifierMask = mods
+                item.target = self
+                menu.addItem(item)
+            }
+            add("Play item(s)", #selector(contextPlaySelected), "\r")
+            menu.addItem(.separator())
+            add("Remove item(s)", #selector(contextRemoveSelected), "\u{8}")
+            add("Crop files", #selector(contextCropSelected), "\u{8}", [.control])
+            menu.addItem(.separator())
+            add("File info", #selector(contextViewFileInfo), "3", [.option])
+            add("Playlist entry", #selector(contextEditPlaylistEntry), "e", [.control])
+            add("Bookmark item(s)", #selector(contextBookmarkSelected), "i", [.option])
             return menu
         }
         return PlayerCoordinator.shared.buildWinampMenu()

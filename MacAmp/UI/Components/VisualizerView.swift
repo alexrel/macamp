@@ -74,12 +74,16 @@ public class VisualizerView: WinampControlView {
         }
     }
 
+    /// Analysis frames since the last drawn one (Refresh rate below ~43 fps skips some): falloff covers them all,
+    /// so bars fall at the same speed at any refresh rate
+    public var falloffScale: Float = 1
+
     /// Bars drop by the falloff speed instead of jumping down; peaks hold the maximum and sink slower.
     /// Returns true if any level or peak moved.
     @discardableResult
     private func applyFalloff() -> Bool {
-        let barStep = options.barFalloff.barStep
-        let peakStep = options.peakFalloff.peakStep
+        let barStep = options.barFalloff.barStep * falloffScale
+        let peakStep = options.peakFalloff.peakStep * falloffScale
         var moved = false
         for i in 0..<VisualizerView.thinCount {
             let level = max(rawBands[i], barLevels[i] - barStep, 0)
@@ -258,3 +262,26 @@ public class VisualizerView: WinampControlView {
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 }
+
+/// Preferences ▸ Visualization ▸ Refresh rate: which analysis frames (~43 per second) get drawn. Draws on a schedule
+/// of 1/fps, so 35 fps really averages 35 (a plain "skip if too soon" would draw every other frame: ~21).
+public struct VisualizerThrottle {
+    /// Frames per second the analysis delivers (1024-sample windows at 44.1 kHz)
+    public static let analysisRate = 43.0
+    private var next: Double = 0
+    private var last: Double?
+
+    public init() {}
+
+    /// Whether to draw the frame arriving at `now` (seconds), and how many analysis frames it stands for
+    public mutating func shouldDraw(at now: Double, fps: Double) -> (draw: Bool, frames: Float) {
+        guard fps < VisualizerThrottle.analysisRate else { last = now; return (true, 1) }
+        let interval = 1 / max(1, fps)
+        guard now >= next - 0.001 else { return (false, 0) }
+        next = max(next + interval, now - interval) // on schedule, without a backlog after a pause
+        let frames = last.map { Float(min(10, max(1, (now - $0) * VisualizerThrottle.analysisRate))) } ?? 1 // 10: above the 10 fps gap, below a jump after a pause
+        last = now
+        return (true, frames)
+    }
+}
+

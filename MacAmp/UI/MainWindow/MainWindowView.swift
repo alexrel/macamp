@@ -397,7 +397,7 @@ public class MainWindowView: WinampControlView {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
         
-        let isKey = NSApp.isActive && (window?.isKeyWindow ?? false)
+        let isKey = drawsActiveTitleBar
         
         if isShadeMode {
             // Draw Windowshade Background (TITLEBAR.BMP)
@@ -426,7 +426,8 @@ public class MainWindowView: WinampControlView {
             
             // 4. Draw Bitrate & Samplerate text and Mono/Stereo indicator
             if let meta = AudioEngine.shared.currentMetadata {
-                BitmapFont.draw(string: String(format: "%3d", meta.bitrate), in: context, at: Layout.bitrate)
+                // A 3-character field: 1411 (CD, WAV) shows its first three digits, as the field cuts it in Winamp
+                BitmapFont.draw(string: String(String(format: "%3d", meta.bitrate).prefix(3)), in: context, at: Layout.bitrate)
                 BitmapFont.draw(string: String(format: "%2d", meta.sampleRate), in: context, at: Layout.sampleRate)
                 
                 let stereoSlice = (meta.audioMode == .stereo) ? SpriteCatalog.stereoOn : SpriteCatalog.stereoOff
@@ -464,7 +465,14 @@ public class MainWindowView: WinampControlView {
     }
     
     // MARK: - Window Dragging via Background / Titlebar
+    /// The lightning bolt at the bottom right (MAIN.BMP 253,91 13 × 15): the Library, or About (Library prefs)
+    static let lightningBolt = NSRect(x: 253, y: 91, width: 13, height: 15)
+
     public override func mouseDown(with event: NSEvent) {
+        if !isShadeMode, MainWindowView.lightningBolt.contains(convert(event.locationInWindow, from: nil)) {
+            PlayerCoordinator.shared.handleLightningBolt()
+            return
+        }
         if event.clickCount == 2 {
             // Double-click on titlebar toggles windowshade mode!
             let local = convert(event.locationInWindow, from: nil)
@@ -475,6 +483,8 @@ public class MainWindowView: WinampControlView {
         }
         
         guard let win = self.window as? WinampWindow else { return }
+        // Without EasyMove only the title bar moves the window (Winamp 2.95)
+        if !PersistenceManager.shared.state.easyMove && convert(event.locationInWindow, from: nil).y > AppConstants.Window.shadeHeight { return }
         win.startWindowDrag(with: event)
         trackWindowDrag(with: event, in: win)
     }

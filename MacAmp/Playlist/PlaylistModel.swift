@@ -88,6 +88,7 @@ public struct TrackItem: Codable, Identifiable, Equatable {
     
     /// AudioToolbox estimated duration (fastest & most resilient for MP3/AAC/VBR), then AVFoundation, then the PCM length.
     public static func resolveDuration(from url: URL) async -> TimeInterval {
+        if MIDIRenderer.isMIDI(url) { return MIDIRenderer.duration(of: url) }
         let estimated = estimatedDuration(of: url)
         if estimated > 0 { return estimated }
         let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
@@ -115,7 +116,16 @@ public struct TrackItem: Codable, Identifiable, Equatable {
     
     /// "Artist - Title", or just the title when the artist is unknown (Winamp shows untagged files by file name).
     public static func displayName(artist: String, title: String) -> String {
-        (artist.isEmpty || artist == legacyUnknownArtist) ? title : "\(artist) - \(title)"
+        (artist.isEmpty || artist == legacyUnknownArtist) ? fileNameTitle(title) : "\(artist) - \(title)"
+    }
+    
+    /// Winamp Options ▸ "Convert %20 / underscore to space in titles", for titles that are file names (untagged).
+    static func fileNameTitle(_ title: String) -> String {
+        let state = PersistenceManager.shared.state
+        var result = title
+        if state.convertPercent20 { result = result.replacingOccurrences(of: "%20", with: " ") }
+        if state.convertUnderscore { result = result.replacingOccurrences(of: "_", with: " ") }
+        return result
     }
     
     public var displayName: String { TrackItem.displayName(artist: artist, title: title) }
@@ -139,6 +149,9 @@ public struct TrackItem: Codable, Identifiable, Equatable {
             } else if isArtist && artist.isEmpty {
                 artist = TextEncoding.repairCyrillic(value)
             }
+        }
+        if title == fileBaseName, artist.isEmpty, let named = await AudioCD.name(for: url) {
+            return named // audio CD track: MusicBrainz name
         }
         if title == fileBaseName {
             // Names extracted from old ZIP/CD rips may themselves be CP1251 mojibake
@@ -552,6 +565,19 @@ public class PlaylistModel: ObservableObject {
         syncShuffleOrder()
     }
     
+    /// Winamp ⌥↑ / ⌥↓: move the selected tracks one place up (-1) or down (+1); selection and the
+    /// current track move with them. Nothing happens when the block is already at that end.
+    public func moveSelected(by offset: Int) {
+        let selected = selectedIndices.sorted()
+        guard offset == -1 || offset == 1, let first = selected.first, let last = selected.last,
+              first + offset >= 0, last + offset < tracks.count else { return }
+        let currentID = currentTrack?.id
+        let order = offset < 0 ? selected : selected.reversed()
+        for index in order { tracks.swapAt(index, index + offset) }
+        selectedIndices = Set(selected.map { $0 + offset })
+        if let currentID { currentIndex = tracks.firstIndex { $0.id == currentID } }
+    }
+    
     public func randomize() {
         tracks.shuffle()
         currentIndex = tracks.isEmpty ? nil : 0
@@ -575,8 +601,9 @@ public class PlaylistModel: ObservableObject {
             guard !shuffleOrder.isEmpty else { return nil }
             if shufflePosition + 1 >= shuffleOrder.count {
                 guard isRepeat else { return nil }
-                // New pass: fresh order that does not start with the track that just finished
-                rebuildShuffleOrder(keepCurrentFirst: false)
+                // New pass: a new order (how new depends on the shuffle morph rate) that doesn't start
+                // with the track that just finished
+                shuffleOrder = PlaylistModel.morphedOrder(shuffleOrder, rate: PersistenceManager.shared.state.shuffleMorphRate)
                 if shuffleOrder.count > 1, shuffleOrder.first == currentTrack?.id {
                     shuffleOrder.swapAt(0, Int.random(in: 1..<shuffleOrder.count))
                 }
@@ -639,6 +666,18 @@ public class PlaylistModel: ObservableObject {
         return tracks[idx]
     }
     
+    /// Winamp's shuffle morph rate: the next pass's order. 1 (fast) = a completely new order; lower rates keep
+    /// more of the previous pass (each pass "a slight variation of the same playlist" at the slow end).
+    static func morphedOrder(_ previous: [UUID], rate: Double) -> [UUID] {
+        guard rate < 0.99 else { return previous.shuffled() }
+        var order = previous
+        let swaps = Int((Double(order.count) * max(0, rate)).rounded(.up))
+        for _ in 0..<max(1, swaps) where order.count > 1 {
+            order.swapAt(Int.random(in: 0..<order.count), Int.random(in: 0..<order.count))
+        }
+        return order
+    }
+    
     /// Builds a new random order. By default the current track goes first so every other track is still ahead.
     private func rebuildShuffleOrder(keepCurrentFirst: Bool = true) {
         let currentID = currentTrack?.id
@@ -681,9 +720,10 @@ public class PlaylistModel: ObservableObject {
         if shufflePosition < shuffleOrder.count, shuffleOrder[shufflePosition] == currentID { return }
         guard let oldPos = shuffleOrder.firstIndex(of: currentID) else { return }
         shuffleOrder.remove(at: oldPos)
-        var target = shufflePosition + 1
-        if oldPos < target { target -= 1 }
-        target = min(max(0, target), shuffleOrder.count)
+        // A pick from the history: the track that was playing moved down one place with it
+        if oldPos < shufflePosition { shufflePosition -= 1 }
+        // The picked track plays next in the order, so Previous returns to the one that was playing
+        let target = min(shufflePosition + 1, shuffleOrder.count)
         shuffleOrder.insert(currentID, at: target)
         shufflePosition = target
     }

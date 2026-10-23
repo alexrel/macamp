@@ -576,17 +576,20 @@ public struct Win32ComboBox<Value: Hashable>: View {
     @Binding public var selection: Value
     public let options: [(value: Value, title: String)]
     public var width: CGFloat?
+    /// Text shown in the closed box instead of the selected option ("" = just the drop-down arrow)
+    public var label: String?
     
     @Environment(\.isEnabled) private var isEnabled
     
-    public init(selection: Binding<Value>, options: [(value: Value, title: String)], width: CGFloat? = nil) {
+    public init(selection: Binding<Value>, options: [(value: Value, title: String)], width: CGFloat? = nil, label: String? = nil) {
         self._selection = selection
         self.options = options
         self.width = width
+        self.label = label
     }
     
     private var currentTitle: String {
-        options.first(where: { $0.value == selection })?.title ?? ""
+        label ?? options.first(where: { $0.value == selection })?.title ?? ""
     }
     
     public var body: some View {
@@ -616,17 +619,19 @@ public struct Win32ComboBox<Value: Hashable>: View {
     }
     
     private func showMenu() {
+        let menu = buildMenu()
+        menu.popUp(positioning: menu.items.first { $0.state == .on }, at: NSEvent.mouseLocation, in: nil)
+    }
+    
+    /// The drop-down list: every option by its title, the current one checked.
+    func buildMenu() -> NSMenu {
         let menu = NSMenu()
-        var selectedItem: NSMenuItem?
         for option in options {
             let item = Win32ClosureMenuItem(title: option.title) { selection = option.value }
-            if option.value == selection {
-                item.state = .on
-                selectedItem = item
-            }
+            item.state = option.value == selection ? .on : .off
             menu.addItem(item)
         }
-        menu.popUp(positioning: selectedItem, at: NSEvent.mouseLocation, in: nil)
+        return menu
     }
 }
 

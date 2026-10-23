@@ -14,7 +14,8 @@ public struct AboutView: View {
     @State private var selectedTab: AboutTab = .winamp
     public var onClose: (() -> Void)?
     
-    public init(onClose: (() -> Void)? = nil) {
+    public init(initialTab: AboutTab = .winamp, onClose: (() -> Void)? = nil) {
+        _selectedTab = State(initialValue: initialTab)
         self.onClose = onClose
     }
     
@@ -141,32 +142,11 @@ public struct AboutView: View {
     private var shortcutsTabContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Classic Winamp Keyboard Shortcuts")
-                    .font(.system(size: 11, weight: .bold))
-                    .padding(.bottom, 4)
-                
-                Group {
-                    shortcutRow("Z", "Previous Track")
-                    shortcutRow("X", "Play / Restart")
-                    shortcutRow("C", "Pause / Unpause")
-                    shortcutRow("V", "Stop Playback")
-                    shortcutRow("⇧V / ⌃V", "Stop w/ Fadeout / Stop After Current")
-                    shortcutRow("B", "Next Track")
-                    shortcutRow("L / ⌘O", "Open Audio File")
-                    shortcutRow("⇧L / ⇧⌘O", "Open Audio Folder")
-                    shortcutRow("⌘U", "Open Stream URL")
-                    shortcutRow("⌘, / ⌃P", "Winamp Preferences")
-                    shortcutRow("⌥3", "Track Info / ID3 Tag Editor")
-                    shortcutRow("J / ⌃J", "Jump to File / Jump to Time")
-                    shortcutRow("⌃D", "Toggle Double Size (1x / 2x)")
-                    shortcutRow("⌘T", "Toggle Always On Top")
-                    shortcutRow("⌘E", "Toggle Equalizer Window")
-                    shortcutRow("⌘P", "Toggle Playlist Window")
-                    shortcutRow("R", "Toggle Repeat")
-                    shortcutRow("S", "Toggle Shuffle")
-                    shortcutRow("⌫", "Remove Selected Track(s)")
-                    shortcutRow("⌘⌫ / ⌃⌫", "Crop Selected (keep only selected)")
-                    shortcutRow("Space", "Pause / Unpause")
+                ForEach(AboutShortcuts.sections, id: \.title) { section in
+                    Text("*** \(section.title) ***")
+                        .font(.system(size: 11, weight: .bold))
+                        .padding(.top, 6)
+                    ForEach(section.rows, id: \.action) { row in shortcutRow(row.keys, row.action) }
                 }
             }
             .padding(10)
@@ -180,7 +160,7 @@ public struct AboutView: View {
     private func shortcutRow(_ key: String, _ desc: String) -> some View {
         HStack {
             Text(key)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .font(.system(size: 11, weight: .bold)) // the monospaced font draws ⌃ as a plain ^
                 .frame(width: 110, alignment: .leading)
                 .foregroundColor(Win32Colors.selectionBlue)
             Text(desc)
@@ -216,4 +196,66 @@ public struct AboutView: View {
         .win32Sunken()
         .padding(6)
     }
+}
+
+/// Winamp 2.95's shortkeys.txt in Mac notation (⌃ Ctrl, ⌥ Alt, ⇧ Shift, ⌫ Delete, ↩ Enter, Num = keypad, Help = Insert),
+/// with MacAmp's own additions (Library, Video). Only keys MacAmp handles are listed.
+public enum AboutShortcuts {
+    public struct Row { public let keys: String; public let action: String }
+    public struct Section { public let title: String; public let rows: [Row] }
+
+    private static func rows(_ pairs: [(String, String)]) -> [Row] { pairs.map { Row(keys: $0.0, action: $0.1) } }
+
+    private static let playback = rows([
+        ("X or Num 5", "Play/Restart/Unpause"), ("V", "Stop"), ("⇧V", "Stop with Fadeout"), ("⌃V", "Stop after current track"),
+        ("C or Space", "Pause/Unpause"), ("B or Num 6", "Next Track"), ("Z or Num 4", "Previous Track"),
+        ("Num 1", "Jump Ten Songs Back"), ("Num 3", "Jump Ten Songs Forward"),
+        ("← or Num 7", "Rewind 5 seconds"), ("→ or Num 9", "Fast-forward 5 seconds"),
+    ])
+
+    public static let sections: [Section] = [
+        Section(title: "Keyboard Shortcuts (in any of MacAmp's windows)", rows: rows([
+            ("F1", "About Box"), ("⌃A", "Toggle Always-On-Top"), ("⌃W", "Toggle Windowshade mode"),
+            ("⌃D", "Toggle Doublesize Mode"), ("⌃E", "Toggle Easymove"), ("⌃T", "Toggle Time Display Mode"),
+            ("⌥W", "Toggle Main Window"), ("⌥E", "Toggle Playlist Editor"), ("⌥G", "Toggle Graphical Equalizer"),
+            ("⌥L", "Toggle Library"), ("⌥T", "Toggle Minibrowser"), ("⌥V", "Toggle Video Window"),
+            ("⌃Tab", "Cycle through different MacAmp windows"),
+            ("⌥S", "Go to Skin selection"), ("⌃P or ⌘,", "Go to Preferences"), ("⌥O", "Go to Built-in Visualization options"),
+            ("⌥F", "Jump to Main Menu"), ("⌥K", "Configure current Visualization Plug-In"),
+            ("⌃⇧K", "Start/Stop current Visualization Plug-In"), ("⌃K", "Open Visualization Tab of Preferences"),
+            ("⌃J", "Jump to time in current track"), ("J or Num .", "Open Jump-to-file Box"),
+            ("⌥I / ⌃⌥I", "Add Bookmark / Edit Bookmarks"), ("⌥M", "Minimize MacAmp"),
+        ])),
+        Section(title: "Main Window Keyboard Shortcuts", rows: rows([
+            ("R", "Toggle Repeat"), ("S", "Toggle Shuffle"), ("⌥3", "Current file info box/ID3 editor"),
+        ]) + playback + rows([
+            ("L or Num 0", "Open/Play File"), ("⌃L or ⌃Num 0", "Open/Play location"), ("⇧L or Help", "Open/Play Directory"),
+            ("↑ or Num 8", "Turn Volume Up"), ("↓ or Num 2", "Turn Volume Down"),
+        ])),
+        Section(title: "Playlist Editor Keyboard Shortcuts", rows: rows([
+            ("⌃N", "New (Clear) Playlist"), ("⌃O", "Open (Load) Playlist"), ("⌃S", "Save Playlist"),
+            ("⌃E", "Edit Selected Track Filename(s)"), ("⌘A", "Select All"), ("⌃I", "Invert Selection"),
+            ("⌫", "Remove Selected Files from Playlist"), ("⌃⌫", "Crop Playlist"), ("⌃⇧⌫", "Clear Playlist"),
+            ("⌥↓ / ⌥↑", "Move Selected Files Down / Up"), ("↩", "Play Selected File"),
+            ("Home / End", "Jump to Start / End of List"), ("Page Up / Page Down", "Move up / down a page"),
+            ("⌥⌫", "Remove dead (non-existent) files"),
+            ("⌃⇧1", "Sort Playlist by Title"), ("⌃⇧2", "Sort Playlist by File Name"), ("⌃⇧3", "Sort Playlist by File Path and Name"),
+            ("⌃R", "Reverse Playlist"), ("⌃⇧R", "Randomize Playlist"), ("⌃F4", "Close (hide) Playlist Editor"),
+        ])),
+        Section(title: "Graphical Equalizer Keyboard Shortcuts", rows: rows([
+            ("1 - 0", "Increase EQ bands"), ("Q - P", "Decrease EQ bands"), ("`", "Increase EQ Preamp"), ("Tab", "Decrease EQ Preamp"),
+            ("N", "Toggle EQ"), ("A", "Toggle EQ Auto-Loading"), ("⌃F4", "Close (hide) Graphical Equalizer"),
+        ])),
+        Section(title: "Library Keyboard Shortcuts", rows: rows([
+            ("↩ / ⇧↩", "Play / Enqueue selection"), ("⌫", "Remove from library"), ("⌘A", "Select all"),
+        ])),
+        Section(title: "Video Window Keyboard Shortcuts", rows: rows([
+            ("⌥↩", "Fullscreen"), ("Esc", "Leave fullscreen"), ("1", "Normal size"), ("`", "Half size"), ("2", "Double size"),
+            ("⌃F4", "Close (hide) Video Window"),
+        ])),
+        Section(title: "Minibrowser Keyboard Shortcuts", rows: rows([
+            ("⌥←", "Go Back"), ("⌥→", "Go Forward"), ("⌃O", "Open Internet Location Box"), ("⌃R", "Reload page"),
+            ("⌃⌥R", "Update Link List"), ("⌃F4", "Close (hide) Minibrowser"),
+        ])),
+    ]
 }

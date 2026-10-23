@@ -4,29 +4,9 @@ import SwiftUI
 public class PreferencesWindow: NSWindow {
     public static var sharedController: PreferencesWindowController?
     
-    public static func show(category: PreferencesCategory = .titles) {
-        if let existing = sharedController {
-            existing.selectCategory(category)
-            if let win = existing.window {
-                let playerLevel = PlayerCoordinator.shared.mainWindow?.level ?? .normal
-                win.level = (playerLevel == .floating) ? .modalPanel : .floating
-                win.makeKeyAndOrderFront(nil)
-                win.orderFrontRegardless()
-            }
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-        
-        let controller = PreferencesWindowController(initialCategory: category)
-        sharedController = controller
-        controller.showWindow(nil)
-        if let win = controller.window {
-            let playerLevel = PlayerCoordinator.shared.mainWindow?.level ?? .normal
-            win.level = (playerLevel == .floating) ? .modalPanel : .floating
-            win.makeKeyAndOrderFront(nil)
-            win.orderFrontRegardless()
-        }
-        NSApp.activate(ignoringOtherApps: true)
+    /// ⌃P / ⌘,: the window as it was, or the Setup page the first time.
+    public static func show() {
+        show(treeItem: sharedController?.selectedTreeItem ?? .setup)
     }
     
     public static func show(treeItem: PrefTreeItem) {
@@ -58,9 +38,9 @@ public class PreferencesWindow: NSWindow {
 public class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     private var viewModel: PreferencesViewModel
     
-    public init(initialCategory: PreferencesCategory = .titles) {
+    public init(initialTreeItem: PrefTreeItem = .setup) {
         let vm = PreferencesViewModel()
-        vm.selectedCategory = initialCategory
+        vm.selectedTreeItem = initialTreeItem
         self.viewModel = vm
         
         let window = NSWindow(
@@ -69,7 +49,7 @@ public class PreferencesWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "Winamp Preferences"
+        window.title = "MacAmp Preferences"
         window.isReleasedWhenClosed = false
         window.center()
         
@@ -91,19 +71,11 @@ public class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         fatalError("init(coder:) has not been implemented")
     }
     
-    public func selectCategory(_ category: PreferencesCategory) {
-        viewModel.selectedCategory = category
-        viewModel.refreshSkins()
-    }
+    public var selectedTreeItem: PrefTreeItem { viewModel.selectedTreeItem }
     
     public func selectTreeItem(_ item: PrefTreeItem) {
         viewModel.selectedTreeItem = item
         viewModel.refreshSkins()
-    }
-    
-    public convenience init(initialTreeItem: PrefTreeItem) {
-        self.init(initialCategory: .titles)
-        self.viewModel.selectedTreeItem = initialTreeItem
     }
     
     public func windowWillClose(_ notification: Notification) {

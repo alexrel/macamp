@@ -260,17 +260,32 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         winMenu.delegate = self
         self.windowMenu = winMenu
         
-        let eqItem = NSMenuItem(title: "Equalizer", action: #selector(PlayerCoordinator.handleToggleEqualizer), keyEquivalent: "e")
-        eqItem.keyEquivalentModifierMask = [.command]
+        // Winamp 2.95 window keys: ⌥W main, ⌥E playlist, ⌥G equalizer
+        let mainItem = NSMenuItem(title: "Main Window", action: #selector(PlayerCoordinator.handleToggleMainWindow), keyEquivalent: "w")
+        mainItem.keyEquivalentModifierMask = [.option]
+        mainItem.target = coord
+        winMenu.addItem(mainItem)
+        
+        let plItem = NSMenuItem(title: "Playlist Editor", action: #selector(PlayerCoordinator.handleTogglePlaylist), keyEquivalent: "e")
+        plItem.keyEquivalentModifierMask = [.option]
+        plItem.target = coord
+        winMenu.addItem(plItem)
+        self.plToggleItem = plItem
+        
+        let eqItem = NSMenuItem(title: "Equalizer", action: #selector(PlayerCoordinator.handleToggleEqualizer), keyEquivalent: "g")
+        eqItem.keyEquivalentModifierMask = [.option]
         eqItem.target = coord
         winMenu.addItem(eqItem)
         self.eqToggleItem = eqItem
         
-        let plItem = NSMenuItem(title: "Playlist Editor", action: #selector(PlayerCoordinator.handleTogglePlaylist), keyEquivalent: "p")
-        plItem.keyEquivalentModifierMask = [.command]
-        plItem.target = coord
-        winMenu.addItem(plItem)
-        self.plToggleItem = plItem
+        for (title, action, key) in [("Library", #selector(PlayerCoordinator.handleToggleLibrary), "l"),
+                                     ("Minibrowser", #selector(PlayerCoordinator.handleToggleBrowser), "t"),
+                                     ("Video", #selector(PlayerCoordinator.handleToggleVideo), "v")] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = [.option]
+            item.target = coord
+            winMenu.addItem(item)
+        }
         
         let visStudioItem = NSMenuItem(title: "Retro Visualizer Studio", action: #selector(PlayerCoordinator.handleToggleVisualizerStudio), keyEquivalent: "k")
         visStudioItem.keyEquivalentModifierMask = [.control, .shift]

@@ -16,8 +16,12 @@ public class SkinManager: ObservableObject {
         return currentSkinURL == nil || currentSkin?.name == "base-2.91"
     }
     
-    /// Dedicated directory where installed custom skins are stored: ~/Library/Application Support/MacAmp/Skins
+    /// Where skins are listed and installed: Preferences ▸ Skins ▸ "Set skins directory...", by default
+    /// ~/Library/Application Support/MacAmp/Skins
     public var skinsDirectory: URL {
+        if let custom = PersistenceManager.shared.state.skinsDirectoryPath, FileManager.default.fileExists(atPath: custom) {
+            return URL(fileURLWithPath: custom, isDirectory: true)
+        }
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = appSupport.appendingPathComponent("MacAmp").appendingPathComponent("Skins")
         if !FileManager.default.fileExists(atPath: dir.path) {
@@ -208,4 +212,33 @@ public class SkinManager: ObservableObject {
         }
         return baseSkin?.images[key]
     }
+
+    /// The text Winamp shows under the skin list: the skin author's own .txt (readme), not its config files
+    nonisolated public static func skinDescription(of url: URL?) -> String {
+        guard let url else { return "MacAmp base skin v\(AppConstants.App.version) (Winamp base skin v2.91)" }
+        let configFiles: Set<String> = ["pledit.txt", "viscolor.txt", "region.txt", "genex.txt"]
+        var data = Data()
+        if url.hasDirectoryPath {
+            let texts = ((try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)) ?? [])
+                .filter { $0.pathExtension.lowercased() == "txt" && !configFiles.contains($0.lastPathComponent.lowercased()) }
+            data = texts.first.flatMap { try? Data(contentsOf: $0) } ?? Data()
+        } else {
+            let unzip = Process()
+            unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+            // -C: names match without case (README.TXT, Readme.txt...)
+            unzip.arguments = ["-C", "-p", url.path, "*.txt", "-x"] + configFiles.map { "*" + $0 }
+            let pipe = Pipe()
+            unzip.standardOutput = pipe
+            unzip.standardError = FileHandle.nullDevice
+            if (try? unzip.run()) != nil {
+                data = pipe.fileHandleForReading.readDataToEndOfFile()
+                unzip.waitUntilExit()
+            }
+        }
+        // Skin readmes are Windows text: UTF-8 if it decodes, else Windows-1251/1252 via the playlist's repair
+        let text = String(data: data, encoding: .utf8) ?? TextEncoding.repairCyrillic(String(data: data, encoding: .isoLatin1) ?? "")
+        let trimmed = String(text.prefix(4000)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? url.deletingPathExtension().lastPathComponent : trimmed
+    }
 }
+

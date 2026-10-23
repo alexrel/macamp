@@ -37,14 +37,13 @@ public class TrackInfoWindowController: NSWindowController, NSWindowDelegate {
         self.currentTrackIndex = trackIndex
         
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 580, height: 570),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 520),
+            styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
-        window.title = "MPEG Audio Info Box + ID3 Tag Editor"
+        window.title = "MPEG file info box + ID3 tag editor"
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 570, height: 490)
         window.center()
         
         // Ensure Track Info window always stays on top of player windows
@@ -68,7 +67,6 @@ public class TrackInfoWindowController: NSWindowController, NSWindowDelegate {
         self.currentTrackIndex = index
         let track = playlist.tracks[index]
         
-        window?.title = "Track Info - \(track.url.lastPathComponent)"
         Task { @MainActor [weak self] in
             let metadata = await AudioMetadataService.shared.readMetadata(from: track.url)
             // Arrows pressed again while reading: only the latest track is shown
@@ -94,7 +92,10 @@ public class TrackInfoWindowController: NSWindowController, NSWindowDelegate {
             self?.close()
         }))
         
+        // Fixed-size dialog like Winamp's: fit the content (MPEG and non-MPEG layouts differ in height)
+        window?.title = metadata.techInfo.isMPEG ? "MPEG file info box + ID3 tag editor" : "File info box"
         window?.contentView = hostingView
+        window?.setContentSize(hostingView.fittingSize)
     }
     
     private func handleMetadataSaved(_ meta: AudioFileMetadata, at index: Int) {
