@@ -271,7 +271,10 @@ public enum AppConstants {
         public static let defaultBalance: Double = 0.0 // -1.0 (Left) ... 0.0 (Center) ... +1.0 (Right)
         
         public static let supportedExtensions: Set<String> = [
-            "mp3", "flac", "wav", "aiff", "aif", "m4a", "aac", "alac", "ogg", "oga", "opus"
+            "mp3", "flac", "wav", "aiff", "aif", "m4a", "aac", "alac", "ogg", "oga", "opus",
+            "mp2", "mp1", "au", "snd",          // in_mp3 / in_wave formats macOS decodes too
+            "mid", "midi", "rmi", "kar",        // in_midi: rendered with the system General MIDI synth
+            "mp4", "m4v", "mov"                 // video: sound through the engine, picture in the Video window
         ]
         public static let skinExtensions: Set<String> = ["wsz", "zip"]
         public static let playlistExtensions: Set<String> = ["m3u", "m3u8", "pls", "xspf", "cue"] // xspf: VLC's own format
@@ -295,5 +298,24 @@ public enum AppConstants {
         public static let pageUp: UInt16 = 116
         public static let pageDown: UInt16 = 121
         public static let digit3: UInt16 = 20
+        public static let digit1: UInt16 = 18
+        public static let digit2: UInt16 = 19
+        public static let tab: UInt16 = 48
+        public static let f1: UInt16 = 122
+        public static let f4: UInt16 = 118
+        /// Help on Apple keyboards, Insert on PC keyboards
+        public static let insertHelp: UInt16 = 114
+        // Numeric keypad
+        public static let keypad0: UInt16 = 82
+        public static let keypad1: UInt16 = 83
+        public static let keypad2: UInt16 = 84
+        public static let keypad3: UInt16 = 85
+        public static let keypad4: UInt16 = 86
+        public static let keypad5: UInt16 = 87
+        public static let keypad6: UInt16 = 88
+        public static let keypad7: UInt16 = 89
+        public static let keypad8: UInt16 = 91
+        public static let keypad9: UInt16 = 92
+        public static let keypadDecimal: UInt16 = 65
     }
 }

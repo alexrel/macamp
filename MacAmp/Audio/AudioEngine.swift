@@ -191,6 +191,7 @@ public class AudioEngine {
             )
             currentOutputDeviceID = devID
         }
+        silenceIfTestRun()
 
         reinstallMixerTap()
 
@@ -293,11 +294,36 @@ public class AudioEngine {
         engine.prepare()
     }
     
+    /// The file's real bitrate in kbps (MP3 320, FLAC ~900, CD / WAV 1411), as Core Audio reports it; else size / length
+    nonisolated static func fileBitrate(_ url: URL, duration: TimeInterval) -> Int {
+        var fileID: AudioFileID?
+        if AudioFileOpenURL(url as CFURL, .readPermission, 0, &fileID) == noErr, let fileID {
+            defer { AudioFileClose(fileID) }
+            var rate: UInt32 = 0
+            var size = UInt32(MemoryLayout<UInt32>.size)
+            if AudioFileGetProperty(fileID, kAudioFilePropertyBitRate, &size, &rate) == noErr, rate > 0 { return Int(rate / 1000) }
+        }
+        let bytes = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        return duration > 0 && bytes > 0 ? Int(Double(bytes) * 8 / duration / 1000) : 0
+    }
+
+    /// Test runs (./build.sh test sets MACAMP_TEST_HOME) play into a muted output unit: volume, fades and the
+    /// visualizer tap work as usual before it, but nothing reaches the speakers.
+    static let isTestRun = ProcessInfo.processInfo.environment["MACAMP_TEST_HOME"] != nil
+
+    /// Mutes the output unit in test runs; again after every start and device change, which can reset it
+    func silenceIfTestRun() {
+        guard AudioEngine.isTestRun, let unit = engine.outputNode.audioUnit else { return }
+        AudioUnitSetParameter(unit, kHALOutputParam_Volume, kAudioUnitScope_Global, 0, 0, 0)
+    }
+
     @discardableResult
     private func ensureEngineRunning() -> Bool {
+        silenceIfTestRun()
         if engine.isRunning { return true }
         do {
             try engine.start()
+            silenceIfTestRun()
             return true
         } catch {
             print("AudioEngine: Failed to start AVAudioEngine: \(error)")
@@ -500,7 +526,10 @@ public class AudioEngine {
         // Local audio file (a CUE track plays a range of it)
         let localURL = url.withoutPlaybackRange
         let range = url.playbackRange
-        let file = try AVAudioFile(forReading: localURL)
+        // MIDI plays from its rendered audio (rendered once, then cached)
+        let audioURL = MIDIRenderer.isMIDI(localURL) ? try await MIDIRenderer.renderedFile(for: localURL) : localURL
+        guard loadToken == loadGeneration else { throw CancellationError() }
+        let file = try AVAudioFile(forReading: audioURL)
 
         var duration: TimeInterval = 0
         if file.processingFormat.sampleRate > 0 && file.length > 0 {
@@ -527,7 +556,7 @@ public class AudioEngine {
 
         let channels = file.processingFormat.channelCount
         let channelMode: AudioChannelMode = channels > 1 ? .stereo : .mono
-        let approxBitrate = duration > 0 ? Int((Double(file.length * 2 * Int64(channels)) / duration) * 8 / 1000) : 128
+        let bitrate = AudioEngine.fileBitrate(audioURL, duration: duration)
 
         let totalFrames = file.length > 0 ? file.length : AVAudioFramePosition(duration * sampleRate)
         if let range {
@@ -547,7 +576,7 @@ public class AudioEngine {
             title: finalTitle,
             artist: finalArtist,
             duration: duration,
-            bitrate: max(128, min(320, approxBitrate)),
+            bitrate: bitrate,
             sampleRate: Int(sampleRate / 1000),
             audioMode: channelMode
         )
@@ -1244,6 +1273,7 @@ public class AudioEngine {
         }
 
         currentOutputDeviceID = deviceID
+        silenceIfTestRun()
 
         let wasPlaying = (status == .playing)
         let savedTime = currentTime

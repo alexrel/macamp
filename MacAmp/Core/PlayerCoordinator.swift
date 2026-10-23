@@ -25,6 +25,11 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     public var plView: PlaylistWindowView!
     
     public var visualizerStudioWindow: RetroVisualizerWindow?
+    /// Media Library (⌥L), made on first show
+    public var libraryWindow: WinampWindow?
+    /// Video and Minibrowser windows (PlayerCoordinator+Media), made on first use
+    var video: VideoController?
+    var browser: BrowserController?
     
     var cancellables = Set<AnyCancellable>()
     public var isDeminiaturizing: Bool = false
@@ -39,6 +44,10 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     var isStarted = false
     var pendingFinderOpens: [(paths: [String], enqueue: Bool)] = []
     var preMuteVolume: Double = 0.5
+    /// Preferences ▸ Visualization ▸ Refresh rate
+    var visualizerThrottle = VisualizerThrottle()
+    /// Disk Writer run in progress (Play with the Disk Writer output)
+    var diskWriterTask: Task<Void, Never>?
     
     private override init() {
         super.init()
@@ -62,6 +71,10 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         setupBindings()
         restoreState()
         showWindows()
+        if persistence.state.isLibraryVisible { showLibraryWindow(); mainWindow.makeKeyAndOrderFront(nil) }
+        watchForAudioCDs()
+        if persistence.state.isBrowserVisible { browserController.show(); mainWindow.makeKeyAndOrderFront(nil) }
+        if persistence.state.libraryRescanOnStart { Task { await MediaLibrary.shared.rescan() } }
         isStarted = true
         processPendingFinderOpens()
     }
@@ -185,6 +198,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         // 1. Audio Engine Callbacks
         audioEngine.onStatusUpdate = { [weak self] status in
             guard let self else { return }
+            if status == .stopped { self.video?.playbackStopped() }
             self.persistence.state.lastPlaybackState = status
             self.persistence.state.lastPlayedTrackTime = self.audioEngine.currentTime
             if let curIdx = self.playlist.currentIndex, curIdx < self.playlist.tracks.count {
@@ -243,6 +257,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         
         audioEngine.onVisualizerFrame = { [weak self] frame in
             guard let self else { return }
+            let (draw, frames) = self.visualizerThrottle.shouldDraw(at: CACurrentMediaTime(), fps: self.persistence.state.visualizerFPS)
+            guard draw else { return }
+            self.mainView.visualizer.falloffScale = frames
             self.mainView.visualizer.update(from: frame)
             if let studio = self.visualizerStudioWindow, studio.isVisible {
                 studio.updateSpectrum(self.mainView.visualizer.spectrumAmplitudes)
@@ -283,12 +300,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         }
         
         // 2. Transport actions
-        mainView.playButton.action = { [weak self] in self?.handlePlay() }
-        mainView.pauseButton.action = { [weak self] in self?.handlePause() }
-        mainView.stopButton.action = { [weak self] in self?.handleStop() }
-        mainView.prevButton.action = { [weak self] in self?.playPrevious() }
-        mainView.nextButton.action = { [weak self] in self?.playNext() }
-        mainView.ejectButton.action = { [weak self] in self?.openFileDialog() }
+        wireMainWindowControls()
         mainView.onEject = { [weak self] in self?.openFileDialog() }
         mainView.onOpenOptions = { [weak self] in
             guard let self else { return }
@@ -408,12 +420,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         mainView.onToggleVisualizerMode = { [weak self] in self?.cycleVisualizerMode() }
         
         // Time display mode toggle
-        mainView.timeDisplay.onToggleMode = { [weak self] in
-            guard let self else { return }
-            let nextMode: TimeDisplayMode = (self.mainView.timeDisplay.mode == .elapsed) ? .remaining : .elapsed
-            self.mainView.timeDisplay.mode = nextMode
-            self.persistence.state.timeDisplayMode = nextMode
-        }
+        mainView.timeDisplay.onToggleMode = { [weak self] in self?.toggleTimeDisplayMode() }
         
         // Visualizer mode cycle (clicking directly on visualizer view)
         mainView.visualizer.onToggleMode = { [weak self] in self?.cycleVisualizerMode() }
@@ -506,6 +513,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         mainView?.needsDisplay = true
         eqView?.needsDisplay = true
         plView?.needsDisplay = true
+        libraryWindow?.contentView?.needsDisplay = true
+        video?.frameView.needsDisplay = true
+        browser?.frameView.needsDisplay = true
     }
     
     public func refreshAllViews() {

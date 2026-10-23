@@ -39,12 +39,24 @@ extension PlayerCoordinator {
     /// Artist / title to show: the file's tags, except for a CUE track, whose file tags describe the whole
     /// album (the engine then reports none and the sheet's names are kept).
     func trackTags(_ meta: TrackMetadata, for track: TrackItem) -> (artist: String, title: String) {
-        guard track.url.playbackRange != nil else { return (meta.artist, meta.title) }
+        let base = track.url.deletingPathExtension().lastPathComponent
+        // Untagged file (an audio CD's "1 Audio Track.aiff"): keep the name the entry already has (MusicBrainz, playlist file)
+        let untagged = meta.artist.isEmpty && (meta.title == base || meta.title == TrackItem.fileNameTitle(base))
+        let entryNamed = !track.title.isEmpty && track.title != base
+        guard track.url.playbackRange != nil || (untagged && entryNamed) else { return (meta.artist, meta.title) }
         audioEngine.updateCurrentMetadata(title: track.title, artist: track.artist)
         return (track.artist, track.title)
     }
     
     public func loadAndPlay(track: TrackItem) {
+        if AudioCD.isRipping(track.url) {
+            mainView.marquee.showTemporaryMessage(AudioCD.busyMessage, duration: 4)
+            return
+        }
+        if persistence.state.diskWriterEnabled {
+            startDiskWriter(from: track)
+            return
+        }
         if !track.url.isFileURL {
             mainView.marquee.text = "[Connecting...] \(track.title)"
             mainView.marquee.resetScroll()
@@ -53,6 +65,7 @@ extension PlayerCoordinator {
         Task {
             do {
                 let meta = try await audioEngine.load(url: track.url)
+                self.videoTrackLoaded(track.url)
                 await MainActor.run {
                     if let idx = self.playlist.tracks.firstIndex(where: { $0.id == track.id }) {
                         // Follow the playing track, unless the user has scrolled away from the previous one
@@ -77,6 +90,10 @@ extension PlayerCoordinator {
                     self.mainView.timeDisplay.totalDuration = meta.duration
                     self.mainView.timeDisplay.status = .playing
                     self.audioEngine.play()
+                    // Preferences ▸ Plug-ins ▸ "Auto execute visualization plug-in on play"
+                    if self.persistence.state.autoStartVisPlugin && self.visualizerStudioWindow?.isVisible != true {
+                        self.toggleVisualizerStudio()
+                    }
                     self.mainView.needsDisplay = true
                     self.plView.needsDisplay = true
                     MediaKeyController.shared.updateNowPlayingInfo()
@@ -119,6 +136,7 @@ extension PlayerCoordinator {
         Task {
             do {
                 let meta = try await audioEngine.load(url: track.url)
+                self.videoTrackLoaded(track.url)
                 await MainActor.run {
                     let (artist, title) = self.trackTags(meta, for: track)
                     self.playlist.updateTrack(url: track.url, duration: meta.duration, artist: artist, title: title)
