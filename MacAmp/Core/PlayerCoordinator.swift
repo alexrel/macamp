@@ -73,6 +73,11 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         showWindows()
         if persistence.state.isLibraryVisible { showLibraryWindow(); mainWindow.makeKeyAndOrderFront(nil) }
         watchForAudioCDs()
+        PluginConversion.onProgress = { [weak self] url, fraction in
+            let text = "Converting for playback: \(Int(fraction * 100))%"
+            self?.mainView.marquee.showTemporaryMessage(text, duration: 1)
+            if let video = self?.video, VideoController.isVideo(url) { video.frameView.info = "\(url.lastPathComponent): \(text)" }
+        }
         if persistence.state.isBrowserVisible { browserController.show(); mainWindow.makeKeyAndOrderFront(nil) }
         if persistence.state.libraryRescanOnStart { Task { await MediaLibrary.shared.rescan() } }
         isStarted = true

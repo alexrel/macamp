@@ -270,7 +270,9 @@ public enum AppConstants {
         public static let defaultVolume: Double = 0.75
         public static let defaultBalance: Double = 0.0 // -1.0 (Left) ... 0.0 (Center) ... +1.0 (Right)
         
-        public static let supportedExtensions: Set<String> = [
+        /// Everything MacAmp plays: its own formats plus those of installed plug-ins (in_ffmpeg: MKV, WMA, APE...)
+        public static var supportedExtensions: Set<String> { builtInExtensions.union(PluginManager.extensions) }
+        public static let builtInExtensions: Set<String> = [
             "mp3", "flac", "wav", "aiff", "aif", "m4a", "aac", "alac", "ogg", "oga", "opus",
             "mp2", "mp1", "au", "snd",          // in_mp3 / in_wave formats macOS decodes too
             "mid", "midi", "rmi", "kar",        // in_midi: rendered with the system General MIDI synth

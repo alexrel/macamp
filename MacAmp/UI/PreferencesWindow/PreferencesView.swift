@@ -950,10 +950,19 @@ public struct PreferencesView: View {
     @State private var libraryTab = LibraryPrefsTab.general
     
     private var inputSection: some View {
-        Win32GroupBox("Input plug-ins") {
+        // Built-in decoders, then installed plug-ins (Plug-ins folder)
+        let plugins = PluginManager.converters.map { (name: $0.title, formats: $0.extensions.sorted().map { $0.uppercased() }.joined(separator: ", ") + " (converted once for playback)") }
+        let all = PreferencesView.inputPlugins + plugins
+        return Win32GroupBox("Input plug-ins") {
             VStack(alignment: .leading, spacing: 6) {
-                PluginListBox(rows: PreferencesView.inputPlugins.map(\.name), selection: $selectedInput)
-                note("Formats: " + PreferencesView.inputPlugins[selectedInput].formats)
+                PluginListBox(rows: all.map(\.name), selection: $selectedInput)
+                note("Formats: " + all[min(selectedInput, all.count - 1)].formats)
+                HStack(spacing: 8) {
+                    if plugins.isEmpty { note("MKV, WebM, AVI, WMV, WMA, APE, WavPack and more: install the FFmpeg plug-in.") }
+                    Spacer()
+                    Button("Get plug-ins") { NSWorkspace.shared.open(URL(string: "https://github.com/search?q=MacAmp+plug-in")!) }
+                        .buttonStyle(.link).font(.system(size: 11))
+                }
             }
         }
     }

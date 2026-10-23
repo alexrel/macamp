@@ -55,7 +55,8 @@ public final class FileAssociationManager: ObservableObject {
         self.provider = provider
         self.appURL = appURL
         self.bundleIdentifier = bundleIdentifier
-        let audio = AppConstants.Audio.supportedExtensions.subtracting(["alac"]).sorted()
+        // Types MacAmp declares in its Info.plist; plug-in formats play but aren't offered for association
+        let audio = AppConstants.Audio.builtInExtensions.subtracting(["alac"]).sorted()
         self.entries = audio.map { FileTypeEntry(ext: $0, kind: .audio) }
             + AppConstants.Audio.playlistExtensions.sorted().map { FileTypeEntry(ext: $0, kind: .playlist) }
             + [FileTypeEntry(ext: "wsz", kind: .skin)]

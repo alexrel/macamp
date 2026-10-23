@@ -528,6 +528,7 @@ extension PlayerCoordinator {
     
     @objc public func handleStop() {
         stopDiskWriter()
+        PluginConversion.cancelAll()
         audioEngine.stop()
         persistence.state.lastPlaybackState = .stopped
         persistence.state.lastPlayedTrackTime = 0.0

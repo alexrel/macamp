@@ -122,6 +122,22 @@
 				<string>com.apple.quicktime-movie</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string>WinampAudioFile</string>
+			<key>CFBundleTypeName</key>
+			<string>MacAmp Plug-in</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.macamp.plugin</string>
+			</array>
+			<key>LSTypeIsPackage</key>
+			<true/>
+		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
@@ -189,6 +205,27 @@
 				<string>public.m3u-playlist</string>
 				<string>public.pls-playlist</string>
 			</array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+				<string>public.directory</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>MacAmp Plug-in</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.macamp.plugin</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>macampplugin</string>
+				</array>
+			</dict>
 		</dict>
 	</array>
 	<key>UTImportedTypeDeclarations</key>

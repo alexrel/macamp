@@ -129,6 +129,12 @@ public struct AboutView: View {
                 Text("Code: Justin Frankel, Christophe Thibault, Brennan Underwood, Francis Gastellu, Peter Pawlowski\nArt & UI: Steve Gedikian\nIntro voice: JJ McKay (\"Winamp, it really whips the llama's ass!\")\nBaby llama: Allison Saunders\nPCM EQ magic: 4Front Technologies / George Yohng\nMikMod plug-in: Jake Stine\nThe rest O Nullsoft: Tom Pepper, Ryan Geiss, 'Tag' Loomis, Jonathan Ward, Steven Blumenfeld, Chris Amen, Michael 'Mig' Gerard, David Biderman, Simon Gibson, Juman Tang")
                     .font(.system(size: 10))
                     .foregroundColor(Win32Colors.text)
+
+                // The FFmpeg plug-in is LGPL: its notice and where the source is (also inside the plug-in)
+                Text("FFmpeg plug-in (in_ffmpeg): FFmpeg by the FFmpeg developers, LGPL v2.1 or later.\nSource: https://ffmpeg.org — built by MacAmp's scripts/build_ffmpeg_plugin.sh, unmodified.")
+                    .font(.system(size: 10))
+                    .foregroundColor(Win32Colors.text)
+                    .textSelection(.enabled)
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)

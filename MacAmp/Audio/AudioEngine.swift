@@ -527,8 +527,18 @@ public class AudioEngine {
         let localURL = url.withoutPlaybackRange
         let range = url.playbackRange
         // MIDI plays from its rendered audio (rendered once, then cached)
-        // MIDI plays from its rendering, a video from the audio track picked in the Video window
-        let audioURL = MIDIRenderer.isMIDI(localURL) ? try await MIDIRenderer.renderedFile(for: localURL) : (VideoTracks.audioOverride(for: localURL) ?? localURL)
+        // MIDI plays from its rendering, a video from the audio track picked in the Video window,
+        // MKV / WMA / APE... from what the converter plug-in made of them
+        let audioURL: URL
+        if let chosen = VideoTracks.audioOverride(for: localURL) {
+            audioURL = chosen
+        } else if MIDIRenderer.isMIDI(localURL) {
+            audioURL = try await MIDIRenderer.renderedFile(for: localURL)
+        } else if PluginConversion.needsConversion(localURL) {
+            audioURL = try await PluginConversion.convert(localURL)
+        } else {
+            audioURL = localURL
+        }
         guard loadToken == loadGeneration else { throw CancellationError() }
         let file = try AVAudioFile(forReading: audioURL)
 

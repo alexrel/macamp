@@ -8,13 +8,18 @@ import VideoToolbox
 @MainActor
 final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
     nonisolated static let extensions: Set<String> = ["mp4", "m4v", "mov"]
-    nonisolated static func isVideo(_ url: URL) -> Bool { url.isFileURL && extensions.contains(url.pathExtension.lowercased()) }
+    nonisolated static func isVideo(_ url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        return url.isFileURL && (extensions.contains(ext) || PluginManager.videoExtensions.contains(ext))
+    }
 
     let window: WinampWindow
     let frameView: MediaWindowFrameView
     private let surface = VideoSurfaceView()
     let player = AVPlayer()
     private(set) var currentURL: URL?
+    /// What AVFoundation reads: the file itself, or its conversion by the FFmpeg plug-in (MKV, AVI...)
+    private var assetURL: URL?
     private(set) var naturalSize: CGSize?
     private var syncTimer: Timer?
     private var openedAutomatically = false
@@ -77,7 +82,8 @@ final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
     func trackLoaded(_ url: URL) {
         guard VideoController.isVideo(url) else { return clear(closeIfAuto: true) }
         Task { @MainActor in
-            let asset = AVURLAsset(url: url)
+            let readable = PluginConversion.cachedOutput(for: url) ?? url
+            let asset = AVURLAsset(url: readable)
             guard let track = try? await asset.loadTracks(withMediaType: .video).first else { return clear(closeIfAuto: true) }
             let name = url.deletingPathExtension().lastPathComponent
             // The sound plays through the engine either way; say so when macOS can't draw the picture
@@ -92,6 +98,7 @@ final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
             let shown = size.applying(transform)
             naturalSize = CGSize(width: abs(shown.width), height: abs(shown.height))
             currentURL = url
+            assetURL = readable
             let item = AVPlayerItem(asset: asset)
             item.add(legibleOutput)
             player.replaceCurrentItem(with: item)
@@ -107,7 +114,7 @@ final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
     }
 
     private func loadTracksAndSubtitles(_ asset: AVURLAsset, _ url: URL) async {
-        audioTracks = await VideoTracks.audioTracks(of: url)
+        audioTracks = await VideoTracks.audioTracks(of: asset.url)
         legibleGroup = try? await asset.loadMediaSelectionGroup(for: .legible)
         let embedded = (legibleGroup?.options ?? []).filter { !$0.hasMediaCharacteristic(.containsOnlyForcedSubtitles) }.map {
             SubtitleChoice(title: $0.displayName, language: $0.extendedLanguageTag ?? $0.locale?.language.languageCode?.identifier, option: $0, file: nil)
@@ -134,7 +141,7 @@ final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
                 VideoTracks.setOverride(nil, for: url)
             } else {
                 frameView.info = "Preparing audio track..."
-                do { VideoTracks.setOverride(try await VideoTracks.extract(track.id, from: url), for: url) } catch {
+                do { VideoTracks.setOverride(try await VideoTracks.extract(track.id, from: assetURL ?? url), for: url) } catch {
                     frameView.info = "[Error] Can't read this audio track: " + error.localizedDescription
                     return
                 }
@@ -206,6 +213,7 @@ final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
         syncTimer = nil
         player.replaceCurrentItem(with: nil)
         currentURL = nil
+        assetURL = nil
         naturalSize = nil
         audioTracks = []
         subtitleChoices = []

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B5AB9B10CB55F59D4EF3548A /* Plugins.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD621A59E72B867B0B60EE3B /* Plugins.swift */; };
 		B2376188569563E98DD4553D /* VideoTracks.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF61533853BFB65F3F708AFB /* VideoTracks.swift */; };
 		5759A2D28D830FC80ADBC870 /* PlayerCoordinator+Media.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E4C8D11110792F911B5870 /* PlayerCoordinator+Media.swift */; };
 		14AA637B7FB36592A71009CB /* BrowserController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4699A0505A4A72CA1CF64C49 /* BrowserController.swift */; };
@@ -99,6 +100,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AD621A59E72B867B0B60EE3B /* Plugins.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Plugins.swift; sourceTree = "<group>"; };
 		EF61533853BFB65F3F708AFB /* VideoTracks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoTracks.swift; sourceTree = "<group>"; };
 		D0E4C8D11110792F911B5870 /* PlayerCoordinator+Media.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayerCoordinator+Media.swift"; sourceTree = "<group>"; };
 		4699A0505A4A72CA1CF64C49 /* BrowserController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserController.swift; sourceTree = "<group>"; };
@@ -281,6 +283,7 @@
 		AA663C1859BC815D98A2CDA6 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				AD621A59E72B867B0B60EE3B /* Plugins.swift */,
 				D0E4C8D11110792F911B5870 /* PlayerCoordinator+Media.swift */,
 				E8357566370DCD4D3E989A3F /* PlayerCoordinator+Library.swift */,
 				AA27AF03ADE54357D783D64D /* AppConstants.swift */,
@@ -583,6 +586,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B5AB9B10CB55F59D4EF3548A /* Plugins.swift in Sources */,
 				B2376188569563E98DD4553D /* VideoTracks.swift in Sources */,
 				5759A2D28D830FC80ADBC870 /* PlayerCoordinator+Media.swift in Sources */,
 				14AA637B7FB36592A71009CB /* BrowserController.swift in Sources */,

@@ -123,12 +123,41 @@ extension PlayerCoordinator {
     /// Turns dropped / opened paths into playlist entries: audio files, folders (recursively), M3U/PLS.
     /// Skins (.wsz/.zip or an unpacked skin folder) are installed and applied instead.
     /// Tags are read off the main thread, so a big folder doesn't freeze the windows.
-    func collectTracks(fromPaths paths: [String]) async -> [TrackItem] {
+    func collectTracks(fromPaths allPaths: [String]) async -> [TrackItem] {
+        // Plug-ins (.macampplugin) are installed, after the user says yes
+        let plugins = allPaths.filter { $0.lowercased().hasSuffix(".macampplugin") }
+        plugins.forEach(confirmAndInstallPlugin)
+        let paths = allPaths.filter { !$0.lowercased().hasSuffix(".macampplugin") }
+        // Formats only a plug-in plays, without that plug-in: say so instead of nothing happening
+        let supported = AppConstants.Audio.supportedExtensions
+        if let missing = paths.map({ URL(fileURLWithPath: $0).pathExtension.lowercased() })
+            .first(where: { PluginManager.ffmpegFormats.contains($0) && !supported.contains($0) }) {
+            mainView?.marquee.showTemporaryMessage("\(missing.uppercased()) files need the FFmpeg plug-in (Preferences ▸ Plug-ins ▸ Input)", duration: 5)
+        }
         let (tracks, skins) = await Task.detached(priority: .userInitiated) {
             await PlayerCoordinator.scanPaths(paths)
         }.value
         skins.forEach(installAndApplySkin)
         return tracks
+    }
+
+    /// Installing a plug-in runs its programs on this Mac, so it asks first (as Winamp's installers did)
+    func confirmAndInstallPlugin(_ path: String) {
+        let url = URL(fileURLWithPath: path)
+        guard let plugin = PluginManager.read(url) else {
+            _ = Win32Dialog.confirm(title: "Install plug-in", message: "\(url.lastPathComponent) isn't a MacAmp plug-in.", confirmTitle: "OK", cancelTitle: "Cancel")
+            return
+        }
+        let formats = plugin.extensions.sorted().map { $0.uppercased() }.joined(separator: ", ")
+        guard Win32Dialog.confirm(title: "Install plug-in",
+                                  message: "Install \(plugin.title)?\n\nIt adds: \(formats).\n\nMacAmp will run the plug-in's programs to convert these files for playback.",
+                                  confirmTitle: "Install", cancelTitle: "Cancel") else { return }
+        do {
+            _ = try PluginManager.install(url)
+            mainView?.marquee.showTemporaryMessage("Plug-in installed: \(plugin.title)", duration: 4)
+        } catch {
+            _ = Win32Dialog.confirm(title: "Install plug-in", message: "Couldn't install it: \(error.localizedDescription)", confirmTitle: "OK", cancelTitle: "Cancel")
+        }
     }
 
     nonisolated static func scanPaths(_ paths: [String]) async -> (tracks: [TrackItem], skins: [URL]) {
