@@ -8,6 +8,9 @@ public struct PlaylistStyle {
     public var normalBGColor: NSColor = NSColor(srgbRed: 0.0, green: 0.0, blue: 0.0, alpha: 1.0)
     public var selectedBGColor: NSColor = NSColor(srgbRed: 0.0, green: 0.0, blue: 0.78, alpha: 1.0)
     public var fontName: String = "Arial"
+    /// Video / Minibrowser info line (pledit.txt MbFG / MbBG); playlist colours when the skin has none
+    public var minibrowserText: NSColor?
+    public var minibrowserBackground: NSColor?
     
     public init() {}
 }

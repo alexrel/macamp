@@ -180,13 +180,41 @@ def patch_winamp_to_macamp(pixels, palette, x_start, y_start):
         # 12. Trailing space at col 42
         pixels[y][x_start + 42] = sp
 
+
+def compose_macamp(pixels, palette, src_x, y_start, segs, dst_x, gap):
+    """
+    Writes MACAMP over a WINAMP whose letters sit at src_x + segs[letter] = (offset, width), using that
+    bitmap's own M, A and P glyphs (VIDEO.BMP and MB.BMP use other letter widths than TITLEBAR.BMP).
+    The word starts at dst_x with `gap` background columns between letters; the old word is cleared first.
+    """
+    order = ["M", "A", "C", "A", "M", "P"]
+    width = sum(5 if l == "C" else segs[l][1] for l in order) + gap * (len(order) - 1)
+    for r in range(6):
+        y = y_start + r
+        glyph = {l: [pixels[y][src_x + segs[l][0] + i] for i in range(segs[l][1])] for l in ("M", "A", "P")}
+        sp = pixels[y][src_x - 1]
+        text = sorted(set(glyph["M"] + glyph["A"] + glyph["P"]) - {sp}, key=lambda idx: sum(palette[idx]), reverse=True)
+        hi = text[0]
+        sh = text[1] if len(text) > 1 else hi
+        bv = text[2] if len(text) > 2 else sh
+        glyph["C"] = [[sp, bv, hi, hi, sh], [bv, hi, bv, sp, hi], [hi, hi, sp, sp, sp], [hi, hi, sp, sp, sp],
+                      [bv, hi, bv, sp, hi], [sp, bv, hi, hi, sh]][r]
+        for x in range(min(src_x, dst_x), max(src_x + 39, dst_x + width)):
+            pixels[y][x] = sp
+        x = dst_x
+        for l in order:
+            for v in glyph[l]:
+                pixels[y][x] = v
+                x += 1
+            x += gap
+
 def main():
     orig_src = "webamp-master/packages/webamp/assets/skins/base-2.91"
     base_dir = "skin/base-2.91"
     
     # Restore pristine bitmaps from reference if available to guarantee idempotency
     if os.path.isdir(orig_src):
-        for fname in ["TITLEBAR.BMP", "EQMAIN.BMP", "PLEDIT.BMP"]:
+        for fname in ["TITLEBAR.BMP", "EQMAIN.BMP", "PLEDIT.BMP", "VIDEO.BMP", "MB.BMP"]:
             src = os.path.join(orig_src, fname)
             dst = os.path.join(base_dir, fname)
             if os.path.isfile(src):
@@ -221,7 +249,20 @@ def main():
     with open(pl_path, "wb") as f:
         f.write(encode_bmp(w, h, pal, px))
         
-    # 4. Repack base-2.91.wsz archives
+    # 4. VIDEO.BMP ("WINAMP VIDEO") and MB.BMP ("WINAMP BROWSER"): active title at y 5, inactive at y 26
+    for fname, src_x, segs, dst_x, gap in [
+        ("VIDEO.BMP", 41, {"M": (25, 7), "A": (18, 6), "P": (33, 6)}, 39, 1),
+        ("MB.BMP", 32, {"M": (24, 8), "A": (18, 6), "P": (33, 6)}, 32, 0),
+    ]:
+        path = os.path.join(base_dir, fname)
+        print(f"Patching {path}...")
+        w, h, pal, px = decode_bmp(path)
+        for y in (5, 26):
+            compose_macamp(px, pal, src_x, y, segs, dst_x, gap)
+        with open(path, "wb") as f:
+            f.write(encode_bmp(w, h, pal, px))
+
+    # 5. Repack base-2.91.wsz archives
     wsz_destinations = [
         "skin/base-2.91.wsz",
         "MacAmp/base-2.91.wsz",

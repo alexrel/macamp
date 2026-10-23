@@ -1,8 +1,10 @@
 import Cocoa
 import Foundation
 import AVFoundation
+import CoreMedia
 import Network
 import UniformTypeIdentifiers
+import SwiftUI
 @testable import MacAmp
 
 /// Test groups run on the main thread, where the app's UI and coordinator live.
@@ -406,9 +408,11 @@ testGroup("Retro Visualizer Studio & Presets") {
     assertEqual(presets[3].title, "Matrix Digital Rain", "Preset 3 title matches")
     assertEqual(presets[4].title, "Solar Radial Orb", "Preset 4 title matches")
     
-    // Test WindowID enum cases: only main, equalizer, playlist
+    // Dockable Winamp windows: main, equalizer, playlist and the Media Library
     let windowIDs = WindowID.allCases
-    assertEqual(windowIDs.count, 3, "Only 3 main windows should exist in WindowID")
+    assertEqual(windowIDs, [.main, .equalizer, .playlist, .library, .video, .browser], "Dockable windows")
+    assertTrue(WindowID.library.keepsOwnSize && WindowID.playlist.keepsOwnSize && !WindowID.main.keepsOwnSize,
+               "Playlist and Library keep their size in Double Size mode, like Winamp")
     assertTrue(windowIDs.contains(.main), "WindowID contains .main")
     assertTrue(windowIDs.contains(.equalizer), "WindowID contains .equalizer")
     assertTrue(windowIDs.contains(.playlist), "WindowID contains .playlist")
@@ -533,11 +537,10 @@ testGroup("AudioDeviceManager & Output Hotplugging") {
     
     // 5. Preferences View Model & Tree Item integration
     assertTrue(PrefTreeItem.allCases.contains(.output), "PrefTreeItem should include .output")
-    assertEqual(PrefTreeItem.output.sectionHeader, "Audio", "Output sectionHeader must be 'Audio'")
+    assertEqual(PrefTreeItem.output.parent, .plugins, "Output devices live under Plug-ins ▸ Output")
     
     let vm = PreferencesViewModel()
     vm.selectedTreeItem = .output
-    assertEqual(vm.selectedCategory, .audio, "Category for .output should be .audio")
     assertTrue(!vm.availableOutputDevices.isEmpty, "PreferencesViewModel should populate available devices")
     vm.selectOutputDevice(uid: nil)
     assertEqual(vm.selectedAudioOutputDeviceUID, nil, "PreferencesViewModel selects System Default")
@@ -1841,7 +1844,7 @@ testGroup("Bookmarks") {
     let empty = coordinator.buildBookmarksMenu()
     assertEqual(empty.items.last?.title, "(no bookmarks)", "Empty list shows (no bookmarks) like Winamp")
     assertTrue(empty.items.last?.isEnabled == false, "(no bookmarks) is disabled")
-    assertEqual(PrefTreeItem.bookmarks.sectionHeader, "Playlist", "Bookmarks page sits in Preferences ▸ Playlist")
+    assertTrue(PrefTreeItem.bookmarks.parent == nil, "Bookmarks is a top-level page, as in 2.95")
 }
 
 testGroup("Crossfade Between Tracks") {
@@ -2061,6 +2064,797 @@ testGroup("ID3v1 '?' Placeholders") {
     assertEqual(meta.id3v2.artist, "Dolphin", "Real v1 text is still copied")
     assertEqual(meta.id3v2.year, "1997", "Year copied")
     assertEqual(meta.id3v2.trackNumber, "1/10", "Track 0 in v1 keeps the v2 track")
+}
+
+testGroup("Winamp 2.95 Menus and Shortcuts") {
+    let c = PlayerCoordinator.shared
+    if c.mainView == nil { c.start() }
+    func titles(_ menu: NSMenu) -> [String] { menu.items.map { $0.isSeparatorItem ? "-" : $0.title } }
+    func sub(_ menu: NSMenu, _ title: String) -> NSMenu { menu.items.first { $0.title == title }!.submenu! }
+    @MainActor func key(_ chars: String, _ mods: NSEvent.ModifierFlags, keyCode: UInt16 = 0) -> Bool {
+        let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: mods, timestamp: 0, windowNumber: 0, context: nil,
+                                     characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: keyCode)!
+        return c.handleKeyDown(event)
+    }
+
+    // Order and names as in docs/UI-screens/menu*.png
+    let menu = c.buildWinampMenu()
+    assertEqual(titles(menu), ["MacAmp...", "-", "Play", "View file info", "Bookmarks", "-", "Main Window", "Playlist Editor", "Equalizer",
+                               "Library", "Minibrowser", "Video", "-", "Options", "Playback", "Visualization", "Skins", "-", "Exit"], "Main menu order")
+    assertEqual(Array(titles(sub(menu, "Play")).prefix(4)), ["File...", "Location...", "Directory...", "-"], "Play menu")
+    assertTrue(titles(sub(menu, "Play")).contains("Bookmark"), "Play ▸ Bookmark")
+    assertEqual(titles(sub(menu, "Options")), ["Preferences...", "Skins", "-", "Time elapsed (⌃T toggles)", "Time remaining (⌃T toggles)", "-",
+                                               "Always On Top", "Double Size", "EasyMove", "-", "Repeat", "Shuffle", "-", "Audio Output"],
+                "Options menu (Audio Output = MacAmp addition at the end)")
+    assertEqual(titles(sub(menu, "Playback")), ["Previous", "Play", "Pause", "Stop", "Next", "-", "Stop w/ fadeout", "Stop after current",
+                                                "Back 5 seconds", "Fwd 5 seconds", "Start of list", "10 tracks back", "10 tracks fwd", "-",
+                                                "Jump to time", "Jump to file"], "Playback menu")
+    assertEqual(titles(sub(menu, "Visualization")), ["Visualization options...", "-", "Start/Stop plug-in", "Configure plug-in...", "Select plug-in..."], "Visualization menu")
+    let skins = titles(sub(menu, "Skins"))
+    assertEqual(Array(skins.prefix(3)), ["Skin Browser...", "-", "<Base Skin>"], "Skins menu starts like 2.95")
+    assertTrue(skins.contains("<< Get more skins! >>"), "Get more skins")
+    let mainWindowItem = menu.items.first { $0.title == "Main Window" }!
+    assertEqual(mainWindowItem.keyEquivalent, "w", "Main Window shows ⌥W")
+    assertEqual(mainWindowItem.keyEquivalentModifierMask, [.option], "Main Window shows ⌥W")
+
+    // Shortcuts shown in the menu work with the menu closed
+    let mode = c.mainView.timeDisplay.mode
+    assertTrue(key("t", [.control]), "⌃T handled")
+    assertTrue(c.mainView.timeDisplay.mode != mode, "⌃T toggles elapsed / remaining")
+    _ = key("t", [.control])
+    let easy = PersistenceManager.shared.state.easyMove
+    assertTrue(key("e", [.control]) && PersistenceManager.shared.state.easyMove != easy, "⌃E toggles EasyMove")
+    _ = key("e", [.control])
+    let eqOn = c.mainView.eqToggle.isOn
+    assertTrue(key("g", [.option]) && c.mainView.eqToggle.isOn != eqOn, "⌥G toggles the equalizer")
+    _ = key("g", [.option])
+    assertTrue(key("w", [.option]) && c.mainWindow.isVisible == false, "⌥W hides the main window")
+    assertTrue(key("w", [.option]) && c.mainWindow.isVisible, "⌥W shows it again")
+
+    // Start of list, 10 tracks back / fwd (clamped at the ends)
+    let wav = try makeTestWAV(named: "menu-jump.wav", seconds: 3.0)
+    let saved = c.playlist.tracks
+    defer { c.audioEngine.stop(); c.playlist.clear(); c.playlist.add(tracks: saved) }
+    c.playlist.clear()
+    c.playlist.add(tracks: (0..<15).map { TrackItem(url: wav, title: "t\($0)", duration: 3) })
+    c.playlist.currentIndex = 3
+    c.handleTenTracksForward()
+    assertTrue(spinRunLoop(until: { c.playlist.currentIndex == 13 }, timeout: 3), "10 tracks fwd: 3 -> 13")
+    c.handleTenTracksForward()
+    assertTrue(spinRunLoop(until: { c.playlist.currentIndex == 14 }, timeout: 3), "10 tracks fwd stops at the last track")
+    c.handleTenTracksBack()
+    assertTrue(spinRunLoop(until: { c.playlist.currentIndex == 4 }, timeout: 3), "10 tracks back: 14 -> 4")
+    assertTrue(key("z", [.control]), "⌃Z handled")
+    assertTrue(spinRunLoop(until: { c.playlist.currentIndex == 0 }, timeout: 3), "⌃Z: start of list")
+
+    // Playlist item menu (docs/UI-screens/playlist item menu.png)
+    let pl = c.plView!
+    let rowPoint = pl.convert(NSPoint(x: 40, y: AppConstants.Playlist.Layout.topBarHeight + 4), to: nil)
+    let click = NSEvent.mouseEvent(with: .rightMouseDown, location: rowPoint, modifierFlags: [], timestamp: 0,
+                                   windowNumber: pl.window!.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+    let itemMenu = pl.menu(for: click)!
+    assertEqual(titles(itemMenu), ["Play item(s)", "-", "Remove item(s)", "Crop files", "-", "File info", "Playlist entry", "Bookmark item(s)"],
+                "Playlist item menu order")
+    assertEqual(PlayerCoordinator.mountedAudioCDs().filter { !FileManager.default.fileExists(atPath: $0.appendingPathComponent(".TOC.plist").path) }, [],
+                "Only volumes with a CD table of contents count as audio CDs")
+}
+
+testGroup("Track Info: Winamp 2.95 Single Screen") {
+    // "?" placeholders that broken taggers leave in ID3v1 instead of Cyrillic
+    assertTrue(ID3v1Tag.isPlaceholder("?????") && ID3v1Tag.isPlaceholder("?? ? ??????"), "'?' runs are placeholders")
+    assertTrue(!ID3v1Tag.isPlaceholder("Dolphin") && !ID3v1Tag.isPlaceholder("") && !ID3v1Tag.isPlaceholder("Why? Because"), "Real text is not")
+
+    // Frame count like Winamp's "56kbit, 205 frames"
+    var tech = AudioTechnicalInfo()
+    tech.duration = 5.0; tech.sampleRate = 22050; tech.samplesPerFrame = 576 // MPEG 2.0 layer 3
+    assertEqual(tech.frameCount, 191, "Frames = length x rate / samples per frame")
+    tech.samplesPerFrame = 0
+    assertEqual(tech.frameCount, 0, "No MPEG header: no frame count")
+
+    // MP3 shows ID3v1 + MPEG info; other formats only the tag group, and the box fits its content
+    var mp3 = AudioFileMetadata(url: URL(fileURLWithPath: "/tmp/x.mp3"))
+    mp3.techInfo.isMPEG = true
+    let flac = AudioFileMetadata(url: URL(fileURLWithPath: "/tmp/x.flac"))
+    func fitting(_ meta: AudioFileMetadata) -> NSSize {
+        let host = NSHostingView(rootView: TrackInfoView(viewModel: TrackInfoViewModel(metadata: meta)))
+        return host.fittingSize
+    }
+    let mp3Size = fitting(mp3), flacSize = fitting(flac)
+    assertTrue(mp3Size.width >= 600 && mp3Size.height > 380 && mp3Size.height < 520, "MP3 box is compact like 2.95 (\(mp3Size))")
+    assertTrue(flacSize.height <= mp3Size.height, "Non-MP3 box has no ID3v1 group (\(flacSize))")
+
+    // The ID3v2 genre arrow shows no text, but its list must still name every genre (was a list of blank rows)
+    var genre = "Rock"
+    let arrow = Win32ComboBox(selection: Binding(get: { genre }, set: { genre = $0 }),
+                              options: ID3Genre.allGenres.map { (value: $0, title: $0) }, width: 20, label: "")
+    let list = arrow.buildMenu()
+    assertEqual(list.items.count, ID3Genre.allGenres.count, "Every genre listed")
+    assertTrue(list.items.allSatisfy { !$0.title.isEmpty }, "No blank rows in the genre list")
+    assertEqual(list.items.first { $0.state == .on }?.title, "Rock", "Current genre checked")
+}
+
+testGroup("Preferences Tree as in Winamp 2.95") {
+    assertEqual(PrefTreeItem.topLevel.map(\.title), ["Setup", "Options", "Plug-ins", "Skins", "Bookmarks"], "Top-level nodes, each a page")
+    assertEqual(PrefTreeItem.setup.children.map(\.title), ["File types", "Agent"], "Setup children")
+    assertEqual(PrefTreeItem.options.children.map(\.title), ["Display", "Visualization", "Shuffle", "Video", "Library", "CD Ripping"], "Options children, as in 2.95")
+    assertEqual(PrefTreeItem.plugins.children.map(\.title), ["Input", "Output", "Visualization", "DSP/Effect", "General Purpose"], "Plug-ins children")
+    // Every page renders
+    let vm = PreferencesViewModel()
+    for item in PrefTreeItem.allCases {
+        vm.selectedTreeItem = item
+        let host = NSHostingView(rootView: PreferencesView(viewModel: vm))
+        host.frame = NSRect(x: 0, y: 0, width: 560, height: 440)
+        host.layoutSubtreeIfNeeded()
+        assertTrue(host.fittingSize.width > 0, "\(item.title) page renders")
+    }
+
+    // Options ▸ Convert %20 / underscore (titles that are file names)
+    let state = PersistenceManager.shared.state
+    defer { PersistenceManager.shared.state.convertPercent20 = state.convertPercent20; PersistenceManager.shared.state.convertUnderscore = state.convertUnderscore }
+    PersistenceManager.shared.state.convertPercent20 = true
+    PersistenceManager.shared.state.convertUnderscore = true
+    assertEqual(TrackItem.displayName(artist: "", title: "My_Song%20Live"), "My Song Live", "File-name titles get spaces")
+    assertEqual(TrackItem.displayName(artist: "AC_DC", title: "Back_In"), "AC_DC - Back_In", "Tagged titles are left alone")
+    PersistenceManager.shared.state.convertUnderscore = false
+    assertEqual(TrackItem.displayName(artist: "", title: "My_Song%20Live"), "My_Song Live", "Underscore conversion can be turned off")
+}
+
+testGroup("Winamp 2.95 Hotkeys: Playlist, Equalizer, Keypad") {
+    let c = PlayerCoordinator.shared
+    if c.mainView == nil { c.start() }
+    let saved = c.playlist.tracks
+    defer { c.audioEngine.stop(); c.playlist.clear(); c.playlist.add(tracks: saved) }
+    @MainActor func names() -> [String] { c.playlist.tracks.map(\.title) }
+    c.playlist.clear()
+    c.playlist.add(tracks: ["c", "a", "e", "b", "d"].map { TrackItem(url: URL(fileURLWithPath: "/tmp/\($0).mp3"), title: $0) })
+
+    // ⌥↑ / ⌥↓ move the selection with the current track
+    c.playlist.selectedIndices = [1, 2]
+    c.playlist.currentIndex = 2
+    let pl = c.plView!
+    assertTrue(pl.handlePlaylistKey(keyCode: AppConstants.KeyCodes.upArrow, characters: "", flags: [.option]), "⌥↑ handled")
+    assertEqual(names(), ["a", "e", "c", "b", "d"], "⌥↑ moves the selected block up")
+    assertEqual(c.playlist.selectedIndices, [0, 1], "Selection follows")
+    assertEqual(c.playlist.currentTrack?.title, "e", "Current track follows")
+    _ = pl.handlePlaylistKey(keyCode: AppConstants.KeyCodes.upArrow, characters: "", flags: [.option])
+    assertEqual(names(), ["a", "e", "c", "b", "d"], "Already at the top: nothing moves")
+    _ = pl.handlePlaylistKey(keyCode: AppConstants.KeyCodes.downArrow, characters: "", flags: [.option])
+    assertEqual(names(), ["c", "a", "e", "b", "d"], "⌥↓ moves it back down")
+
+    // Sorting and order keys
+    assertTrue(pl.handlePlaylistKey(keyCode: AppConstants.KeyCodes.digit1, characters: "!", flags: [.control, .shift]), "⌃⇧1 handled")
+    assertEqual(names(), ["a", "b", "c", "d", "e"], "⌃⇧1 sorts by title")
+    _ = pl.handlePlaylistKey(keyCode: 15, characters: "r", flags: [.control])
+    assertEqual(names(), ["e", "d", "c", "b", "a"], "⌃R reverses")
+    c.playlist.selectedIndices = [0]
+    _ = pl.handlePlaylistKey(keyCode: 34, characters: "i", flags: [.control])
+    assertEqual(c.playlist.selectedIndices, [1, 2, 3, 4], "⌃I inverts the selection")
+
+    // Equalizer keys
+    let eq = c.eqView!
+    let band = eq.bandSliders[0].value, lowBand = eq.bandSliders[9].value, preamp = eq.preampSlider.value
+    assertTrue(eq.handleEqualizerKey(characters: "1", keyCode: 18, flags: []), "1 handled in the equalizer")
+    assertEqual(eq.bandSliders[0].value, min(12, band + 1), "1 raises the 60 Hz band")
+    _ = eq.handleEqualizerKey(characters: "p", keyCode: 35, flags: [])
+    assertEqual(eq.bandSliders[9].value, max(-12, lowBand - 1), "P lowers the 16 kHz band")
+    _ = eq.handleEqualizerKey(characters: "`", keyCode: 50, flags: [])
+    assertEqual(eq.preampSlider.value, min(12, preamp + 1), "` raises the preamp")
+    _ = eq.handleEqualizerKey(characters: "\t", keyCode: AppConstants.KeyCodes.tab, flags: [])
+    assertEqual(eq.preampSlider.value, preamp, "Tab lowers it again")
+    let eqOn = eq.onToggle.isOn
+    _ = eq.handleEqualizerKey(characters: "n", keyCode: 45, flags: [])
+    assertTrue(eq.onToggle.isOn != eqOn, "N toggles the equalizer")
+    _ = eq.handleEqualizerKey(characters: "n", keyCode: 45, flags: [])  // back on
+    // Put the curve back as it was
+    for (slider, value) in [(eq.bandSliders[0], band), (eq.bandSliders[9], lowBand)] {
+        slider.value = value
+        slider.onValueChanged?(value)
+    }
+    assertTrue(!eq.handleEqualizerKey(characters: "x", keyCode: 7, flags: []), "Other keys fall through to playback (X = Play)")
+
+    // Keypad
+    let wav = try makeTestWAV(named: "keypad.wav", seconds: 3.0)
+    c.playlist.clear()
+    c.playlist.add(tracks: (0..<12).map { TrackItem(url: wav, title: "k\($0)", duration: 3) })
+    c.playlist.currentIndex = 0
+    assertTrue(c.handleWinampGlobalKey(keyCode: AppConstants.KeyCodes.keypad3, flags: [.numericPad]), "Num 3 handled")
+    assertTrue(spinRunLoop(until: { c.playlist.currentIndex == 10 }, timeout: 3), "Num 3: ten tracks forward")
+    assertTrue(c.handleWinampGlobalKey(keyCode: AppConstants.KeyCodes.keypad6, flags: [.numericPad]), "Num 6 handled")
+    assertTrue(spinRunLoop(until: { c.playlist.currentIndex == 11 }, timeout: 3), "Num 6: next track")
+    assertTrue(!c.handleWinampGlobalKey(keyCode: 0, flags: []), "Plain A isn't a global key")
+}
+
+testGroup("Winamp 2.95 Main Window Controls and Small Options") {
+    let c = PlayerCoordinator.shared
+    if c.mainView == nil { c.start() }
+    func items(_ view: WinampControlView) -> [String] {
+        (view.contextMenuProvider?().items ?? []).map { $0.attributedTitle?.string ?? $0.title }
+    }
+    // Right-click menus of the transport buttons, as in 2.95 (strings from winamp.exe)
+    assertEqual(items(c.mainView.prevButton), ["Previous\t(Click)", "Start of list\t(⌃Click)", "Rewind 5 seconds\t(⇧Click)"], "Previous button menu")
+    assertEqual(items(c.mainView.stopButton), ["Stop\t(Click)", "Stop w/ fadeout\t(⇧Click)", "Stop after current\t(⌃Click)"], "Stop button menu")
+    assertEqual(items(c.mainView.nextButton), ["Next\t(Click)", "Fastforward 5 seconds\t(⇧Click)", "End of list\t(⌃Click)"], "Next button menu")
+    assertEqual(items(c.mainView.ejectButton), ["Open file...\t(Click)", "Open directory...\t(⇧Click)", "Open location...\t(⌃Click)"], "Eject button menu")
+    assertEqual(items(c.mainView.timeDisplay), ["Time elapsed\t(⌃T toggles)", "Time remaining\t(⌃T toggles)"], "Time display menu")
+    assertEqual(items(c.mainView.marquee).last, "Autoscroll songname", "Song title menu ends with Autoscroll songname")
+
+    // Tooltips and title dimming switches
+    let state = PersistenceManager.shared.state
+    defer {
+        PersistenceManager.shared.state.mainWindowTooltips = state.mainWindowTooltips
+        PersistenceManager.shared.state.dimTitlebars = state.dimTitlebars
+        c.applyMainWindowTooltips()
+    }
+    PersistenceManager.shared.state.mainWindowTooltips = true
+    c.applyMainWindowTooltips()
+    assertEqual(c.mainView.prevButton.toolTip, "Previous", "Tooltip on")
+    PersistenceManager.shared.state.mainWindowTooltips = false
+    c.applyMainWindowTooltips()
+    assertTrue(c.mainView.prevButton.toolTip == nil, "Tooltips off")
+    PersistenceManager.shared.state.dimTitlebars = false
+    assertTrue(c.mainView.drawsActiveTitleBar, "No dimming: title bar always drawn active")
+
+    // Shuffle morph rate: same tracks every pass; slow keeps most of the order, fast reshuffles
+    let ids = (0..<50).map { _ in UUID() }
+    let fast = PlaylistModel.morphedOrder(ids, rate: 1)
+    assertEqual(Set(fast), Set(ids), "Fast pass has every track once")
+    let slow = PlaylistModel.morphedOrder(ids, rate: 0)
+    assertEqual(Set(slow), Set(ids), "Slow pass has every track once")
+    let unchanged = zip(slow, ids).filter { $0 == $1 }.count
+    assertTrue(unchanged >= 48, "Slow morph: a slight variation (\(unchanged)/50 in place)")
+
+    // End of list (⌃-click Next)
+    let wav = try makeTestWAV(named: "endlist.wav", seconds: 3.0)
+    let saved = c.playlist.tracks
+    defer { c.audioEngine.stop(); c.playlist.clear(); c.playlist.add(tracks: saved) }
+    c.playlist.clear()
+    c.playlist.add(tracks: (0..<5).map { TrackItem(url: wav, title: "e\($0)", duration: 3) })
+    c.playlist.currentIndex = 0
+    c.handleEndOfList()
+    assertTrue(spinRunLoop(until: { c.playlist.currentIndex == 4 }, timeout: 3), "End of list plays the last track")
+}
+
+testGroup("Formats: MP2, AU, MIDI") {
+    let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("fixtures")
+    let engine = AudioEngine.shared
+    defer { engine.stop() }
+    AudioDeviceManager.shared.selectDevice(uid: nil)
+    engine.setOutputDevice(deviceID: AudioDeviceManager.shared.defaultDevice?.id)
+    for file in ["tone.mp2", "tone.au"] {
+        let url = fixtures.appendingPathComponent(file)
+        assertTrue(AppConstants.Audio.supportedExtensions.contains(url.pathExtension), "\(file) is a supported extension")
+        let meta = try loadSync(engine, url)
+        assertTrue(abs(meta.duration - 1) < 0.1, "\(file) plays in the engine (\(meta.duration) s)")
+    }
+
+    // MIDI: length without rendering; rendered once with the GM synth, then reused
+    let mid = fixtures.appendingPathComponent("tune.mid")
+    assertTrue(MIDIRenderer.isMIDI(mid), "Recognised as MIDI")
+    assertTrue(abs(MIDIRenderer.duration(of: mid) - (2.0 + MIDIRenderer.tail)) < 0.05, "MIDI length from the sequence, release tail included (\(MIDIRenderer.duration(of: mid)))")
+    let cached = try MIDIRenderer.cacheURL(for: mid)
+    try? FileManager.default.removeItem(at: cached)
+    let rendered = awaitValue { (try? await MIDIRenderer.renderedFile(for: mid)) ?? mid }
+    assertEqual(rendered, cached, "Rendered into the cache")
+    let audio = try AVAudioFile(forReading: rendered)
+    let seconds = Double(audio.length) / audio.processingFormat.sampleRate
+    assertTrue(abs(seconds - (2.0 + MIDIRenderer.tail)) < 0.1, "Rendered length = music + release tail (\(seconds))")
+    let buffer = AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: AVAudioFrameCount(audio.length))!
+    try audio.read(into: buffer)
+    let peak = (0..<Int(buffer.frameLength)).reduce(Float(0)) { max($0, abs(buffer.floatChannelData![0][$1])) }
+    assertTrue(peak > 0.05, "The synth produced sound (peak \(peak))")
+    let stamp = try FileManager.default.attributesOfItem(atPath: cached.path)[.modificationDate] as? Date
+    _ = awaitValue { (try? await MIDIRenderer.renderedFile(for: mid)) ?? mid }
+    assertEqual(try FileManager.default.attributesOfItem(atPath: cached.path)[.modificationDate] as? Date, stamp, "Second play reuses the cache")
+    let rmi = fixtures.appendingPathComponent("tune.rmi")
+    assertEqual(MIDIRenderer.duration(of: rmi), MIDIRenderer.duration(of: mid), "RIFF-wrapped .rmi unwraps to the same music")
+
+    var finished = 0
+    let savedFinished = engine.onPlaybackFinished
+    defer { engine.onPlaybackFinished = savedFinished }
+    engine.onPlaybackFinished = { finished += 1 }
+    let meta = try loadSync(engine, mid)
+    assertTrue(abs(meta.duration - (2.0 + MIDIRenderer.tail)) < 0.1, "Engine plays the rendered MIDI (\(meta.duration) s)")
+    engine.play()
+    assertTrue(spinRunLoop(until: { finished == 1 }, timeout: 6), "MIDI plays to the end")
+    let item = awaitValue { await TrackItem.create(from: mid) }
+    assertTrue(abs(item.duration - meta.duration) < 0.05, "Playlist and time display show the same MIDI length")
+}
+
+testGroup("Disk Writer (out_disk)") {
+    let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("fixtures")
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/diskwriter", isDirectory: true)
+    try? FileManager.default.removeItem(at: folder)
+    let wav = try makeTestWAV(named: "dw-source.wav", seconds: 2.0)
+    func length(_ url: URL) throws -> Double {
+        let f = try AVAudioFile(forReading: url)
+        return Double(f.length) / f.processingFormat.sampleRate
+    }
+    for format in DiskWriterFormat.allCases {
+        let out = awaitValue { try? await DiskWriter.write(TrackItem(url: wav, title: "Song", artist: "Band"), to: folder, format: format) }
+        assertTrue(out?.lastPathComponent.hasPrefix("Band - Song") == true, "\(format): named Artist - Title (\(out?.lastPathComponent ?? "-"))")
+        assertEqual(out?.pathExtension, format.fileExtension, "\(format): extension")
+        let seconds = out.flatMap { try? length($0) } ?? 0
+        assertTrue(abs(seconds - 2.0) < 0.1, "\(format): readable, 2 s long (\(seconds))")
+    }
+    let names = (try FileManager.default.contentsOfDirectory(atPath: folder.path)).sorted()
+    assertTrue(names.contains("Band - Song (2).m4a"), "Never overwrites: second .m4a gets (2) (\(names))")
+    assertTrue(!names.contains { $0.contains("partial") }, "No partial files left")
+
+    // A CUE track writes only its range; MIDI writes the rendered music
+    let cueTrack = TrackItem(url: wav.withPlaybackRange(start: 0.5, end: 1.5), title: "Middle")
+    let cueOut = awaitValue { try? await DiskWriter.write(cueTrack, to: folder, format: .wav) }
+    assertTrue(abs(((try? length(cueOut!)) ?? 0) - 1.0) < 0.02, "CUE track: just its 1 s range")
+    let midOut = awaitValue { try? await DiskWriter.write(TrackItem(url: fixtures.appendingPathComponent("tune.mid"), title: "Tune"), to: folder, format: .flac) }
+    assertTrue(abs(((try? length(midOut!)) ?? 0) - (2.0 + MIDIRenderer.tail)) < 0.1, "MIDI written from its rendering")
+
+    // Play with the Disk Writer as output writes the playlist from the selected track on, no sound
+    let c = PlayerCoordinator.shared
+    if c.mainView == nil { c.start() }
+    let state = PersistenceManager.shared.state
+    let saved = c.playlist.tracks
+    defer {
+        PersistenceManager.shared.state.diskWriterEnabled = state.diskWriterEnabled
+        PersistenceManager.shared.state.diskWriterFolderStorage = state.diskWriterFolderStorage
+        c.playlist.clear(); c.playlist.add(tracks: saved)
+    }
+    let runFolder = folder.appendingPathComponent("run")
+    PersistenceManager.shared.state.diskWriterEnabled = true
+    PersistenceManager.shared.state.diskWriterFolder = runFolder
+    PersistenceManager.shared.state.diskWriterFormat = .wav
+    c.playlist.clear()
+    c.playlist.add(tracks: ["One", "Two", "Three"].map { TrackItem(url: wav, title: $0) })
+    c.loadAndPlay(track: c.playlist.tracks[1])
+    assertTrue(spinRunLoop(until: { c.diskWriterTask == nil && (try? FileManager.default.contentsOfDirectory(atPath: runFolder.path).count) == 2 }, timeout: 10),
+               "Play wrote Two and Three (from the selected track to the end)")
+    assertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: runFolder.path)), ["Two.wav", "Three.wav"], "Files named after the tracks")
+    assertEqual(c.audioEngine.status, .stopped, "Nothing played through the speakers")
+}
+
+testGroup("RLE Skin Bitmaps (GEN.BMP rows)") {
+    // ImageIO shifted rows after RLE skip codes; MacAmp decodes RLE8 / RLE4 itself
+    let wsz = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("MacAmp/Resources/base-2.91.wsz")
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/rle", isDirectory: true)
+    try? FileManager.default.removeItem(at: dir)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let unzip = Process()
+    unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+    unzip.arguments = ["-q", "-o", wsz.path, "GEN.BMP", "-d", dir.path]
+    try unzip.run(); unzip.waitUntilExit()
+    let data = try Data(contentsOf: dir.appendingPathComponent("GEN.BMP"))
+    guard let image = BMPDecoder.decodeRLE(data) else { throw NSError(domain: "test", code: 1) }
+    assertEqual(image.width, 194, "GEN.BMP width")
+    let rep = NSBitmapImageRep(cgImage: image)
+    func rgb(_ x: Int, _ y: Int) -> [Int] { var p = [Int](repeating: 0, count: 4); rep.getPixel(&p, atX: x, y: y); return Array(p.prefix(3)) }
+    let cyan = [0, 198, 255]
+    assertTrue(rgb(130, 85) != cyan && rgb(130, 85) != [0, 0, 0], "Bottom fill's last row is at y 85 (\(rgb(130, 85)))")
+    assertEqual(rgb(3, 94), [41, 41, 64], "Active letters end at y 94 (frame colour)")
+    assertEqual(rgb(3, 102), [41, 41, 64], "Inactive letters end at y 102")
+    assertEqual(rgb(3, 95), rgb(193, 0), "Gap row between the letter strips is background")
+    assertTrue(BMPDecoder.decodeRLE(Data("not a bitmap".utf8)) == nil, "Non-RLE data goes to ImageIO")
+}
+
+testGroup("Test runs are silent") {
+    assertTrue(AudioEngine.isTestRun, "Runner sets MACAMP_TEST_HOME")
+    let engine = AudioEngine.shared
+    defer { engine.stop() }
+    _ = try loadSync(engine, try makeTestWAV(named: "silent.wav", seconds: 0.5))
+    engine.play()
+    var gain: AudioUnitParameterValue = 1
+    if let unit = engine.engineOutputUnit { AudioUnitGetParameter(unit, kHALOutputParam_Volume, kAudioUnitScope_Global, 0, &gain) }
+    assertEqual(gain, 0, "Output unit muted while tests play")
+    assertTrue(engine.volume > 0, "Player volume itself untouched")
+}
+
+testGroup("Video and Minibrowser windows") {
+    let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("fixtures")
+    let clip = fixtures.appendingPathComponent("clip.mp4")
+    assertTrue(VideoController.isVideo(clip) && !VideoController.isVideo(fixtures.appendingPathComponent("tone.mp2")), "Video by extension")
+    assertTrue(AppConstants.Audio.supportedExtensions.contains("mp4"), "MP4 is playable")
+    // The engine plays the movie's sound (so EQ, visualizer and seeking work as for any track)
+    let engine = AudioEngine.shared
+    defer { engine.stop() }
+    let meta = try loadSync(engine, clip)
+    assertTrue(abs(meta.duration - 2) < 0.1, "Movie sound loads in the engine (\(meta.duration) s)")
+
+    // Window sizes: video + frame (11 + 8, 20 + 38), never below 275 × 116
+    let insets = NSEdgeInsets(top: 20, left: 11, bottom: 38, right: 8)
+    let video = CGSize(width: 320, height: 240)
+    assertEqual(VideoController.windowSize(video: video, zoom: .normal, insets: insets), NSSize(width: 339, height: 298), "Normal size")
+    assertEqual(VideoController.windowSize(video: video, zoom: .double, insets: insets), NSSize(width: 659, height: 538), "Double size")
+    assertEqual(VideoController.windowSize(video: video, zoom: .half, insets: insets), NSSize(width: 275, height: 178), "Half size keeps the minimum width")
+
+    // A loaded video file gives the window its picture and size
+    PersistenceManager.shared.state.videoAutoOpen = false
+    let controller = VideoController(rect: NSRect(x: 0, y: 0, width: 275, height: 232))
+    controller.trackLoaded(clip)
+    _ = spinRunLoop(until: { controller.naturalSize != nil }, timeout: 5)
+    assertEqual(controller.naturalSize, CGSize(width: 160, height: 120), "Video size read from the file")
+    assertTrue(controller.frameView.info.hasPrefix("clip"), "Info line names the video")
+    assertEqual(VideoController.fourCC(kCMVideoCodecType_H264), "avc1", "Codec names for the info line")
+    assertEqual(VideoController.fourCC(kCMVideoCodecType_VP9), "vp09", "VP9 (YouTube) named")
+    controller.trackLoaded(fixtures.appendingPathComponent("tone.mp2"))
+    assertTrue(controller.naturalSize == nil && controller.player.currentItem == nil, "An audio track clears the picture")
+    PersistenceManager.shared.state.videoAutoOpen = true
+
+    // Both frames come from the skin (the loader has to read VIDEO.BMP and MB.BMP)
+    SkinManager.shared.resetToBaseSkin()
+    assertTrue(SkinManager.shared.sheet("VIDEO") != nil && SkinManager.shared.sheet("MB") != nil, "VIDEO.BMP and MB.BMP loaded")
+    // Frame: five 15 px buttons in the bottom bar
+    let frame = MediaWindowFrameView(sheet: "VIDEO", content: NSView())
+    frame.frame = NSRect(x: 0, y: 0, width: 275, height: 232)
+    assertEqual(frame.buttonRect(0), NSRect(x: 9, y: 203, width: 15, height: 18), "First button")
+    assertEqual(frame.buttonRect(4).minX, 69, "Menu button")
+    // The ▼ menu opens upward from its button: its bottom edge on the button's top, left edges aligned
+    let menu = NSMenu(); menu.addItem(withTitle: "Fullscreen", action: nil, keyEquivalent: "")
+    let origin = frame.menuOrigin(menu, button: 4)
+    assertEqual(origin, NSPoint(x: 69, y: 203 - menu.size.height), "Menu sits on top of the ▼ button")
+
+    // Minibrowser
+    assertEqual(BrowserController.address(from: "skins.webamp.org")?.absoluteString, "https://skins.webamp.org", "Typed address gets https")
+    assertEqual(BrowserController.address(from: "http://example.com/a")?.absoluteString, "http://example.com/a", "Full address kept")
+    assertTrue(BrowserController.isMedia(URL(string: "https://example.com/stream.mp3")!), "Audio link plays in MacAmp")
+    assertTrue(BrowserController.isMedia(URL(string: "http://example.com/radio.pls")!), "Playlist link plays in MacAmp")
+    assertTrue(!BrowserController.isMedia(URL(string: "https://example.com/page.html")!), "Pages stay in the browser")
+    assertTrue(BrowserController.startPage.contains("radio-browser.info") && BrowserController.startPage.contains("skins.webamp.org"), "Start page links")
+
+    // Back returns to the start page (it has its own address, macamp://start)
+    let browser = BrowserController(rect: NSRect(x: 0, y: 0, width: 350, height: 348))
+    @MainActor func settle() { _ = spinRunLoop(until: { MainActor.assumeIsolated { !browser.webView.isLoading } }, timeout: 10); _ = spinRunLoop(until: { false }, timeout: 0.3) }
+    settle()
+    assertEqual(browser.webView.url, BrowserController.startURL, "Start page loads at macamp://start")
+    browser.webView.load(URLRequest(url: URL(string: "data:text/html,<p>elsewhere</p>")!))
+    settle()
+    assertTrue(browser.webView.canGoBack, "History has the start page")
+    browser.webView.goBack()
+    settle()
+    assertEqual(browser.webView.url, BrowserController.startURL, "Back reaches the start page")
+    assertEqual(browser.frameView.info, "MacAmp Minibrowser", "Info line on the start page")
+    let html = awaitValue { (try? await browser.webView.evaluateJavaScript("document.body.innerText")) as? String ?? "" }
+    assertTrue(html.contains("Welcome to the Minibrowser"), "Start page content is back")
+    // A page's own player (a radio site's play button) hands the stream to MacAmp
+    var handed: URL?
+    browser.onMedia = { handed = $0 }
+    browser.webView.loadHTMLString("<audio src='http://radio.example/stream.mp3'></audio>", baseURL: nil)
+    settle()
+    // The play event a click on the page's player fires (a script can't start audio: WebKit wants a real click)
+    _ = awaitValue { _ = try? await browser.webView.evaluateJavaScript("document.querySelector('audio').dispatchEvent(new Event('play')); 1"); return 1 }
+    _ = spinRunLoop(until: { handed != nil }, timeout: 5)
+    assertEqual(handed?.absoluteString, "http://radio.example/stream.mp3", "Page audio goes to the player")
+    let paused = awaitValue { (try? await browser.webView.evaluateJavaScript("document.querySelector('audio').paused")) as? Bool ?? false }
+    assertTrue(paused, "The page itself stays silent")
+    var blob: URL?
+    browser.onMedia = { blob = $0 }
+    _ = awaitValue { _ = try? await browser.webView.evaluateJavaScript("var a = document.querySelector('audio'); a.src = 'blob:https://youtube.example/1'; a.dispatchEvent(new Event('play')); 1"); return 1 }
+    _ = spinRunLoop(until: { false }, timeout: 0.3)
+    assertTrue(blob == nil, "Streams a page builds itself (blob:) stay in the page")
+    assertTrue(BrowserController.startPage.contains("macamp://radio"), "Start page radio link opens the Library")
+    assertTrue(BrowserController.isInterruption(NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)), "-999 is not shown as an error")
+    assertTrue(!BrowserController.isInterruption(NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet)), "Real errors are")
+}
+
+testGroup("Media Library: Skinned Lists (gen_ml)") {
+    typealias Item = SkinnedListController.Item
+    let items = [("All (3)", "3"), ("Zemfira", "10"), ("air", "9"), ("Кино", "4:58"), ("Air", "10:01")].enumerated().map {
+        Item(id: AnyHashable($0.offset), values: [$0.element.0, $0.element.1], url: nil)
+    }
+    func order(_ column: Int?, _ ascending: Bool, pinned: Bool = false) -> [String] {
+        SkinnedListController.sorted(items, column: column, ascending: ascending, pinsFirstRow: pinned).map { $0.values[0] }
+    }
+    assertEqual(order(nil, true), ["All (3)", "Zemfira", "air", "Кино", "Air"], "No sort column: order given")
+    assertEqual(order(0, true, pinned: true), ["All (3)", "air", "Air", "Zemfira", "Кино"], "\"All\" row stays on top; ties keep their order")
+    assertEqual(order(0, false, pinned: true).first, "All (3)", "Pinned row on top when descending too")
+    assertEqual(SkinnedListController.sorted(Array(items.dropFirst()), column: 1, ascending: true, pinsFirstRow: false).map { $0.values[1] },
+                ["4:58", "9", "10", "10:01"], "Numbers and times compare as numbers")
+
+    // Header clicks: same column reverses, another column keeps the direction (ml_local)
+    let c = SkinnedListController(columns: [.init(title: "A", width: 50, alignment: .left), .init(title: "B", width: 50, alignment: .left)],
+                                  autosave: "Test.\(UUID().uuidString)", defaultSort: "A")
+    assertEqual(c.sortColumn, 0, "Default sort column")
+    c.clickedHeader(0)
+    assertTrue(c.sortColumn == 0 && !c.ascending, "Same column: reversed")
+    c.clickedHeader(1)
+    assertTrue(c.sortColumn == 1 && !c.ascending, "Other column: keeps the direction")
+
+    // Base skin leaves the list selection colours unset: they follow the playlist selection, as in wa_dlg.h
+    SkinManager.shared.resetToBaseSkin()
+    let theme = GenexTheme.current
+    assertEqual(theme.ns(.selectionBackground), theme.ns(.playlistSelection), "Selection bar falls back to the playlist selection")
+    assertEqual(theme.ns(.selectionText), theme.ns(.windowText), "Selection text falls back to window text")
+}
+
+testGroup("Settings from older versions still load") {
+    // A session.json saved before any of this release's settings existed: every new setting must be optional,
+    // or the whole file fails to decode and MacAmp would start (and then save) with default settings
+    var old = try JSONSerialization.jsonObject(with: JSONEncoder().encode(AppState())) as! [String: Any]
+    for key in old.keys where key.hasSuffix("Storage") || ["skinsDirectoryPath"].contains(key) { old.removeValue(forKey: key) }
+    old["isShuffle"] = true
+    let decoded = try? JSONDecoder().decode(AppState.self, from: JSONSerialization.data(withJSONObject: old))
+    assertTrue(decoded != nil, "A session without the new settings decodes")
+    assertEqual(decoded?.isShuffle, true, "and keeps the user's settings")
+    // Settings that must be present in every session.json: frozen at 1.0. A new setting needs the
+    // `...Storage: T?` pattern, or old sessions stop loading (this list then no longer matches)
+    let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(AppState())) as! [String: Any]
+    let required = Set(encoded.keys.filter { !$0.hasSuffix("Storage") && $0 != "skinsDirectoryPath" })
+    let frozen: Set<String> = ["audioFadeOutDurationMs", "authenticShuffle", "autoGenreEQ", "balance", "desktopFontFamily", "desktopFontSize",
+        "dspPitchSemitones", "dspPlaybackRate", "dspReverbMix", "dspReverbPreset", "eqBandsDb", "isAlwaysOnTop", "isDspEnabled", "isEqAuto",
+        "isEqEnabled", "isEqWindowShade", "isEqWindowVisible", "isGlobalHotkeysEnabled", "isMainWindowShade", "isMarqueeScrollEnabled",
+        "isPlaylistShade", "isPlaylistVisible", "isRepeat", "isShuffle", "lastPlaybackState", "lastPlayedTrackTime", "marqueeFontMode",
+        "playlistShowExtensions", "playlistWindowSize", "playlistZeroPadding", "preampDb", "scaleFactor", "showNumbersInPlaylist",
+        "showTrackNumberInTitle", "timeDisplayMode", "visualizerMode", "visualizerShowPeaks", "volume", "windowPositions", "windowSnapDistance"]
+    assertEqual(required.subtracting(frozen).sorted(), [], "New settings are optional (`...Storage: T?`)")
+    // And a session with only those keys loads
+    let minimal = encoded.filter { frozen.contains($0.key) }
+    assertTrue((try? JSONDecoder().decode(AppState.self, from: JSONSerialization.data(withJSONObject: minimal))) != nil, "A 1.0 session.json loads")
+}
+
+testGroup("Real bitrate in the kbps field") {
+    let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("fixtures")
+    let wav = try makeTestWAV(named: "bitrate.wav", seconds: 1.0)
+    let pcm = AudioEngine.fileBitrate(wav, duration: 1.0)
+    assertTrue(pcm >= 700, "16-bit PCM WAV is not clamped to 320 (\(pcm) kbps)")
+    let mp2 = AudioEngine.fileBitrate(fixtures.appendingPathComponent("tone.mp2"), duration: 1.0)
+    assertTrue(mp2 > 0 && mp2 <= 384, "MP2 keeps its coded bitrate (\(mp2) kbps)")
+    assertEqual(String(String(format: "%3d", 1411).prefix(3)), "141", "Four digits cut to the 3-character field")
+    assertEqual(String(String(format: "%3d", 96).prefix(3)), " 96", "Short rates right-aligned")
+}
+
+testGroup("Library preferences (2.95 General / Internet Radio)") {
+    let state = AppState()
+    assertTrue(!state.libraryRememberSearch && state.libraryPlayWholePlaylist && !state.libraryPlayWholeQuery, "2.95 defaults (General)")
+    assertTrue(state.libraryOnLightningBolt && state.libraryTVButtonOpensVideo, "Bolt and TV button open the Library")
+    assertEqual(state.radioRefreshHours, 1, "Radio list refreshes hourly")
+    assertEqual(MainWindowView.lightningBolt, NSRect(x: 253, y: 91, width: 13, height: 15), "Lightning bolt hit area")
+    // Station list cache: fresh, too old, "Never"
+    let json = #"[{"stationuuid":"u1","name":"Cached FM","url_resolved":"http://example.com/s","tags":"rock","bitrate":128,"clickcount":5,"codec":"MP3"}]"#
+    let stations = try JSONDecoder().decode([RadioStation].self, from: Data(json.utf8))
+    RadioDirectory.cache(stations, search: "", genre: "rock", bandwidth: .any, limit: 500)
+    assertEqual(RadioDirectory.cachedStations(search: "", genre: "rock", bandwidth: .any, limit: 500, maxAgeHours: 1)?.first?.name, "Cached FM", "Fresh cache used")
+    let file = RadioDirectory.cacheURL(search: "", genre: "rock", bandwidth: .any, limit: 500)
+    try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-2 * 3600)], ofItemAtPath: file.path)
+    assertTrue(RadioDirectory.cachedStations(search: "", genre: "rock", bandwidth: .any, limit: 500, maxAgeHours: 1) == nil, "Hourly: a 2 h old list is fetched again")
+    assertTrue(RadioDirectory.cachedStations(search: "", genre: "rock", bandwidth: .any, limit: 500, maxAgeHours: 24) != nil, "Daily: still good")
+    assertTrue(RadioDirectory.cachedStations(search: "", genre: "rock", bandwidth: .any, limit: 500, maxAgeHours: 0) != nil, "Never: any age")
+    assertTrue(RadioDirectory.cachedStations(search: "", genre: "jazz", bandwidth: .any, limit: 500, maxAgeHours: 0) == nil, "Each filter has its own list")
+}
+
+testGroup("File types: Associate with audio CDs") {
+    assertTrue(!AppState().playInsertedAudioCDs, "Off by default: inserting a CD doesn't start MacAmp playback")
+    // A volume that isn't an audio CD is ignored even with the option on
+    let before = PlayerCoordinator.shared.playlist.tracks.count
+    PersistenceManager.shared.state.playInsertedAudioCDs = true
+    PlayerCoordinator.shared.audioCDMounted(FileManager.default.temporaryDirectory)
+    PersistenceManager.shared.state.playInsertedAudioCDs = false
+    assertEqual(PlayerCoordinator.shared.playlist.tracks.count, before, "Data volumes don't touch the playlist")
+}
+
+testGroup("Visualization refresh rate") {
+    // Analysis frames every 1/43 s for 10 s, drawn at the chosen rate on average
+    for fps in [35.0, 20.0, 10.0] {
+        var throttle = VisualizerThrottle()
+        var drawn = 0
+        var frames: Float = 0
+        for i in 0..<430 {
+            let (draw, n) = throttle.shouldDraw(at: Double(i) / 43, fps: fps)
+            if draw { drawn += 1; frames += n }
+        }
+        assertTrue(abs(Double(drawn) / 10 - fps) <= 1.5, "\(Int(fps)) fps chosen, \(Double(drawn) / 10) drawn")
+        assertTrue(abs(frames - 430) < 20, "Falloff still covers every analysis frame (\(frames))")
+    }
+    var full = VisualizerThrottle()
+    assertTrue((0..<43).allSatisfy { full.shouldDraw(at: Double($0) / 43, fps: 43).draw }, "At the analysis rate every frame draws")
+    assertEqual(AppState().visualizerFPS, 35, "2.95 default")
+}
+
+testGroup("Preferences ▸ Skins (2.95 page)") {
+    assertTrue(SkinManager.skinDescription(of: nil).contains("base skin"), "Base skin described")
+    // A skin archive with its author's readme and a config .txt
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/skins-\(UUID().uuidString)", isDirectory: true)
+    let src = dir.appendingPathComponent("src", isDirectory: true)
+    try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+    try "Cool Skin v1.0 by Someone".write(to: src.appendingPathComponent("README.TXT"), atomically: true, encoding: .utf8)
+    try "[Text]\nNormal=#00FF00".write(to: src.appendingPathComponent("pledit.txt"), atomically: true, encoding: .utf8)
+    let skin = dir.appendingPathComponent("Cool.wsz")
+    let zip = Process()
+    zip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+    zip.currentDirectoryURL = src
+    zip.arguments = ["-q", skin.path, "README.TXT", "pledit.txt"]
+    try zip.run(); zip.waitUntilExit()
+    assertEqual(SkinManager.skinDescription(of: skin), "Cool Skin v1.0 by Someone", "Description is the skin's readme, not its config")
+    // "Set skins directory...": the list comes from that folder
+    let previous = PersistenceManager.shared.state.skinsDirectoryPath
+    PersistenceManager.shared.state.skinsDirectoryPath = dir.path
+    assertEqual(SkinManager.shared.installedSkins().map(\.lastPathComponent), ["Cool.wsz"], "Skins listed from the chosen folder")
+    PersistenceManager.shared.state.skinsDirectoryPath = previous
+}
+
+testGroup("About: Keyboard shortcuts tab") {
+    let all = AboutShortcuts.sections.flatMap(\.rows)
+    assertEqual(AboutShortcuts.sections.count, 7, "2.95 sections plus Library and Video")
+    for keys in ["⌥L", "⌥T", "⌥V", "⌃Tab", "F1", "⌥3"] { assertTrue(all.contains { $0.keys == keys || $0.keys.hasPrefix(keys + " ") }, "\(keys) listed") }
+    assertTrue(!all.contains { $0.keys.contains("Ctrl") || $0.keys.contains("Alt+") }, "Mac notation only")
+}
+
+testGroup("Shuffle: launch returns to the last track (2.91)") {
+    // What restoreState does: shuffle on first, then the saved playlist, then the saved index
+    let pl = PlaylistModel()
+    pl.isShuffle = true
+    pl.add(tracks: (0..<20).map { TrackItem(url: URL(fileURLWithPath: "/m/\($0).mp3"), title: "T\($0)", duration: 60) })
+    pl.currentIndex = 13
+    assertEqual(pl.currentTrack?.title, "T13", "The track playing at quit is current again")
+    let next = pl.next()
+    assertTrue(next != nil && next?.title != "T13", "Next moves on in the shuffle")
+    assertEqual(pl.previous()?.title, "T13", "Previous comes back to it")
+}
+
+testGroup("Shuffle: Previous after picking a track") {
+    let pl = PlaylistModel()
+    pl.add(tracks: (0..<8).map { TrackItem(url: URL(fileURLWithPath: "/m/\($0).mp3"), title: "T\($0)", duration: 60) })
+    pl.isShuffle = true
+    let first = pl.next()!, second = pl.next()!, third = pl.next()!
+    // Pick an unplayed track, then Previous: back to the one that was playing
+    let unplayed = pl.tracks.first { ![first.id, second.id, third.id].contains($0.id) }!
+    pl.currentIndex = pl.tracks.firstIndex { $0.id == unplayed.id }
+    assertEqual(pl.previous()?.id, third.id, "Previous after picking an unplayed track")
+    // Pick a track from the history (played earlier), then Previous: back to the one that was playing
+    _ = pl.next() // unplayed again
+    pl.currentIndex = pl.tracks.firstIndex { $0.id == first.id }
+    assertEqual(pl.previous()?.id, unplayed.id, "Previous after picking an already played track")
+}
+
+testGroup("Audio CD: Disc ID, MusicBrainz, Ripping") {
+    // Real MusicBrainz disc (Air - Moon Safari)
+    let offsets = [150, 32344, 54804, 75002, 91984, 111389, 123113, 141227, 157807, 183275]
+    assertEqual(AudioCD.discID(first: 1, last: 10, leadout: 197363, offsets: offsets), "0x8vKwUf5D5BZmJpUrvw.hB02js-", "MusicBrainz Disc ID")
+
+    // .TOC.plist: LBA starts (track 1 at 0) get the 150-sector lead-in; the data track of an enhanced CD is left out
+    let plist: [String: Any] = ["Sessions": [
+        ["Session Number": 1, "First Track": 1, "Last Track": 2, "Leadout Block": 30000,
+         "Track Array": [["Point": 1, "Start Block": 0, "Data": false], ["Point": 2, "Start Block": 15000, "Data": false]]],
+        ["Session Number": 2, "First Track": 3, "Last Track": 3, "Leadout Block": 90000,
+         "Track Array": [["Point": 3, "Start Block": 41400, "Data": true]]]]]
+    let toc = AudioCD.parseTOC(plist)
+    assertEqual(toc?.offsets ?? [], [150, 15150], "Offsets with lead-in")
+    assertEqual(toc?.leadout ?? 0, 30150, "Lead-out of the audio session")
+    assertEqual(toc?.last ?? 0, 2, "Data track left out")
+
+    // A fake disc folder: two tracks plus the TOC
+    let disc = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/FakeCD", isDirectory: true)
+    try? FileManager.default.removeItem(at: disc)
+    try FileManager.default.createDirectory(at: disc, withIntermediateDirectories: true)
+    let src = try makeTestWAV(named: "cd-src.wav", seconds: 1.0)
+    for n in 1...2 { try FileManager.default.copyItem(at: src, to: disc.appendingPathComponent("\(n) Audio Track.wav")) }
+    try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: disc.appendingPathComponent(".TOC.plist"))
+    guard var cd = AudioCD(volume: disc) else { assertTrue(false, "Fake CD readable"); return }
+    assertEqual(cd.tracks.map(\.title), ["Track 1", "Track 2"], "Untitled tracks")
+    assertEqual(cd.tracks.first?.length ?? 0, 200, "Track length from the TOC (15000 / 75)")
+
+    // MusicBrainz answer (trimmed): the medium with this disc's ID, track artists with join phrases
+    let mb = """
+    {"releases":[{"title":"Moon Safari","date":"1998-01-19","artist-credit":[{"name":"Air","joinphrase":""}],
+      "media":[{"discs":[{"id":"\(cd.discID)"}],"tracks":[
+        {"position":1,"title":"La Femme d’argent","artist-credit":[{"name":"Air","joinphrase":""}]},
+        {"position":2,"title":"All I Need","artist-credit":[{"name":"Air","joinphrase":" feat. "},{"name":"Beth Hirsch","joinphrase":""}]}]}]}]}
+    """
+    cd = cd.applying(musicBrainz: Data(mb.utf8))
+    assertEqual([cd.artist, cd.album, cd.year], ["Air", "Moon Safari", "1998"], "Album from MusicBrainz")
+    assertEqual(cd.tracks.map(\.title), ["La Femme d’argent", "All I Need"], "Track names")
+    assertEqual(cd.tracks.last?.artist, "Air feat. Beth Hirsch", "Track artist with join phrase")
+    assertEqual(cd.applying(musicBrainz: Data("{}".utf8)).album, "Moon Safari", "Unknown answer keeps what we have")
+
+    // Naming template
+    assertEqual(cd.ripName(for: cd.tracks[0], template: "<Artist> - <Album>/<#> - <Title>"), "Air - Moon Safari/01 - La Femme d’argent", "Default template")
+    var odd = cd; odd.album = "AC/DC: Live"
+    assertEqual(odd.ripName(for: cd.tracks[0], template: "<album>/<#>"), "AC-DC- Live/01", "Slashes and colons in names never make folders")
+
+    // Rip to FLAC and Apple Lossless, with tags read back
+    let out = disc.deletingLastPathComponent().appendingPathComponent("Ripped", isDirectory: true)
+    try? FileManager.default.removeItem(at: out)
+    for format in [DiskWriterFormat.flac, .alac] {
+        let files = awaitValue { (try? await cd.rip([1, 2], to: out, template: "<Artist> - <Album>/<#> - <Title>", format: format, writeTags: true) { _, _ in })?.written ?? [] }
+        assertEqual(files.map(\.lastPathComponent), ["01 - La Femme d’argent", "02 - All I Need"].map { $0 + "." + format.fileExtension }, "\(format) files")
+        assertEqual(files.first?.deletingLastPathComponent().lastPathComponent, "Air - Moon Safari", "\(format) album folder")
+        guard let file = files.last else { continue }
+        assertTrue((try? AVAudioFile(forReading: file).length) ?? 0 > 40000, "\(format) still decodes after tagging")
+        let meta = awaitValue { await AudioMetadataService.shared.readMetadata(from: file) }
+        assertEqual([meta.id3v2.artist, meta.id3v2.title, meta.id3v2.album], ["Air feat. Beth Hirsch", "All I Need", "Moon Safari"], "\(format) tags")
+        if format == .flac { assertEqual([meta.id3v2.year, meta.id3v2.trackNumber], ["1998", "2/2"], "FLAC year and track number read back") }
+    }
+    assertEqual(PrefTreeItem.cdRipping.parent, .options, "CD Ripping page under Options")
+
+    // A track that can't be read is skipped, the rest of the disc is ripped
+    var damaged = cd
+    damaged.tracks[0] = AudioCD.Track(number: 1, url: disc.appendingPathComponent("missing.aiff"), title: "Gone", artist: "Air", length: 200)
+    let partial = awaitValue { try? await damaged.rip([1, 2], to: out, template: "x/<#>", format: .wav, writeTags: false) { _, _ in } }
+    assertEqual(partial?.written.map(\.lastPathComponent) ?? [], ["02.wav"], "Readable tracks still ripped")
+    assertEqual(partial?.failed ?? [], [1], "Unreadable track reported")
+    // Ripping the same track again replaces the file instead of adding "(2)" copies
+    let again = awaitValue { try? await damaged.rip([2], to: out, template: "x/<#>", format: .wav, writeTags: false) { _, _ in } }
+    assertEqual(again?.written.map(\.lastPathComponent) ?? [], ["02.wav"], "Re-rip keeps the name")
+    let ripped = (try? FileManager.default.contentsOfDirectory(atPath: out.appendingPathComponent("x").path)) ?? []
+    assertEqual(ripped.sorted(), ["02.wav"], "No duplicate or partial files left")
+    // While a disc is ripped, its tracks don't play
+    AudioCD.ripping.insert(disc.standardizedFileURL.path)
+    assertTrue(AudioCD.isRipping(cd.tracks[0].url), "Disc marked as ripping")
+    AudioCD.ripping.removeAll()
+    assertTrue(!AudioCD.isRipping(cd.tracks[0].url), "Disc free again")
+
+    // Playing an untagged CD track keeps its MusicBrainz name; tagged files still show their tags
+    let cdURL = URL(fileURLWithPath: "/Volumes/Moon Safari/1 Audio Track.aiff")
+    let entry = TrackItem(url: cdURL, title: "La Femme d’argent", artist: "Air", duration: 200)
+    func meta(_ title: String, _ artist: String) -> TrackMetadata {
+        TrackMetadata(url: cdURL, title: title, artist: artist, duration: 200, bitrate: 1411, sampleRate: 44100, audioMode: .stereo)
+    }
+    let c = PlayerCoordinator.shared
+    assertEqual(c.trackTags(meta("1 Audio Track", ""), for: entry).title, "La Femme d’argent", "Untagged file keeps the entry's name")
+    assertEqual(c.trackTags(meta("Sexy Boy", "Air"), for: entry).title, "Sexy Boy", "Tags still win")
+}
+
+testGroup("Media Library: Window, Radio, Prefs") {
+    var item = MediaLibraryItem(url: URL(fileURLWithPath: "/Music/a.mp3"), title: "A")
+    item.length = 3725
+    assertEqual(LibraryActions.summary([item]), "1 item [1:02:05]", "Status line: one item, h:mm:ss")
+    item.length = 65
+    assertEqual(LibraryActions.summary([item, item]), "2 items [2:10]", "Status line: m:ss")
+    assertEqual(LibraryActions.summary([]), "0 items [0:00]", "Status line: empty")
+    // Radio Browser JSON (fields MacAmp reads)
+    let json = #"[{"stationuuid":"u1","name":"Radio Paradise","url_resolved":"https://stream.radioparadise.com/mp3-192","tags":"eclectic, rock","bitrate":192,"clickcount":1500,"codec":"MP3","extra":1}]"#
+    let stations = try JSONDecoder().decode([RadioStation].self, from: Data(json.utf8))
+    assertEqual(stations.first?.genre, "eclectic", "Station genre: first tag")
+    assertEqual(stations.first?.streamURL?.host, "stream.radioparadise.com", "Station stream URL")
+    assertEqual(RadioDirectory.Bandwidth.broadband.query.first?.value, "128", "Bandwidth ≥ 128 kbps")
+    assertTrue(RadioDirectory.Bandwidth.any.query.isEmpty, "Bandwidth Any: no filter")
+    // Preferences ▸ Options ▸ Media Library, Window menu, ⌥L, size behaviour
+    assertEqual(PrefTreeItem.library.parent, .options, "Media Library page under Options")
+    assertTrue(WindowID.library.keepsOwnSize, "Library keeps its size at 2x")
+    let state = AppState()
+    assertEqual(state.libraryMaxStreams, 500, "Radio: 500 stations by default")
+    assertTrue(!state.libraryDoubleClickEnqueues && !state.isLibraryVisible, "Double-click plays; library hidden by default")
+}
+
+testGroup("Media Library: Queries, Scanning, Search") {
+    func item(_ artist: String, _ title: String, length: Double = 200, video: Bool = false, path: String = "/Music/x.mp3") -> MediaLibraryItem {
+        var i = MediaLibraryItem(url: URL(fileURLWithPath: path), title: title)
+        i.artist = artist; i.length = length; i.isVideo = video
+        return i
+    }
+    let air = item("Air", "La Femme d'Argent", length: 430, path: "/Music/Air/01.mp3")
+    let airShort = item("Air", "Sexy Boy", length: 298, path: "/Music/Air/02.mp3")
+    let clip = item("Massive Attack", "Teardrop", length: 330, video: true, path: "/Volumes/Video/teardrop.mp4")
+    let all = [air, airShort, clip]
+    func run(_ q: String) throws -> [String] { let query = try LibraryQuery.parse(q); return all.filter(query.matches).map(\.title) }
+    // Winamp's own examples (Add view dialog)
+    assertEqual(try run("type = 0"), ["La Femme d'Argent", "Sexy Boy"], "type = 0: audio")
+    assertEqual(try run("type = 1"), ["Teardrop"], "type = 1: video")
+    assertEqual(try run("type = 0 & artist = \"air\" & length > 360"), ["La Femme d'Argent"], "Audio by Air longer than 360 s")
+    assertEqual(try run("filename BEGINS /Volumes"), ["Teardrop"], "filename BEGINS")
+    assertEqual(try run("title HAS boy | artist LIKE \"mass*\""), ["Sexy Boy", "Teardrop"], "HAS, LIKE with *, OR")
+    assertEqual(try run("!(artist = air)"), ["Teardrop"], "NOT and parentheses")
+    assertEqual(try run(""), ["La Femme d'Argent", "Sexy Boy", "Teardrop"], "Empty query: everything")
+    assertTrue((try? LibraryQuery.parse("colour = red")) == nil, "Unknown field rejected")
+    assertTrue((try? LibraryQuery.parse("artist = \"air")) == nil, "Unterminated quote rejected")
+    assertEqual(MediaLibrary.filter(all, search: "air sexy").map(\.title), ["Sexy Boy"], "Search: every word must match")
+
+    // Scanning a folder, compact, persistence
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/library", isDirectory: true)
+    try? FileManager.default.removeItem(at: dir)
+    try FileManager.default.createDirectory(at: dir.appendingPathComponent("sub"), withIntermediateDirectories: true)
+    let src = try makeTestWAV(named: "lib-src.wav", seconds: 1.0)
+    for name in ["a.wav", "sub/b.wav", "notes.txt"] { try FileManager.default.copyItem(at: src, to: dir.appendingPathComponent(name)) }
+    let store = dir.deletingLastPathComponent().appendingPathComponent("library-test.json")
+    try? FileManager.default.removeItem(at: store)
+    let library = MediaLibrary(storeURL: store)
+    awaitValue { await library.addDirectory(dir) }
+    assertEqual(library.items.map { $0.url.lastPathComponent }.sorted(), ["a.wav", "b.wav"], "Scan finds audio files in subfolders, skips others")
+    assertTrue(library.items.allSatisfy { abs($0.length - 1) < 0.1 }, "Lengths read")
+    assertEqual(library.views.map(\.name), ["Audio", "Video"], "Default views: Local Media ▸ Audio / Video")
+    library.createPlaylist(named: "Mix", tracks: [library.items[0].track])
+    try FileManager.default.removeItem(at: dir.appendingPathComponent("a.wav"))
+    assertEqual(library.compact(), 1, "Compact removes the missing file")
+    let reloaded = MediaLibrary(storeURL: store)
+    assertEqual(reloaded.items.map { $0.url.lastPathComponent }, ["b.wav"], "Library saved and reloaded")
+    assertEqual(reloaded.playlists.map(\.name), ["Mix"], "Playlists saved")
+    assertEqual(reloaded.folders.map(\.lastPathComponent), ["library"], "Folders remembered for rescans")
 }
 
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")
