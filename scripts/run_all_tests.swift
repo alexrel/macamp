@@ -295,8 +295,8 @@ testGroup("ICY Streaming & Metadata Parser") {
     
     session.feedDataForTesting(metaData)
     
-    // Run loop briefly to allow async metadata callback
-    RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    // Wait for the async metadata callback (a fixed 0.05 s was flaky on a busy machine)
+    _ = spinRunLoop(until: { receivedArtist != nil && receivedTitle != nil }, timeout: 3)
     
     assertEqual(session.currentStreamTitle, "Carbon Based Lifeforms - MOS 6581", "StreamTitle should be extracted")
     assertTrue(receivedArtist != nil, "Artist metadata update received")
@@ -2446,6 +2446,71 @@ testGroup("Test runs are silent") {
     assertTrue(engine.volume > 0, "Player volume itself untouched")
 }
 
+testGroup("Video: audio tracks and subtitles (1.1)") {
+    let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("fixtures")
+    let dual = fixtures.appendingPathComponent("dual-audio.mp4")
+    let tracks = awaitValue { await VideoTracks.audioTracks(of: dual) }
+    assertEqual(tracks.map(\.title), ["Russian (AAC, 2 ch)", "English (AAC, 2 ch)"], "Audio tracks listed with language and format")
+
+    // The second track taken out on its own is the 880 Hz one (the first is 440 Hz)
+    func frequency(_ url: URL) throws -> Double {
+        let file = try AVAudioFile(forReading: url)
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))!
+        try file.read(into: buffer)
+        let samples = buffer.floatChannelData![0]
+        var crossings = 0
+        for i in 1..<Int(buffer.frameLength) where (samples[i - 1] < 0) != (samples[i] < 0) { crossings += 1 }
+        return Double(crossings) / 2 / (Double(buffer.frameLength) / file.processingFormat.sampleRate)
+    }
+    let english = awaitValue { try? await VideoTracks.extract(tracks[1].id, from: dual) }
+    assertTrue(english != nil, "Track extracted")
+    if let english { assertTrue(abs(try frequency(english) - 880) < 30, "Extracted track is the English one (\(try frequency(english)) Hz)") }
+    assertTrue(abs(try frequency(dual) - 440) < 30, "The engine's default is the first track")
+    VideoTracks.setOverride(english, for: dual)
+    assertEqual(VideoTracks.audioOverride(for: dual), english, "Engine plays the chosen track")
+    VideoTracks.setOverride(nil, for: dual)
+
+    // SRT: Windows line ends, tags, two-line cues, Windows-1251
+    let srt = "1\r\n00:00:01,000 --> 00:00:02,500\r\n<i>Привет</i>\r\n{\\an8}мир\r\n\r\n2\r\n00:00:03.000 --> 00:00:04,000\r\nПока\r\n"
+    let cues = SRT.parse(srt)
+    assertEqual(cues, [SubtitleCue(start: 1, end: 2.5, text: "Привет\nмир"), SubtitleCue(start: 3, end: 4, text: "Пока")], "SRT parsed")
+    assertEqual(SRT.text(at: 2.0, in: cues), "Привет\nмир", "Cue at a time")
+    assertTrue(SRT.text(at: 2.7, in: cues) == nil, "Nothing between cues")
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/srt-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let film = folder.appendingPathComponent("Film.mp4")
+    try FileManager.default.copyItem(at: dual, to: film)
+    try srt.data(using: .windowsCP1251)!.write(to: folder.appendingPathComponent("Film.ru.srt"))
+    try "1\n00:00:00,500 --> 00:00:01,500\nHello\n".write(to: folder.appendingPathComponent("Film.srt"), atomically: true, encoding: .utf8)
+    try "x".write(to: folder.appendingPathComponent("Other.srt"), atomically: true, encoding: .utf8)
+    let files = SRT.files(for: film)
+    assertEqual(files.map(\.title), ["Russian (.srt)", "Subtitles (.srt)"], "Subtitles next to the video, by name")
+    assertEqual(SRT.load(files[0].url).first?.text, "Привет\nмир", "Windows-1251 subtitles read")
+
+    // In the window: tracks and subtitle choices, embedded subtitles shown as text, the language remembered
+    PersistenceManager.shared.state.videoAutoOpen = false
+    PersistenceManager.shared.state.videoSubtitleLanguage = nil
+    let video = VideoController(rect: NSRect(x: 0, y: 0, width: 275, height: 232))
+    video.trackLoaded(film)
+    _ = spinRunLoop(until: { MainActor.assumeIsolated { !video.subtitleChoices.isEmpty } }, timeout: 5)
+    assertEqual(video.audioTracks.count, 2, "Window knows both audio tracks")
+    assertEqual(video.subtitleChoices.map(\.title), ["Russian", "Russian (.srt)", "Subtitles (.srt)"], "Embedded and .srt subtitles offered")
+    assertTrue(video.currentSubtitle == nil, "Subtitles off by default")
+    video.selectSubtitle(video.subtitleChoices[0])
+    video.player.play()
+    _ = spinRunLoop(until: { MainActor.assumeIsolated { video.subtitleText != nil } }, timeout: 3)
+    video.player.pause()
+    assertTrue(["Привет", "Мир"].contains(video.subtitleText ?? ""), "Embedded subtitle shown as text (\(video.subtitleText ?? "none"))")
+    assertEqual(PersistenceManager.shared.state.videoSubtitleLanguage.map { VideoController.sameLanguage($0, "ru") }, true, "Language remembered")
+    let next = VideoController(rect: NSRect(x: 0, y: 0, width: 275, height: 232))
+    next.trackLoaded(film)
+    _ = spinRunLoop(until: { MainActor.assumeIsolated { next.currentSubtitle != nil } }, timeout: 5)
+    assertTrue(VideoController.sameLanguage(next.currentSubtitle?.language, "ru"), "Next video starts with the same language")
+    PersistenceManager.shared.state.videoSubtitleLanguage = nil
+    PersistenceManager.shared.state.videoAutoOpen = true
+    assertTrue(VideoController.sameLanguage("rus", "ru-RU") && !VideoController.sameLanguage("en", "ru"), "Language codes compared loosely")
+}
+
 testGroup("Video and Minibrowser windows") {
     let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("fixtures")
     let clip = fixtures.appendingPathComponent("clip.mp4")
@@ -2460,9 +2525,17 @@ testGroup("Video and Minibrowser windows") {
     // Window sizes: video + frame (11 + 8, 20 + 38), never below 275 × 116
     let insets = NSEdgeInsets(top: 20, left: 11, bottom: 38, right: 8)
     let video = CGSize(width: 320, height: 240)
-    assertEqual(VideoController.windowSize(video: video, zoom: .normal, insets: insets), NSSize(width: 339, height: 298), "Normal size")
-    assertEqual(VideoController.windowSize(video: video, zoom: .double, insets: insets), NSSize(width: 659, height: 538), "Double size")
-    assertEqual(VideoController.windowSize(video: video, zoom: .half, insets: insets), NSSize(width: 275, height: 178), "Half size keeps the minimum width")
+    assertEqual(VideoController.windowSize(video: video, zoom: .normal, insets: insets).size, NSSize(width: 339, height: 298), "Normal size")
+    assertEqual(VideoController.windowSize(video: video, zoom: .double, insets: insets).size, NSSize(width: 659, height: 538), "Double size")
+    assertEqual(VideoController.windowSize(video: video, zoom: .half, insets: insets).size, NSSize(width: 275, height: 178), "Half size keeps the minimum width")
+    // 1080p on a 1440 × 806 screen: shrunk keeping 16:9, not cut to the screen's shape
+    let hd = VideoController.windowSize(video: CGSize(width: 1920, height: 1080), zoom: .normal, insets: insets, screen: NSSize(width: 1440, height: 806))
+    let picture = CGSize(width: hd.size.width - 19, height: hd.size.height - 58)
+    assertTrue(hd.size.width <= 1440 && hd.size.height <= 806, "Fits the screen")
+    assertTrue(abs(picture.width / picture.height - 16.0 / 9) < 0.01, "Keeps the video's proportions (\(picture))")
+    assertEqual(Int((hd.scale * 100).rounded()), 69, "Real scale shown (69%)")
+    assertEqual(VideoController.windowSize(video: CGSize(width: 1920, height: 1080), zoom: .half, insets: insets, screen: NSSize(width: 1440, height: 806)).size,
+                NSSize(width: 979, height: 598), "Half size of 1080p fits as is")
 
     // A loaded video file gives the window its picture and size
     PersistenceManager.shared.state.videoAutoOpen = false

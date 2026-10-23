@@ -174,6 +174,9 @@ public struct AppState: Codable {
     /// Skins ▸ "Set skins directory..." (nil: Application Support/MacAmp/Skins)
     public var skinsDirectoryPath: String? = nil
 
+    /// Video ▸ Subtitles: the language picked last, picked again in the next video (nil: subtitles off)
+    public var videoSubtitleLanguage: String? = nil
+
     /// Options ▸ Video (the 2.95 page without its Windows-only overlay / DirectDraw settings)
     public var videoKeepAspectStorage: Bool? = nil
     public var videoKeepAspect: Bool { get { videoKeepAspectStorage ?? true } set { videoKeepAspectStorage = newValue } }

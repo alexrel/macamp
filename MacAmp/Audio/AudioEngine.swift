@@ -527,7 +527,8 @@ public class AudioEngine {
         let localURL = url.withoutPlaybackRange
         let range = url.playbackRange
         // MIDI plays from its rendered audio (rendered once, then cached)
-        let audioURL = MIDIRenderer.isMIDI(localURL) ? try await MIDIRenderer.renderedFile(for: localURL) : localURL
+        // MIDI plays from its rendering, a video from the audio track picked in the Video window
+        let audioURL = MIDIRenderer.isMIDI(localURL) ? try await MIDIRenderer.renderedFile(for: localURL) : (VideoTracks.audioOverride(for: localURL) ?? localURL)
         guard loadToken == loadGeneration else { throw CancellationError() }
         let file = try AVAudioFile(forReading: audioURL)
 

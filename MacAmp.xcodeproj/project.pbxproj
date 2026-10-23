@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B2376188569563E98DD4553D /* VideoTracks.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF61533853BFB65F3F708AFB /* VideoTracks.swift */; };
 		5759A2D28D830FC80ADBC870 /* PlayerCoordinator+Media.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E4C8D11110792F911B5870 /* PlayerCoordinator+Media.swift */; };
 		14AA637B7FB36592A71009CB /* BrowserController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4699A0505A4A72CA1CF64C49 /* BrowserController.swift */; };
 		0C9ECAF44F224F75D27880B8 /* VideoController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07741395AD3D93A925E71F7F /* VideoController.swift */; };
@@ -98,6 +99,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		EF61533853BFB65F3F708AFB /* VideoTracks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoTracks.swift; sourceTree = "<group>"; };
 		D0E4C8D11110792F911B5870 /* PlayerCoordinator+Media.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlayerCoordinator+Media.swift"; sourceTree = "<group>"; };
 		4699A0505A4A72CA1CF64C49 /* BrowserController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserController.swift; sourceTree = "<group>"; };
 		07741395AD3D93A925E71F7F /* VideoController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoController.swift; sourceTree = "<group>"; };
@@ -212,6 +214,7 @@
 		FC5DEB36B5B7B367230A5573 /* VideoWindow */ = {
 			isa = PBXGroup;
 			children = (
+				EF61533853BFB65F3F708AFB /* VideoTracks.swift */,
 				07741395AD3D93A925E71F7F /* VideoController.swift */,
 			);
 			path = VideoWindow;
@@ -580,6 +583,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B2376188569563E98DD4553D /* VideoTracks.swift in Sources */,
 				5759A2D28D830FC80ADBC870 /* PlayerCoordinator+Media.swift in Sources */,
 				14AA637B7FB36592A71009CB /* BrowserController.swift in Sources */,
 				0C9ECAF44F224F75D27880B8 /* VideoController.swift in Sources */,
