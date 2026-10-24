@@ -2756,6 +2756,12 @@ testGroup("Media Library: Skinned Lists (gen_ml)") {
     c.clickedHeader(1)
     assertTrue(c.sortColumn == 1 && !c.ascending, "Other column: keeps the direction")
 
+    // Prefs ▸ Library ▸ Column resizing, when the list gets 100 px wider
+    assertEqual(SkinnedListController.resized([100, 50, 50], from: 200, to: 300, mode: 0, sorted: 1), [100, 50, 50], "Normal: columns keep their widths")
+    assertEqual(SkinnedListController.resized([100, 50, 50], from: 200, to: 300, mode: 1, sorted: 1), [100, 150, 50], "Selected column only: sorted column takes it")
+    assertEqual(SkinnedListController.resized([100, 50, 50], from: 200, to: 100, mode: 1, sorted: nil), [100, 50, 16], "No sort: last column, never under 16 px")
+    assertEqual(SkinnedListController.resized([100, 50, 50], from: 200, to: 300, mode: 2, sorted: 1), [150, 75, 75], "Proportional: all scale")
+
     // Base skin leaves the list selection colours unset: they follow the playlist selection, as in wa_dlg.h
     SkinManager.shared.resetToBaseSkin()
     let theme = GenexTheme.current
@@ -2987,6 +2993,19 @@ testGroup("Audio CD: Disc ID, MusicBrainz, Ripping") {
         if format == .flac { assertEqual([meta.id3v2.year, meta.id3v2.trackNumber], ["1998", "2/2"], "FLAC year and track number read back") }
     }
     assertEqual(PrefTreeItem.cdRipping.parent, .options, "CD Ripping page under Options")
+
+    // CD Ripping ▸ Playlist: M3U / PLS of the whole CD next to the album, relative paths, name from the template
+    let flacs = ["01 - La Femme d’argent", "02 - All I Need"].map { out.appendingPathComponent("Air - Moon Safari/\($0).flac") }
+    let lists = (try? cd.writeRipPlaylists(flacs, to: out, template: "<Artist> - <Album>/<Artist> - <Album>", m3u: true, extended: true, pls: true)) ?? []
+    assertEqual(lists.map(\.lastPathComponent), ["Air - Moon Safari.m3u", "Air - Moon Safari.pls"], "M3U and PLS named by the template")
+    let m3u = (try? String(contentsOf: lists[0], encoding: .utf8)) ?? ""
+    assertTrue(m3u.hasPrefix("#EXTM3U\n#EXTINF:200,Air - La Femme d’argent\n01 - La Femme d’argent.flac\n"), "Extended M3U with relative paths")
+    let reread = awaitValue { await PlaylistIO.loadPlaylist(from: lists[1]) }
+    assertEqual(reread.map(\.url.lastPathComponent), flacs.map(\.lastPathComponent), "PLS reads back to the ripped files")
+    _ = try? cd.writeRipPlaylists(flacs, to: out, template: "<Artist> - <Album>/<Artist> - <Album>", m3u: true, extended: false, pls: false)
+    assertEqual((try? String(contentsOf: lists[0], encoding: .utf8)) ?? "", "01 - La Femme d’argent.flac\n02 - All I Need.flac\n", "Plain M3U: paths only")
+    assertEqual((try? cd.writeRipPlaylists(Array(flacs.prefix(1)), to: out, template: "x", m3u: true, extended: true, pls: true))?.count ?? -1, 0, "No playlist for part of a CD")
+    assertEqual(cd.ripItems(flacs).map(\.artist), ["Air", "Air feat. Beth Hirsch"], "Library playlist entries keep the disc's names")
 
     // A track that can't be read is skipped, the rest of the disc is ripped
     var damaged = cd

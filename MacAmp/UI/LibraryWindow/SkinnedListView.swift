@@ -105,6 +105,12 @@ final class SkinnedListController: NSObject, NSTableViewDataSource, NSTableViewD
             return self.menu?(self.selectedIDs)
         }
         (table.headerView as? SkinnedHeaderView)?.sortState = { [weak self] in (self?.sortColumn, self?.ascending ?? true) }
+        container.onWidthChange = { [weak self] old, new in
+            guard let self else { return }
+            let widths = SkinnedListController.resized(self.table.tableColumns.map(\.width), from: old, to: new,
+                                                       mode: PersistenceManager.shared.state.libraryColumnResizing, sorted: self.sortColumn)
+            for (col, width) in zip(self.table.tableColumns, widths) where col.width != width { col.width = width }
+        }
         skinChange = SkinManager.shared.skinDidChange.receive(on: RunLoop.main).sink { [weak self] _ in self?.container.applyTheme() }
     }
 
@@ -125,6 +131,21 @@ final class SkinnedListController: NSObject, NSTableViewDataSource, NSTableViewD
         updatingSelection = true
         table.selectRowIndexes(indexes, byExtendingSelection: false)
         updatingSelection = false
+    }
+
+    /// gen_ml Column resizing when the list's width changes: 0 Normal (columns keep their widths),
+    /// 1 Selected column only (the sorted column, else the last, takes the difference), 2 Proportional (all scale)
+    static func resized(_ widths: [CGFloat], from old: CGFloat, to new: CGFloat, mode: Int, sorted: Int?) -> [CGFloat] {
+        guard old > 0, !widths.isEmpty else { return widths }
+        switch mode {
+        case 1:
+            var result = widths
+            let i = sorted.flatMap { widths.indices.contains($0) ? $0 : nil } ?? widths.count - 1
+            result[i] = max(16, result[i] + new - old)
+            return result
+        case 2: return widths.map { max(16, $0 * new / old) }
+        default: return widths
+        }
     }
 
     /// Stable sort on the shown text (numbers compare as numbers: "9" < "10", "4:58" < "10:01")
@@ -420,8 +441,14 @@ final class SkinnedListContainer: NSView {
 
     @objc private func contentMoved() { needsLayout = true; updateBars() }
 
+    /// The list got wider or narrower (old, new width): Preferences ▸ Library ▸ Column resizing
+    var onWidthChange: ((CGFloat, CGFloat) -> Void)?
+    private var lastWidth: CGFloat = 0
+
     override func layout() {
         super.layout()
+        if lastWidth > 0, bounds.width > 0, bounds.width != lastWidth { onWidthChange?(lastWidth, bounds.width) }
+        if bounds.width > 0 { lastWidth = bounds.width }
         // Scrollbars appear only when the content overflows; one may make room for the other
         let header = SkinnedListContainer.headerHeight
         let contentWidth = table.tableColumns.reduce(0) { $0 + $1.width }

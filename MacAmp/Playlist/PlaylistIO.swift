@@ -208,10 +208,10 @@ public enum PlaylistIO {
     }
     
     // MARK: - Save M3U
-    public static func saveM3U(tracks: [TrackItem], to url: URL, relativePaths: Bool = false) throws {
-        var content = "#EXTM3U\n"
+    public static func saveM3U(tracks: [TrackItem], to url: URL, relativePaths: Bool = false, extended: Bool = true) throws {
+        var content = extended ? "#EXTM3U\n" : ""
         for track in tracks {
-            content += "#EXTINF:\(track.duration > 0 ? Int(track.duration) : -1),\(track.displayName)\n"
+            if extended { content += "#EXTINF:\(track.duration > 0 ? Int(track.duration) : -1),\(track.displayName)\n" }
             content += "\(location(of: track, relativeTo: relativePaths ? url.deletingLastPathComponent() : nil))\n"
         }
         try content.write(to: url, atomically: true, encoding: .utf8)

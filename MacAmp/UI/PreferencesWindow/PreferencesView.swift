@@ -861,6 +861,23 @@ public struct PreferencesView: View {
                     note("Track names come from MusicBrainz (CDDB is gone). To rip: Media Library (⌥L) ▸ Devices ▸ CD ▸ Extract; playing a CD doesn't rip it.")
                 }
             }
+            Win32GroupBox("Playlist") {
+                VStack(alignment: .leading, spacing: 6) {
+                    note("(Playlists will only be generated when an entire CD is extracted)")
+                    Win32Checkbox("Generate M3U playlist of extracted tracks", isOn: setting(\.cdRipM3U))
+                    Win32Checkbox("Use extended M3U playlist format", isOn: setting(\.cdRipExtendedM3U))
+                        .padding(.leading, 16)
+                        .disabled(!state.cdRipM3U)
+                    Win32Checkbox("Generate PLS playlist of extracted tracks", isOn: setting(\.cdRipPLS))
+                    HStack(spacing: 6) {
+                        Text("Filename format:").font(.system(size: 11)).foregroundColor(Win32Colors.text).fixedSize()
+                        Win32TextField(text: Binding(
+                            get: { PersistenceManager.shared.state.cdRipPlaylistTemplate },
+                            set: { setLibrary(\.cdRipPlaylistTemplate, $0) }))
+                    }
+                    Win32Checkbox("Create playlist of extracted tracks in library", isOn: setting(\.cdRipLibraryPlaylist))
+                }
+            }
         }
     }
     
@@ -880,6 +897,14 @@ public struct PreferencesView: View {
                 Win32RadioButton("Enqueue", isSelected: PersistenceManager.shared.state.libraryDoubleClickEnqueues) { setLibrary(\.libraryDoubleClickEnqueues, true) }
                     .fixedSize()
                 Spacer(minLength: 0)
+            }
+            HStack(alignment: .top, spacing: 8) {
+                Text("Column resizing:").font(.system(size: 11)).foregroundColor(Win32Colors.text).fixedSize()
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach([("Normal", 0), ("Selected column only", 1), ("Proportional", 2)], id: \.1) { title, mode in
+                        Win32RadioButton(title, isSelected: PersistenceManager.shared.state.libraryColumnResizing == mode) { setLibrary(\.libraryColumnResizing, mode) }
+                    }
+                }
             }
             Win32Checkbox("Remember search filters", isOn: setting(\.libraryRememberSearch))
             Win32Checkbox("Play entire playlist on playlist item doubleclick", isOn: setting(\.libraryPlayWholePlaylist))

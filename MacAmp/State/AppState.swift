@@ -127,6 +127,9 @@ public struct AppState: Codable {
     /// Options ▸ Library (2.95 General tab)
     public var libraryRememberSearchStorage: Bool? = nil
     public var libraryRememberSearch: Bool { get { libraryRememberSearchStorage ?? false } set { libraryRememberSearchStorage = newValue } }
+    /// Column resizing: 0 Normal, 1 Selected column only, 2 Proportional (SkinnedListController.resized)
+    public var libraryColumnResizingStorage: Int? = nil
+    public var libraryColumnResizing: Int { get { libraryColumnResizingStorage ?? 0 } set { libraryColumnResizingStorage = newValue } }
     /// Remembered search text per list (Local Media, each view)
     public var librarySearchesStorage: [String: String]? = nil
     public var librarySearches: [String: String] { get { librarySearchesStorage ?? [:] } set { librarySearchesStorage = newValue } }
@@ -219,6 +222,20 @@ public struct AppState: Codable {
         get { cdRipAddToLibraryStorage ?? true }
         set { cdRipAddToLibraryStorage = newValue }
     }
+    /// CD Ripping ▸ Playlist (2.95): M3U (extended) / PLS of the extracted CD, name from a template like the files'
+    public var cdRipM3UStorage: Bool? = nil
+    public var cdRipM3U: Bool { get { cdRipM3UStorage ?? true } set { cdRipM3UStorage = newValue } }
+    public var cdRipExtendedM3UStorage: Bool? = nil
+    public var cdRipExtendedM3U: Bool { get { cdRipExtendedM3UStorage ?? true } set { cdRipExtendedM3UStorage = newValue } }
+    public var cdRipPLSStorage: Bool? = nil
+    public var cdRipPLS: Bool { get { cdRipPLSStorage ?? false } set { cdRipPLSStorage = newValue } }
+    public var cdRipPlaylistTemplateStorage: String? = nil
+    public var cdRipPlaylistTemplate: String {
+        get { cdRipPlaylistTemplateStorage ?? "<Artist> - <Album>/<Artist> - <Album>" }
+        set { cdRipPlaylistTemplateStorage = newValue }
+    }
+    public var cdRipLibraryPlaylistStorage: Bool? = nil
+    public var cdRipLibraryPlaylist: Bool { get { cdRipLibraryPlaylistStorage ?? true } set { cdRipLibraryPlaylistStorage = newValue } }
     
     /// Plug-ins ▸ Output: Disk Writer (out_disk) instead of the speakers, with its folder and format
     public var diskWriterEnabledStorage: Bool? = nil

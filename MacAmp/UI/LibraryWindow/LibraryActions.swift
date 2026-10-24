@@ -159,8 +159,21 @@ enum LibraryActions {
                 let (files, failed) = try await cd.rip(tracks, to: state.cdRipFolder, template: state.cdRipTemplate, format: state.cdRipFormat,
                                                        writeTags: state.cdRipWriteTags) { i, n in progress.status[volume] = "Extracting track \(i) of \(n)..." }
                 if state.cdRipAddToLibrary, !files.isEmpty { MediaLibrary.shared.add(await MediaLibrary.readItems(files) { _ in }) }
+                var playlistError = ""
+                if files.count == cd.tracks.count { // 2.95: playlists only for an entire CD
+                    do {
+                        try cd.writeRipPlaylists(files, to: state.cdRipFolder, template: state.cdRipPlaylistTemplate,
+                                                 m3u: state.cdRipM3U, extended: state.cdRipExtendedM3U, pls: state.cdRipPLS)
+                    } catch {
+                        playlistError = "; couldn't write the playlist: \(error.localizedDescription)"
+                    }
+                    if state.cdRipLibraryPlaylist {
+                        MediaLibrary.shared.createPlaylist(named: cd.album.isEmpty ? "Audio CD" : "\(cd.artist) - \(cd.album)",
+                                                           tracks: cd.ripItems(files))
+                    }
+                }
                 let skipped = failed.isEmpty ? "" : "; couldn't read track(s) \(failed.map(String.init).joined(separator: ", "))"
-                progress.status[volume] = "Extracted \(files.count) track(s) to \(files.first?.deletingLastPathComponent().lastPathComponent ?? state.cdRipFolder.lastPathComponent)\(skipped)"
+                progress.status[volume] = "Extracted \(files.count) track(s) to \(files.first?.deletingLastPathComponent().lastPathComponent ?? state.cdRipFolder.lastPathComponent)\(skipped)\(playlistError)"
             } catch {
                 progress.status[volume] = "[Error] \(error.localizedDescription)"
             }

@@ -218,6 +218,33 @@ public struct AudioCD: Sendable {
         }
         return (written, failed)
     }
+
+    /// The extracted files of the whole CD as playlist entries, with the disc's names
+    public func ripItems(_ files: [URL]) -> [TrackItem] {
+        zip(tracks, files).map { TrackItem(url: $1, title: $0.title, artist: $0.artist.isEmpty ? artist : $0.artist, duration: $0.length) }
+    }
+
+    /// CD Ripping ▸ Playlist: after a whole CD is extracted, M3U / PLS files named by the template (`.m3u` / `.pls` added),
+    /// relative paths, so the album folder can move. Returns the playlist files written.
+    @discardableResult
+    public func writeRipPlaylists(_ files: [URL], to folder: URL, template: String, m3u: Bool, extended: Bool, pls: Bool) throws -> [URL] {
+        guard files.count == tracks.count else { return [] } // 2.95: only for an entire CD
+        let items = ripItems(files)
+        let base = folder.appendingPathComponent(ripName(for: Track(number: 0, url: folder, title: album, artist: artist, length: 0), template: template))
+        try FileManager.default.createDirectory(at: base.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var written: [URL] = []
+        if m3u {
+            let url = base.appendingPathExtension("m3u")
+            try PlaylistIO.saveM3U(tracks: items, to: url, relativePaths: true, extended: extended)
+            written.append(url)
+        }
+        if pls {
+            let url = base.appendingPathExtension("pls")
+            try PlaylistIO.savePLS(tracks: items, to: url, relativePaths: true)
+            written.append(url)
+        }
+        return written
+    }
 }
 
 /// Tags for files MacAmp writes: Vorbis comments in FLAC, iTunes atoms in M4A.
