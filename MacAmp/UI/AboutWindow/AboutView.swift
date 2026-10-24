@@ -90,7 +90,8 @@ public struct AboutView: View {
                         .font(.system(size: 11))
                         .foregroundColor(Win32Colors.text)
                     
-                    Link("http://www.winamp.com", destination: URL(string: "https://www.winamp.com")!)
+                    // 2.95 sent you to winamp.com; MacAmp's updates live on its own page
+                    Link("alexrel.com/macamp", destination: AppConstants.App.website)
                         .font(.system(size: 11))
                         .underline()
                     

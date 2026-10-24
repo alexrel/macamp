@@ -3102,4 +3102,20 @@ testGroup("Media Library: Queries, Scanning, Search") {
     assertEqual(reloaded.folders.map(\.lastPathComponent), ["library"], "Folders remembered for rescans")
 }
 
+testGroup("MacAmp page links, CD Ripping AAC bitrate") {
+    assertEqual(AppConstants.App.pluginsPage.absoluteString, "https://alexrel.com/macamp#plugins", "Get plug-ins goes to the MacAmp page")
+
+    // CD Ripping ▸ AAC bitrate: a lower bitrate gives a smaller file
+    let wav = try makeTestWAV(named: "aac-src.wav", seconds: 3.0)
+    let folder = wav.deletingLastPathComponent().appendingPathComponent("aac-quality", isDirectory: true)
+    try? FileManager.default.removeItem(at: folder)
+    @MainActor func size(_ kbps: Int) -> Int {
+        let out = awaitValue { try? await DiskWriter.write(TrackItem(url: wav, title: "Q"), to: folder, name: "q\(kbps)", format: .aac, aacKbps: kbps) }
+        return (out.flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }) ?? 0
+    }
+    let low = size(128), high = size(320)
+    assertTrue(low > 0 && high > low, "AAC 320 kbps file bigger than 128 kbps (\(high) > \(low))")
+    assertEqual(PersistenceManager.shared.state.cdRipAACKbps, 256, "AAC default stays 256 kbps")
+}
+
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")

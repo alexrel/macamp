@@ -213,6 +213,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKScriptMessageHa
     <div class="bar">MACAMP</div>
     <p class="welcome">Welcome to the Minibrowser, connect to the internet and check out the cool links below.</p>
     <div class="links">
+    <a href="https://alexrel.com/macamp">MacAmp</a><div>Updates, the FFmpeg plug-in and what's new.</div>
     <a href="macamp://radio">Internet Radio</a><div>Tens of thousands of free stations in the Library (radio-browser.info), playing right in MacAmp.</div>
     <a href="https://skins.webamp.org/">Free Skins</a><div>Give MacAmp a new look: the Winamp Skin Museum, every classic skin ever made.</div>
     <a href="https://winampheritage.com/">Winamp Heritage</a><div>Skins, plug-ins and visualizations from the Winamp community archive.</div>

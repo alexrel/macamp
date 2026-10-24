@@ -196,14 +196,14 @@ public struct AudioCD: Sendable {
 
     /// Encodes the tracks into `folder` (lossless or AAC, macOS encoders) and tags them. A track that fails
     /// (scratch, read error) is skipped, not the whole rip; only cancelling stops it.
-    public func rip(_ numbers: [Int], to folder: URL, template: String, format: DiskWriterFormat, writeTags: Bool,
+    public func rip(_ numbers: [Int], to folder: URL, template: String, format: DiskWriterFormat, aacKbps: Int = 256, writeTags: Bool,
                     progress: @escaping @MainActor (Int, Int) -> Void) async throws -> (written: [URL], failed: [Int]) {
         var written: [URL] = [], failed: [Int] = []
         for (i, track) in tracks.filter({ numbers.contains($0.number) }).enumerated() {
             await progress(i + 1, numbers.count)
             do {
                 let url = try await DiskWriter.write(TrackItem(url: track.url, title: track.title), to: folder,
-                                                     name: ripName(for: track, template: template), format: format)
+                                                     name: ripName(for: track, template: template), format: format, aacKbps: aacKbps)
                 if writeTags {
                     try? await AudioTagWriter.write([.artist: track.artist.isEmpty ? artist : track.artist, .title: track.title, .album: album,
                                                      .albumArtist: artist, .year: year, .track: "\(track.number)/\(tracks.count)",

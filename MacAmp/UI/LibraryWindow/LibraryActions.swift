@@ -156,7 +156,7 @@ enum LibraryActions {
         Task { @MainActor in
             defer { AudioCD.ripping.remove(volume); progress.objectWillChange.send() }
             do {
-                let (files, failed) = try await cd.rip(tracks, to: state.cdRipFolder, template: state.cdRipTemplate, format: state.cdRipFormat,
+                let (files, failed) = try await cd.rip(tracks, to: state.cdRipFolder, template: state.cdRipTemplate, format: state.cdRipFormat, aacKbps: state.cdRipAACKbps,
                                                        writeTags: state.cdRipWriteTags) { i, n in progress.status[volume] = "Extracting track \(i) of \(n)..." }
                 if state.cdRipAddToLibrary, !files.isEmpty { MediaLibrary.shared.add(await MediaLibrary.readItems(files) { _ in }) }
                 var playlistError = ""

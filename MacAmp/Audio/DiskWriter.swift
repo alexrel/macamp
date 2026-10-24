@@ -11,7 +11,7 @@ public enum DiskWriterFormat: String, CaseIterable, Codable {
         case .aiff: return "AIFF (PCM)"
         case .flac: return "FLAC (lossless)"
         case .alac: return "Apple Lossless (.m4a)"
-        case .aac: return "AAC 256 kbps (.m4a)"
+        case .aac: return "AAC (.m4a)"
         }
     }
 
@@ -24,7 +24,10 @@ public enum DiskWriterFormat: String, CaseIterable, Codable {
         }
     }
 
-    func settings(sampleRate: Double, channels: AVAudioChannelCount) -> [String: Any] {
+    /// AAC bitrate choices (kbps) for CD Ripping ▸ Encoder; Disk Writer uses 256
+    public static let aacBitrates = [128, 160, 192, 256, 320]
+
+    func settings(sampleRate: Double, channels: AVAudioChannelCount, aacKbps: Int = 256) -> [String: Any] {
         var settings: [String: Any] = [AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: channels]
         switch self {
         case .wav, .aiff:
@@ -40,7 +43,7 @@ public enum DiskWriterFormat: String, CaseIterable, Codable {
             settings[AVEncoderBitDepthHintKey] = 16
         case .aac:
             settings[AVFormatIDKey] = kAudioFormatMPEG4AAC
-            settings[AVEncoderBitRateKey] = 256_000
+            settings[AVEncoderBitRateKey] = aacKbps * 1000
         }
         return settings
     }
@@ -54,7 +57,7 @@ public enum DiskWriter {
     /// Writes one playlist entry (a file, a CUE track or a MIDI file) into `folder` as `name.ext` and returns it.
     /// Cancelling the calling task stops the write between chunks and leaves no partial file.
     /// `name` (CD ripping) may hold subfolders: "Artist - Album/01 - Title".
-    public static func write(_ track: TrackItem, to folder: URL, name: String? = nil, format: DiskWriterFormat) async throws -> URL {
+    public static func write(_ track: TrackItem, to folder: URL, name: String? = nil, format: DiskWriterFormat, aacKbps: Int = 256) async throws -> URL {
         let source = track.url.withoutPlaybackRange
         let audioURL = MIDIRenderer.isMIDI(source) ? try await MIDIRenderer.renderedFile(for: source) : source
         // Disk Writer never overwrites ("Name (2)"); a CD rip's own name means the same track, so ripping again replaces it
@@ -63,14 +66,14 @@ public enum DiskWriter {
         try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
         let range = track.url.playbackRange
         let job = Task.detached(priority: .userInitiated) {
-            try convert(audioURL, range: range, to: output, format: format) { Task.isCancelled }
+            try convert(audioURL, range: range, to: output, format: format, aacKbps: aacKbps) { Task.isCancelled }
         }
         try await withTaskCancellationHandler { try await job.value } onCancel: { job.cancel() }
         return output
     }
 
     static func convert(_ input: URL, range: (start: TimeInterval, end: TimeInterval?)?, to output: URL,
-                        format: DiskWriterFormat, isCancelled: () -> Bool) throws {
+                        format: DiskWriterFormat, aacKbps: Int = 256, isCancelled: () -> Bool) throws {
         let source = try AVAudioFile(forReading: input)
         let pcm = source.processingFormat
         let first = AVAudioFramePosition((range?.start ?? 0) * pcm.sampleRate)
@@ -78,7 +81,7 @@ public enum DiskWriter {
         source.framePosition = min(first, source.length)
         let partial = output.deletingPathExtension().appendingPathExtension("partial." + output.pathExtension)
         do { // closed at the end of this scope, before the rename
-            let target = try AVAudioFile(forWriting: partial, settings: format.settings(sampleRate: pcm.sampleRate, channels: pcm.channelCount),
+            let target = try AVAudioFile(forWriting: partial, settings: format.settings(sampleRate: pcm.sampleRate, channels: pcm.channelCount, aacKbps: aacKbps),
                                          commonFormat: pcm.commonFormat, interleaved: pcm.isInterleaved)
             let buffer = AVAudioPCMBuffer(pcmFormat: pcm, frameCapacity: 32768)!
             while source.framePosition < last {

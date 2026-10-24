@@ -212,6 +212,8 @@ public struct AppState: Codable {
         get { cdRipFormatStorage ?? .flac }
         set { cdRipFormatStorage = newValue }
     }
+    public var cdRipAACKbpsStorage: Int? = nil
+    public var cdRipAACKbps: Int { get { cdRipAACKbpsStorage ?? 256 } set { cdRipAACKbpsStorage = newValue } }
     public var cdRipWriteTagsStorage: Bool? = nil
     public var cdRipWriteTags: Bool {
         get { cdRipWriteTagsStorage ?? true }

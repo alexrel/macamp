@@ -851,6 +851,12 @@ public struct PreferencesView: View {
                             PersistenceManager.shared.state.cdRipFormat = format
                             PersistenceManager.shared.scheduleSave()
                         }), options: DiskWriterFormat.allCases.map { (value: $0, title: $0.title) }, width: 190)
+                    if state.cdRipFormat == .aac {
+                        Text("Bitrate:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
+                        Win32ComboBox(selection: Binding(
+                            get: { PersistenceManager.shared.state.cdRipAACKbps },
+                            set: { setLibrary(\.cdRipAACKbps, $0) }), options: DiskWriterFormat.aacBitrates.map { (value: $0, title: "\($0) kbps") }, width: 80)
+                    }
                     Spacer()
                 }
             }
@@ -985,7 +991,7 @@ public struct PreferencesView: View {
                 HStack(spacing: 8) {
                     if plugins.isEmpty { note("MKV, WebM, AVI, WMV, WMA, APE, WavPack and more: install the FFmpeg plug-in.") }
                     Spacer()
-                    Button("Get plug-ins") { NSWorkspace.shared.open(URL(string: "https://github.com/search?q=MacAmp+plug-in")!) }
+                    Button("Get plug-ins") { NSWorkspace.shared.open(AppConstants.App.pluginsPage) }
                         .buttonStyle(.link).font(.system(size: 11))
                 }
             }

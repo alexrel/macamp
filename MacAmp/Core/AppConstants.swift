@@ -13,6 +13,9 @@ public enum AppConstants {
         public static let basedOn = "Winamp 2.95"
         /// What Winamp 2.95's in_mp3 sends to SHOUTcast / Icecast servers
         public static let streamUserAgent = "WinampMPEG/2.9"
+        /// MacAmp's page: updates (About), plug-ins (Get plug-ins, #plugins), Minibrowser start page
+        public static let website = URL(string: "https://alexrel.com/macamp")!
+        public static let pluginsPage = URL(string: "https://alexrel.com/macamp#plugins")!
     }
     
     // MARK: - Window Dimensions (1x Base Scale)
