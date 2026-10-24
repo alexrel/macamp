@@ -979,8 +979,7 @@ public struct PreferencesView: View {
                                     viewModel.objectWillChange.send()
                                     PersistenceManager.shared.state.diskWriterEnabled = index == 1
                                     PersistenceManager.shared.scheduleSave()
-                                }))
-                    .frame(height: 50)
+                                }), height: 40)
             }
             if state.diskWriterEnabled {
                 Win32GroupBox("Disk Writer") {
@@ -1542,6 +1541,8 @@ private struct AgentSection: View {
 private struct PluginListBox: View {
     let rows: [String]
     @Binding var selection: Int
+    /// The box's own height (a frame from outside would squeeze it and let the rows spill over the group title)
+    var height: CGFloat = 120
 
     var body: some View {
         ScrollView {
@@ -1561,7 +1562,7 @@ private struct PluginListBox: View {
             }
             .padding(2)
         }
-        .frame(height: 120)
+        .frame(height: height)
         .background(Color.white)
         .win32Sunken()
     }

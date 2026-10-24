@@ -2828,6 +2828,32 @@ testGroup("File types: Associate with audio CDs") {
     assertEqual(PlayerCoordinator.shared.playlist.tracks.count, before, "Data volumes don't touch the playlist")
 }
 
+testGroup("Visualizer Studio works whatever the main visualizer shows") {
+    // One analysis frame: a loud low band and a sine-like waveform
+    let frame = VisualizerFrameBuffer()
+    let slot = frame.write { spectrum, waveform in
+        for i in spectrum.indices { spectrum[i] = i < 8 ? 0.9 : 0.1 }
+        for i in waveform.indices { waveform[i] = sin(Float(i) / 4) }
+    }
+    frame.publish(slot: slot)
+    // The main window's visualizer in oscilloscope / off mode doesn't compute bars: the studio can't use it
+    let main = VisualizerView(); main.mode = .off
+    main.update(from: frame)
+    assertTrue(main.spectrumAmplitudes.allSatisfy { $0 == 0 }, "Main visualizer off: no bars (why the studio needs its own feed)")
+    // The studio's own feed (always spectrum) has both bars and waveform
+    let feed = PlayerCoordinator.shared.studioFeed
+    feed.update(from: frame)
+    assertTrue(feed.spectrumAmplitudes.first ?? 0 > 0.5, "Studio spectrum from its own feed")
+    assertTrue(feed.waveformPoints.contains { abs($0) > 0.5 }, "Studio waveform from its own feed")
+    assertEqual(feed.mode, .spectrum, "Feed always analyses the spectrum")
+    // Cost per drawn frame (35 a second by default)
+    let start = CACurrentMediaTime()
+    for _ in 0..<10_000 { feed.update(from: frame) }
+    let perFrame = (CACurrentMediaTime() - start) / 10_000
+    print(String(format: "  studio feed: %.1f µs per frame, %.3f%% of one core at 35 fps", perFrame * 1e6, perFrame * 35 * 100))
+    assertTrue(perFrame < 0.0002, "Studio feed costs under 0.2 ms a frame")
+}
+
 testGroup("Visualization refresh rate") {
     // Analysis frames every 1/43 s for 10 s, drawn at the chosen rate on average
     for fps in [35.0, 20.0, 10.0] {

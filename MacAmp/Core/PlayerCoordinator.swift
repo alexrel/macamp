@@ -46,6 +46,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     var preMuteVolume: Double = 0.5
     /// Preferences ▸ Visualization ▸ Refresh rate
     var visualizerThrottle = VisualizerThrottle()
+    /// The Visualizer Studio's own reading of the analysis (spectrum with falloff, and the waveform), so it works
+    /// whatever the main window's visualizer shows (spectrum, oscilloscope or off)
+    let studioFeed: VisualizerView = { let v = VisualizerView(); v.mode = .spectrum; return v }()
     /// Disk Writer run in progress (Play with the Disk Writer output)
     var diskWriterTask: Task<Void, Never>?
     
@@ -267,8 +270,10 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             self.mainView.visualizer.falloffScale = frames
             self.mainView.visualizer.update(from: frame)
             if let studio = self.visualizerStudioWindow, studio.isVisible {
-                studio.updateSpectrum(self.mainView.visualizer.spectrumAmplitudes)
-                studio.updateWaveform(self.mainView.visualizer.waveformPoints)
+                self.studioFeed.falloffScale = frames
+                self.studioFeed.update(from: frame)
+                studio.updateSpectrum(self.studioFeed.spectrumAmplitudes)
+                studio.updateWaveform(self.studioFeed.waveformPoints)
             }
         }
         

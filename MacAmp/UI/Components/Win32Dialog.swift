@@ -52,8 +52,8 @@ public enum Win32Dialog {
                 }
                 HStack(spacing: 6) {
                     Spacer()
-                    Win32Button("OK", isDefault: true) { finish(true) }
-                    Win32Button("Cancel") { finish(false) }
+                    DialogButton("OK", isDefault: true) { finish(true) }
+                    DialogButton("Cancel") { finish(false) }
                 }
                 .padding(.top, 4)
             }
@@ -117,8 +117,8 @@ public enum Win32Dialog {
                 Win32TextField(text: $model.text, autoFocus: .selectAll) // focused with text selected, like a Win32 prompt
                 HStack(spacing: 6) {
                     Spacer()
-                    Win32Button(okTitle, isDefault: true) { finish(true) }
-                    Win32Button("Cancel") { finish(false) }
+                    DialogButton(okTitle, isDefault: true) { finish(true) }
+                    DialogButton("Cancel") { finish(false) }
                 }
                 .padding(.top, 4)
             }
@@ -141,12 +141,80 @@ public enum Win32Dialog {
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
                     Spacer()
-                    Win32Button(confirmTitle, isDefault: true) { finish(true) }
-                    Win32Button(cancelTitle) { finish(false) }
+                    DialogButton(confirmTitle, isDefault: true) { finish(true) }
+                    DialogButton(cancelTitle) { finish(false) }
                 }
             }
             .padding(12)
             .background(Win32Colors.dialogBg)
         }
+    }
+
+    /// The dialogs' buttons are AppKit buttons drawn like Win32Button. AppKit runs their action while handling the click;
+    /// a SwiftUI button's action goes through the main queue, which stays busy while a dialog opened from a SwiftUI
+    /// action or a main-actor task is up, so OK / Cancel never fired (Preferences ▸ Bookmarks ▸ Edit).
+    private struct DialogButton: NSViewRepresentable {
+        let title: String
+        var isDefault = false
+        let action: () -> Void
+
+        init(_ title: String, isDefault: Bool = false, action: @escaping () -> Void) {
+            self.title = title
+            self.isDefault = isDefault
+            self.action = action
+        }
+
+        func makeNSView(context: Context) -> Win32PushButton { Win32PushButton(title: title, isDefault: isDefault) }
+        func updateNSView(_ button: Win32PushButton, context: Context) { button.onPress = action }
+        func sizeThatFits(_ proposal: ProposedViewSize, nsView: Win32PushButton, context: Context) -> CGSize? {
+            CGSize(width: max(75, nsView.attributedTitle.size().width + 16), height: 23)
+        }
+    }
+}
+
+/// A push button in the Win32 look (raised bevel, black outline when it's the default, pressed shifts the text).
+/// Return presses the default one, Esc the Cancel one (key equivalents, handled by AppKit).
+final class Win32PushButton: NSButton {
+    var onPress: (() -> Void)?
+    private let isDefault: Bool
+
+    init(title: String, isDefault: Bool) {
+        self.isDefault = isDefault
+        super.init(frame: NSRect(x: 0, y: 0, width: 75, height: 23))
+        self.title = title
+        isBordered = false
+        setButtonType(.momentaryPushIn)
+        font = .systemFont(ofSize: 11)
+        keyEquivalent = isDefault ? "\r" : (title == "Cancel" ? "\u{1b}" : "")
+        target = self
+        action = #selector(press)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    @objc private func press() { onPress?() }
+
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let face = NSColor(srgbRed: 212 / 255, green: 208 / 255, blue: 200 / 255, alpha: 1)
+        let shadow = NSColor(srgbRed: 128 / 255, green: 128 / 255, blue: 128 / 255, alpha: 1)
+        let dark = NSColor(srgbRed: 64 / 255, green: 64 / 255, blue: 64 / 255, alpha: 1)
+        var r = bounds
+        face.setFill(); r.fill()
+        if isDefault { NSColor.black.setFill(); r.frame(withWidth: 1); r = r.insetBy(dx: 1, dy: 1) }
+        func edge(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ c: NSColor) { c.setFill(); NSRect(x: x, y: y, width: w, height: h).fill() }
+        let pressed = isHighlighted
+        if pressed {
+            shadow.setFill(); r.frame(withWidth: 1)
+        } else {
+            edge(r.minX, r.minY, r.width, 1, .white); edge(r.minX, r.minY, 1, r.height, .white)
+            edge(r.minX, r.maxY - 1, r.width, 1, dark); edge(r.maxX - 1, r.minY, 1, r.height, dark)
+            edge(r.minX + 1, r.maxY - 2, r.width - 2, 1, shadow); edge(r.maxX - 2, r.minY + 1, 1, r.height - 2, shadow)
+        }
+        let text = NSAttributedString(string: title, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.black])
+        let size = text.size()
+        let shift: CGFloat = pressed ? 1 : 0
+        text.draw(at: NSPoint(x: (bounds.width - size.width) / 2 + shift, y: (bounds.height - size.height) / 2 + shift))
     }
 }
