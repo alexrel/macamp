@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainMenuManager.shared.setupMenu()
         StatusBarManager.shared.setVisible(PersistenceManager.shared.state.showMenuBarIcon)
+        StatusBarManager.shared.setDockIconVisible(PersistenceManager.shared.state.showDockIcon)
         MediaKeyController.shared.setup()
         GlobalHotkeysController.shared.setup()
         PlayerCoordinator.shared.start()

@@ -89,10 +89,29 @@ public class SkinnedPopupMenuView: WinampControlView {
         addTrackingArea(area)
     }
     
+    /// The item under a point in this view (the 3 px bar on the left isn't one)
+    func itemIndex(at pt: NSPoint) -> Int? {
+        let idx = Int(floor(pt.y / 18))
+        return idx >= 0 && idx < items.count && pt.x >= 3 && pt.x < bounds.width ? idx : nil
+    }
+
+    /// Press on the playlist button and drag (2.95): the item under the mouse lights up, releasing on it runs it;
+    /// releasing on the button keeps the menu open for a click, anywhere else closes it
+    func track(_ event: NSEvent, from button: NSView) {
+        let index = itemIndex(at: convert(event.locationInWindow, from: nil))
+        if event.type == .leftMouseDragged {
+            if hoveredIndex != index { hoveredIndex = index; needsDisplay = true }
+        } else if let index {
+            let action = items[index].action
+            close()
+            action()
+        } else if !button.bounds.contains(button.convert(event.locationInWindow, from: nil)) {
+            close()
+        }
+    }
+
     public override func mouseMoved(with event: NSEvent) {
-        let pt = convert(event.locationInWindow, from: nil)
-        let idx = Int(pt.y / 18)
-        let valid = (idx >= 0 && idx < items.count && pt.x >= 3) ? idx : nil
+        let valid = itemIndex(at: convert(event.locationInWindow, from: nil))
         if hoveredIndex != valid {
             hoveredIndex = valid
             needsDisplay = true
@@ -107,9 +126,7 @@ public class SkinnedPopupMenuView: WinampControlView {
     }
     
     public override func mouseDown(with event: NSEvent) {
-        let pt = convert(event.locationInWindow, from: nil)
-        let idx = Int(pt.y / 18)
-        guard idx >= 0 && idx < items.count && pt.x >= 3 else {
+        guard let idx = itemIndex(at: convert(event.locationInWindow, from: nil)) else {
             close()
             return
         }
@@ -121,20 +138,18 @@ public class SkinnedPopupMenuView: WinampControlView {
         var keepTracking = true
         while keepTracking {
             guard let next = win.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) else { continue }
-            let curPt = convert(next.locationInWindow, from: nil)
-            let curIdx = Int(curPt.y / 18)
-            let isInside = (curIdx >= 0 && curIdx < items.count && curPt.x >= 3)
+            let curIdx = itemIndex(at: convert(next.locationInWindow, from: nil))
             
             switch next.type {
             case .leftMouseDragged:
-                let newHover = isInside ? curIdx : nil
+                let newHover = curIdx
                 if hoveredIndex != newHover {
                     hoveredIndex = newHover
                     needsDisplay = true
                 }
             case .leftMouseUp:
                 keepTracking = false
-                if isInside {
+                if let curIdx {
                     let action = items[curIdx].action
                     close()
                     action()
@@ -360,6 +375,7 @@ public class PlaylistWindowView: WinampControlView {
             self?.showListMenu()
         }
         addSubview(listButton)
+        applyMenuButtonMode()
         
         // 3. Mini Transport Buttons in Bottom Bar
         plPrevButton = SkinButton { [weak self] in self?.onPrevious?() }
@@ -509,6 +525,18 @@ public class PlaylistWindowView: WinampControlView {
     }
     
     // MARK: - Skinned Menus
+    /// Options ▸ Single-click playlist buttons (old-school): a click opens the menu and another click picks; off (2.95),
+    /// the menu opens on press and a drag to an item with release picks it (a plain click still works)
+    func applyMenuButtonMode() {
+        let oldSchool = PersistenceManager.shared.state.playlistSingleClickButtons
+        for button in [addButton, remButton, selButton, miscButton, listButton].compactMap({ $0 }) {
+            button.dragAfterPress = oldSchool ? nil : { [weak self, weak button] event in
+                guard let button else { return }
+                self?.activePopupMenu?.track(event, from: button)
+            }
+        }
+    }
+
     private func showSkinnedMenu(bar: SpriteSlice, items: [SkinnedMenuItem], above button: NSView) {
         if let current = activePopupMenu {
             let isSame = abs(current.frame.minX - (button.frame.minX - 3)) < 1
@@ -1052,7 +1080,9 @@ public class PlaylistWindowView: WinampControlView {
         // Draw track rows (13px each)
         let rowH = AppConstants.Playlist.trackRowHeight
         let visibleRows = max(1, Int(listRect.height / rowH))
-        let font = NSFont(name: style.fontName, size: 9) ?? NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        // Winamp's size is the Windows pixel height; a point smaller matches it on the Mac (10 → 9 pt)
+        let fontSize = rowH - 4
+        let font = NSFont(name: style.fontName, size: fontSize) ?? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineBreakMode = .byClipping // letters are cut at the duration column, no ellipsis

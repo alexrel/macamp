@@ -3118,4 +3118,105 @@ testGroup("MacAmp page links, CD Ripping AAC bitrate") {
     assertEqual(PersistenceManager.shared.state.cdRipAACKbps, 256, "AAC default stays 256 kbps")
 }
 
+testGroup("Options and Display leftovers of 2.95: sort on load, Clutterbar, playlist font size") {
+    let state = PersistenceManager.shared.state
+    defer { PersistenceManager.shared.state = state }
+    let wav = try makeTestWAV(named: "aac-src.wav", seconds: 3.0)
+    let folder = wav.deletingLastPathComponent().appendingPathComponent("sort-on-load", isDirectory: true)
+    try? FileManager.default.removeItem(at: folder)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+    // Display ▸ Playlist font size: rows follow it, within limits
+    assertEqual(AppConstants.Playlist.trackRowHeight, 13, "2.95 default 10 → 13 px rows")
+    PersistenceManager.shared.state.playlistFontSize = 12
+    assertEqual(AppConstants.Playlist.trackRowHeight, 15, "Font 12 → 15 px rows")
+    PersistenceManager.shared.state.playlistFontSize = 100
+    assertEqual(PersistenceManager.shared.state.playlistFontSize, 24, "Font size capped")
+    PersistenceManager.shared.state.playlistFontSize = 10
+
+    // Display ▸ Always show Clutterbar off: the buttons appear only under the mouse
+    let main = MainWindowView()
+    assertTrue(main.clutterbarShown && !main.doubleSizeButton.isHidden, "Shown by default, as in 2.95")
+    PersistenceManager.shared.state.alwaysShowClutterbar = false
+    main.updateClutterbar()
+    assertTrue(!main.clutterbarShown && main.doubleSizeButton.isHidden && main.clutterOptionsButton.isHidden, "Hidden away from the mouse")
+    assertTrue(SkinManager.shared.image(for: SpriteCatalog.clutterBarHidden) != nil, "Empty strip from TITLEBAR.BMP")
+    PersistenceManager.shared.state.alwaysShowClutterbar = true
+    main.updateClutterbar()
+    assertTrue(!main.doubleSizeButton.isHidden, "Shown again")
+
+    // Options ▸ Sort files on load
+    let b = folder.appendingPathComponent("b.wav"), a = folder.appendingPathComponent("a10.wav"), c = folder.appendingPathComponent("a9.wav")
+    for f in [b, a, c] { try? FileManager.default.copyItem(at: wav, to: f) }
+    @MainActor func loaded() -> [String] { awaitValue { await PlayerCoordinator.shared.collectTracks(fromPaths: [b, a, c].map(\.path)) }.map(\.url.lastPathComponent) }
+    assertEqual(loaded(), ["b.wav", "a10.wav", "a9.wav"], "Off: the order given")
+    PersistenceManager.shared.state.sortFilesOnLoad = true
+    assertEqual(loaded(), ["a9.wav", "a10.wav", "b.wav"], "On: by name, numbers as numbers")
+}
+
+testGroup("Options: Equalizer doublesize linked, Single-click playlist buttons; Display: Show MacAmp in") {
+    let state = PersistenceManager.shared.state
+    defer { PersistenceManager.shared.state = state }
+
+    // Equalizer doublesize linked off: the EQ stays 275x116 under a doubled main window, still docked
+    assertTrue(!WindowID.equalizer.keepsOwnSize, "Linked by default, as in 2.95")
+    let wlm = WindowLayoutManager.shared
+    wlm.setScale(1)
+    let main = NSWindow(contentRect: NSRect(x: 100, y: 300, width: 275, height: 116), styleMask: .borderless, backing: .buffered, defer: false)
+    let eq = NSWindow(contentRect: NSRect(x: 100, y: 184, width: 275, height: 116), styleMask: .borderless, backing: .buffered, defer: false)
+    wlm.register(window: main, for: .main)
+    wlm.register(window: eq, for: .equalizer)
+    main.orderFront(nil); eq.orderFront(nil)
+    wlm.updateAdjacencies()
+    PersistenceManager.shared.state.eqDoubleSizeLinked = false
+    wlm.setScale(2)
+    assertEqual(main.frame.size, NSSize(width: 550, height: 232), "Main doubled")
+    assertEqual(eq.frame.size, NSSize(width: 275, height: 116), "EQ stays at 1x")
+    assertTrue(abs(eq.frame.maxY - main.frame.minY) <= 1 && abs(eq.frame.minX - main.frame.minX) <= 1, "EQ still docked under the main window")
+    wlm.setScale(1)
+    PersistenceManager.shared.state.eqDoubleSizeLinked = true
+    wlm.setScale(2)
+    assertEqual(eq.frame.size, NSSize(width: 550, height: 232), "Linked: EQ doubles with the main window")
+    wlm.setScale(1)
+    main.orderOut(nil); eq.orderOut(nil)
+
+    // Playlist button menus: press, drag to an item, release runs it; release on the button keeps the menu open
+    var ran: [String] = []
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: .borderless, backing: .buffered, defer: false)
+    let button = NSView(frame: NSRect(x: 0, y: 0, width: 25, height: 18))
+    window.contentView?.addSubview(button)
+    func popup() -> SkinnedPopupMenuView {
+        let p = SkinnedPopupMenuView(bar: SpriteCatalog.plAddMenuBar, items: ["URL", "DIR", "FILE"].map { name in
+            SkinnedMenuItem(normal: SpriteCatalog.plAddUrl, selected: SpriteCatalog.plAddUrlSelected) { ran.append(name) } })
+        p.frame = NSRect(x: 0, y: 30, width: 25, height: 54)
+        window.contentView?.addSubview(p)
+        return p
+    }
+    func event(_ type: NSEvent.EventType, _ view: NSView, _ point: NSPoint) -> NSEvent {
+        NSEvent.mouseEvent(with: type, location: view.convert(point, to: nil), modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                           context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+    }
+    let menu = popup()
+    let dir = NSPoint(x: 10, y: 27) // the middle row, flipped or not
+    menu.track(event(.leftMouseDragged, menu, dir), from: button)
+    assertEqual(menu.hoveredIndex, 1, "Dragging over an item lights it")
+    menu.track(event(.leftMouseUp, menu, dir), from: button)
+    assertTrue(ran == ["DIR"] && menu.superview == nil, "Release on the item runs it and closes the menu")
+    let kept = popup()
+    kept.track(event(.leftMouseUp, button, NSPoint(x: 5, y: 5)), from: button)
+    assertTrue(kept.superview != nil && ran.count == 1, "Release on the button: menu stays open for a click")
+    kept.track(event(.leftMouseUp, button, NSPoint(x: 90, y: 5)), from: button)
+    assertTrue(kept.superview == nil && ran.count == 1, "Release elsewhere closes it, nothing runs")
+    assertEqual(kept.itemIndex(at: NSPoint(x: 10, y: -1)), nil, "Just above the menu isn't the first item")
+
+    let pl = PlaylistWindowView(playlist: PlaylistModel())
+    assertTrue(pl.addButton.dragAfterPress != nil && pl.listButton.dragAfterPress != nil, "2.95: menus open on press")
+    PersistenceManager.shared.state.playlistSingleClickButtons = true
+    pl.applyMenuButtonMode()
+    assertTrue(pl.addButton.dragAfterPress == nil && pl.listButton.dragAfterPress == nil, "Old-school: click to open, click to pick")
+
+    // Show MacAmp in: Dock and menu bar by default (what MacAmp did before the option)
+    assertTrue(state.showDockIcon && PersistenceManager.shared.state.showMenuBarIcon, "Dock and menu bar by default")
+}
+
 print("\n🎉 ALL PHASE 2 VERIFICATION TESTS PASSED SUCCESSFULLY! 🎉\n")

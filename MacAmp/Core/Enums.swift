@@ -34,8 +34,11 @@ public enum WindowID: String, Codable, CaseIterable {
     case video
     case browser
     
-    /// Freely resizable windows that stay at 1x in Double Size mode (Winamp's playlist and general-purpose windows)
-    public var keepsOwnSize: Bool { self != .main && self != .equalizer }
+    /// Windows that stay at 1x in Double Size mode: Winamp's playlist and general-purpose windows, and the equalizer
+    /// when Preferences ▸ Options ▸ "Equalizer doublesize linked" is off
+    public var keepsOwnSize: Bool {
+        self == .equalizer ? !PersistenceManager.shared.state.eqDoubleSizeLinked : self != .main
+    }
 }
 
 public enum ScaleFactor: Int, Codable {

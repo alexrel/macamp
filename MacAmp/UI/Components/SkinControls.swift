@@ -237,9 +237,18 @@ public class SkinButton: WinampControlView {
         }
     }
     
+    /// Set: the action runs on press and the drag that follows goes here (playlist menus: press, drag to an item, release)
+    public var dragAfterPress: ((NSEvent) -> Void)?
+
     public override func mouseDown(with event: NSEvent) {
         isPressed = true
-        trackMouse(with: event)
+        guard let dragAfterPress, let window else { return trackMouse(with: event) }
+        action?()
+        while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            dragAfterPress(next)
+            if next.type == .leftMouseUp { break }
+        }
+        isPressed = false
     }
     
     private func trackMouse(with initialEvent: NSEvent) {

@@ -24,6 +24,16 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
         }
     }
     
+    /// Display ▸ Show MacAmp in (2.95's taskbar = the Dock): without the Dock icon MacAmp is an accessory app,
+    /// which also drops it from ⌘Tab and hides its menu bar menus; the windows' own menus still have everything
+    public func setDockIconVisible(_ visible: Bool) {
+        let policy: NSApplication.ActivationPolicy = visible ? .regular : .accessory
+        guard NSApp.activationPolicy() != policy else { return }
+        NSApp.setActivationPolicy(policy)
+        // Changing the policy deactivates the app; keep the windows in front
+        DispatchQueue.main.async { NSApp.activate(ignoringOtherApps: true) }
+    }
+
     public func setup() {
         guard statusItem == nil else { return }
         

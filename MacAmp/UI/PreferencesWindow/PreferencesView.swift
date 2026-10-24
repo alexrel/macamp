@@ -540,6 +540,9 @@ public struct PreferencesView: View {
         VStack(alignment: .leading, spacing: 10) {
             Win32GroupBox("Display options") {
                 VStack(alignment: .leading, spacing: 6) {
+                    Win32Checkbox("Always show Clutterbar", isOn: setting(\.alwaysShowClutterbar) { _ in
+                        PlayerCoordinator.shared.mainView?.updateClutterbar()
+                    })
                     Win32Checkbox("Display tooltips in MacAmp's main window", isOn: setting(\.mainWindowTooltips) { _ in
                         PlayerCoordinator.shared.applyMainWindowTooltips()
                     })
@@ -564,9 +567,33 @@ public struct PreferencesView: View {
                         set: { viewModel.marqueeFontMode = $0 ? .bitmap : .desktop }
                     ))
                     Win32Checkbox("Show numbers in Playlist", isOn: $viewModel.showNumbersInPlaylist)
+                    HStack(spacing: 6) {
+                        Text("Playlist font size").font(.system(size: 11)).foregroundColor(Win32Colors.text)
+                        Win32NumberField(value: Binding(
+                            get: { PersistenceManager.shared.state.playlistFontSize },
+                            set: {
+                                setLibrary(\.playlistFontSize, $0)
+                                PlayerCoordinator.shared.plView?.needsDisplay = true
+                            }), width: 28)
+                    }
                 }
             }
             
+            Win32GroupBox("Show MacAmp in:") {
+                VStack(alignment: .leading, spacing: 4) {
+                    // (Dock, menu bar), 2.95's Taskbar only / System tray only / Taskbar and system tray / None
+                    ForEach([("Dock only", true, false), ("Menu bar only", false, true), ("Dock and menu bar", true, true), ("None", false, false)], id: \.0) { title, dock, menuBar in
+                        Win32RadioButton(title, isSelected: PersistenceManager.shared.state.showDockIcon == dock && PersistenceManager.shared.state.showMenuBarIcon == menuBar) {
+                            setLibrary(\.showDockIcon, dock)
+                            setLibrary(\.showMenuBarIcon, menuBar)
+                            StatusBarManager.shared.setVisible(menuBar)
+                            StatusBarManager.shared.setDockIconVisible(dock)
+                        }
+                    }
+                    note("Without the Dock icon MacAmp isn't in ⌘Tab and its menu bar menus are hidden; right-click a MacAmp window for the menu.")
+                }
+            }
+
             // MacAmp additions (principle 5: a separate group below the classic options)
             Win32GroupBox("MacAmp") {
                 VStack(alignment: .leading, spacing: 6) {
@@ -720,6 +747,13 @@ public struct PreferencesView: View {
                     Win32Checkbox("Convert underscore to space in titles", isOn: setting(\.convertUnderscore) { _ in
                         PlayerCoordinator.shared.refreshAllViews()
                     })
+                    Win32Checkbox("Sort files on load", isOn: setting(\.sortFilesOnLoad))
+                    Win32Checkbox("Single-click playlist buttons (old-school)", isOn: setting(\.playlistSingleClickButtons) { _ in
+                        PlayerCoordinator.shared.plView?.applyMenuButtonMode()
+                    })
+                    Win32Checkbox("Equalizer doublesize linked", isOn: Binding(
+                        get: { PersistenceManager.shared.state.eqDoubleSizeLinked },
+                        set: { viewModel.objectWillChange.send(); PlayerCoordinator.shared.setEqDoubleSizeLinked($0) }))
                     Win32Checkbox("Manual playlist advance (i.e. no automatic)", isOn: Binding(
                         get: { viewModel.manualPlaylistAdvance },
                         set: { viewModel.manualPlaylistAdvance = $0 }

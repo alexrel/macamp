@@ -150,6 +150,16 @@ extension PlayerCoordinator {
         MainMenuManager.shared.updateStates()
     }
     
+    /// Options ▸ Equalizer doublesize linked: in Double Size, back to 1x and doubled again under the new rule
+    public func setEqDoubleSizeLinked(_ linked: Bool) {
+        let doubled = windowManager.currentScale == 2
+        if doubled { windowManager.setScale(1) }
+        persistence.state.eqDoubleSizeLinked = linked
+        persistence.saveSession()
+        if doubled { windowManager.setScale(2) }
+        updateWindowMasks()
+    }
+
     public func toggleDoubleSize() {
         let newScale: CGFloat = (windowManager.currentScale == 1.0) ? 2.0 : 1.0
         windowManager.setScale(newScale)

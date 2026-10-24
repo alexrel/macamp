@@ -148,7 +148,8 @@ public enum AppConstants {
     
     // MARK: - Playlist Window Layout
     public enum Playlist {
-        public static let trackRowHeight: CGFloat = 13
+        /// Row height follows Preferences ▸ Display ▸ Playlist font size (2.95's default 10 gives 13 px rows)
+        public static var trackRowHeight: CGFloat { CGFloat(PersistenceManager.shared.state.playlistFontSize) + 3 }
         public static let minTracksVisible: Int = 4
         
         /// Authentic Winamp 2.x geometry parameters

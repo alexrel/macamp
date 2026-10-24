@@ -55,6 +55,8 @@ public enum SpriteCatalog {
     
     // ClutterBar (O, A, I, D, V)
     public static let clutterBarBg = SpriteSlice("CLUTTER_BG", "TITLEBAR", 304, 0, 8, 43)
+    /// The empty strip shown when "Always show Clutterbar" is off and the mouse isn't over it
+    public static let clutterBarHidden = SpriteSlice("CLUTTER_BG_HIDDEN", "TITLEBAR", 312, 0, 8, 43)
     public static let clutterOActive = SpriteSlice("CLUTTER_O", "TITLEBAR", 304, 47, 8, 8)
     public static let clutterAActive = SpriteSlice("CLUTTER_A", "TITLEBAR", 312, 55, 8, 7)
     public static let clutterIActive = SpriteSlice("CLUTTER_I", "TITLEBAR", 320, 62, 8, 7)

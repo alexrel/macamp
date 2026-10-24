@@ -34,6 +34,9 @@ public struct AppState: Codable {
         get { httpProxyStorage ?? "" }
         set { httpProxyStorage = newValue }
     }
+    /// Display ▸ Show MacAmp in: Dock (2.95's taskbar); with showMenuBarIcon (the system tray)
+    public var showDockIconStorage: Bool? = nil
+    public var showDockIcon: Bool { get { showDockIconStorage ?? true } set { showDockIconStorage = newValue } }
     public var showMenuBarIcon: Bool {
         get { showMenuBarIconStorage ?? true }
         set { showMenuBarIconStorage = newValue }
@@ -95,6 +98,18 @@ public struct AppState: Codable {
         get { dimTitlebarsStorage ?? true }
         set { dimTitlebarsStorage = newValue }
     }
+    /// Options ▸ Equalizer doublesize linked (on in 2.95): the equalizer follows the main window into Double Size
+    public var eqDoubleSizeLinkedStorage: Bool? = nil
+    public var eqDoubleSizeLinked: Bool { get { eqDoubleSizeLinkedStorage ?? true } set { eqDoubleSizeLinkedStorage = newValue } }
+    /// Options ▸ Single-click playlist buttons (old-school), off in 2.95
+    public var playlistSingleClickButtonsStorage: Bool? = nil
+    public var playlistSingleClickButtons: Bool { get { playlistSingleClickButtonsStorage ?? false } set { playlistSingleClickButtonsStorage = newValue } }
+    /// Options ▸ Sort files on load (off in 2.95)
+    public var sortFilesOnLoadStorage: Bool? = nil
+    public var sortFilesOnLoad: Bool { get { sortFilesOnLoadStorage ?? false } set { sortFilesOnLoadStorage = newValue } }
+    /// Display ▸ Always show Clutterbar (on in 2.95)
+    public var alwaysShowClutterbarStorage: Bool? = nil
+    public var alwaysShowClutterbar: Bool { get { alwaysShowClutterbarStorage ?? true } set { alwaysShowClutterbarStorage = newValue } }
     public var mainWindowTooltipsStorage: Bool? = nil
     public var mainWindowTooltips: Bool {
         get { mainWindowTooltipsStorage ?? true }
@@ -336,6 +351,9 @@ public struct AppState: Codable {
     
     // Preferences - Playlist
     public var showNumbersInPlaylist: Bool = true
+    /// Display ▸ Playlist font size (2.95: 10)
+    public var playlistFontSizeStorage: Int? = nil
+    public var playlistFontSize: Int { get { playlistFontSizeStorage ?? 10 } set { playlistFontSizeStorage = min(24, max(7, newValue)) } }
     public var playlistZeroPadding: Bool = false
     public var playlistShowExtensions: Bool = false
     public var authenticShuffle: Bool = true

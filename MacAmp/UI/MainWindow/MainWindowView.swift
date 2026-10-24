@@ -132,6 +132,7 @@ public class MainWindowView: WinampControlView {
         }
         clutterVisualizerButton.frame = Layout.clutterVisualizerButton
         addSubview(clutterVisualizerButton)
+        updateClutterbar()
         
         // 3. Time, Visualizer, Marquee
         timeDisplay.frame = Layout.timeDisplay
@@ -393,6 +394,35 @@ public class MainWindowView: WinampControlView {
     }
     
     // MARK: - Drawing Background & Static Indicators
+    // MARK: - Clutterbar visibility (Preferences ▸ Display ▸ Always show Clutterbar)
+    /// Off: the bar shows only while the mouse is over it, as in 2.95
+    private var isOverClutterbar = false { didSet { if oldValue != isOverClutterbar { updateClutterbar() } } }
+    private var clutterbarArea: NSTrackingArea?
+    var clutterbarShown: Bool { PersistenceManager.shared.state.alwaysShowClutterbar || isOverClutterbar }
+
+    func updateClutterbar() {
+        for button in [clutterOptionsButton, alwaysOnTopButton, clutterFileInfoButton, doubleSizeButton, clutterVisualizerButton] {
+            button?.isHidden = !clutterbarShown
+        }
+        setNeedsDisplay(AppConstants.MainWindow.Layout.clutterBarBg)
+    }
+
+    public override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let clutterbarArea { removeTrackingArea(clutterbarArea) }
+        let area = NSTrackingArea(rect: AppConstants.MainWindow.Layout.clutterBarBg, options: [.mouseEnteredAndExited, .activeAlways], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        clutterbarArea = area
+    }
+
+    public override func mouseEntered(with event: NSEvent) {
+        if event.trackingArea === clutterbarArea { isOverClutterbar = true } else { super.mouseEntered(with: event) }
+    }
+
+    public override func mouseExited(with event: NSEvent) {
+        if event.trackingArea === clutterbarArea { isOverClutterbar = false } else { super.mouseExited(with: event) }
+    }
+
     public override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
@@ -420,7 +450,7 @@ public class MainWindowView: WinampControlView {
             }
             
             // 3. Draw ClutterBar background
-            if let clutterImg = SkinManager.shared.image(for: SpriteCatalog.clutterBarBg) {
+            if let clutterImg = SkinManager.shared.image(for: clutterbarShown ? SpriteCatalog.clutterBarBg : SpriteCatalog.clutterBarHidden) {
                 context.drawSkinImage(clutterImg, in: Layout.clutterBarBg)
             }
             

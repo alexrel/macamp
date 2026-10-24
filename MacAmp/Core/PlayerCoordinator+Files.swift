@@ -127,7 +127,9 @@ extension PlayerCoordinator {
         // Plug-ins (.macampplugin) are installed, after the user says yes
         let plugins = allPaths.filter { $0.lowercased().hasSuffix(".macampplugin") }
         plugins.forEach(confirmAndInstallPlugin)
-        let paths = allPaths.filter { !$0.lowercased().hasSuffix(".macampplugin") }
+        var paths = allPaths.filter { !$0.lowercased().hasSuffix(".macampplugin") }
+        // Options ▸ Sort files on load: several files at once go in by name, not in the order Finder hands them over
+        if persistence.state.sortFilesOnLoad { paths.sort { $0.localizedStandardCompare($1) == .orderedAscending } }
         // Formats only a plug-in plays, without that plug-in: say so instead of nothing happening
         let supported = AppConstants.Audio.supportedExtensions
         if let missing = paths.map({ URL(fileURLWithPath: $0).pathExtension.lowercased() })

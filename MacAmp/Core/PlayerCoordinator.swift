@@ -93,6 +93,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         let savedPositions = state.windowPositions
         let scale: CGFloat = (state.scaleFactor == .x2) ? 2.0 : 1.0
         windowManager.currentScale = scale
+        let eqScale: CGFloat = WindowID.equalizer.keepsOwnSize ? 1 : scale
         
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 100, y: 100, width: 1200, height: 800)
         let defaultOriginX = floor(screenFrame.minX + max(50, (screenFrame.width - AppConstants.Window.width * scale) / 2))
@@ -118,8 +119,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             let mH = (mPos.count >= 4) ? CGFloat(mPos[3]) : (state.isMainWindowShade ? AppConstants.Window.shadeHeight * scale : AppConstants.Window.height * scale)
             let rawMainRect = NSRect(x: CGFloat(mPos[0]), y: CGFloat(mPos[1]), width: mW, height: mH)
             
-            let eW = (ePos.count >= 4) ? CGFloat(ePos[2]) : (AppConstants.Window.width * scale)
-            let eH = (ePos.count >= 4) ? CGFloat(ePos[3]) : (state.isEqWindowShade ? AppConstants.Window.shadeHeight * scale : AppConstants.Window.height * scale)
+            let eW = (ePos.count >= 4) ? CGFloat(ePos[2]) : (AppConstants.Window.width * eqScale)
+            let eH = (ePos.count >= 4) ? CGFloat(ePos[3]) : (state.isEqWindowShade ? AppConstants.Window.shadeHeight * eqScale : AppConstants.Window.height * eqScale)
             let rawEqRect = NSRect(x: CGFloat(ePos[0]), y: CGFloat(ePos[1]), width: eW, height: eH)
             
             let pW = (pPos.count >= 4) ? CGFloat(pPos[2]) : plW
@@ -152,8 +153,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             let mainH = state.isMainWindowShade ? AppConstants.Window.shadeHeight * scale : AppConstants.Window.height * scale
             mainRect = NSRect(x: defaultOriginX, y: defaultOriginY, width: AppConstants.Window.width * scale, height: mainH)
             
-            let eqH = state.isEqWindowShade ? AppConstants.Window.shadeHeight * scale : AppConstants.Window.height * scale
-            eqRect = NSRect(x: defaultOriginX, y: defaultOriginY - eqH, width: AppConstants.Window.width * scale, height: eqH)
+            let eqH = state.isEqWindowShade ? AppConstants.Window.shadeHeight * eqScale : AppConstants.Window.height * eqScale
+            eqRect = NSRect(x: defaultOriginX, y: defaultOriginY - eqH, width: AppConstants.Window.width * eqScale, height: eqH)
             
             let pH = state.isPlaylistShade ? AppConstants.Window.shadeHeight : plH
             plRect = NSRect(x: defaultOriginX, y: defaultOriginY - eqH - pH, width: plW, height: pH)
