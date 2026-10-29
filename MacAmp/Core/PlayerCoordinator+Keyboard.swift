@@ -1,15 +1,16 @@
 import Cocoa
+import Carbon.HIToolbox
 import UniformTypeIdentifiers
 
 extension PlayerCoordinator {
     // MARK: - Keyboard Handling
     public func handleKeyDown(_ event: NSEvent) -> Bool {
-        let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let chars = event.hotkeyCharacters?.lowercased() ?? ""
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         
         // 0. Winamp 2.95 keys that work in every window (docs/UI-screens/shortkeys.txt)
         if NSApp.keyWindow === eqWindow,
-           eqView.handleEqualizerKey(characters: event.charactersIgnoringModifiers ?? "", keyCode: event.keyCode, flags: flags) {
+           eqView.handleEqualizerKey(characters: event.hotkeyCharacters ?? "", keyCode: event.keyCode, flags: flags) {
             return true
         }
         if let video, NSApp.keyWindow === video.window, video.handleKey(event) { return true }
@@ -181,5 +182,24 @@ extension PlayerCoordinator {
         guard !windows.isEmpty else { return }
         let current = windows.firstIndex { $0 === NSApp.keyWindow } ?? -1
         windows[(current + 1) % windows.count].makeKeyAndOrderFront(nil)
+    }
+}
+
+extension NSEvent {
+    /// `charactersIgnoringModifiers`, but on a non-Latin layout (Russian, Hebrew...) the character of the same key
+    /// in the user's Latin layout, like Windows virtual keys: Z X C V B answer on any layout.
+    var hotkeyCharacters: String? {
+        guard let chars = charactersIgnoringModifiers, !chars.allSatisfy(\.isASCII),
+              let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let layout = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return charactersIgnoringModifiers }
+        let data = Unmanaged<CFData>.fromOpaque(layout).takeUnretainedValue() as Data
+        var deadKeys: UInt32 = 0
+        var length = 0
+        var buffer = [UniChar](repeating: 0, count: 4)
+        let status = data.withUnsafeBytes {
+            UCKeyTranslate($0.bindMemory(to: UCKeyboardLayout.self).baseAddress, keyCode, UInt16(kUCKeyActionDown), 0,
+                           UInt32(LMGetKbdType()), OptionBits(kUCKeyTranslateNoDeadKeysBit), &deadKeys, buffer.count, &length, &buffer)
+        }
+        return status == noErr && length > 0 ? String(utf16CodeUnits: buffer, count: length) : chars
     }
 }

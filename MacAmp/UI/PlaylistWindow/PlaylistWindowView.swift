@@ -1196,7 +1196,7 @@ public class PlaylistWindowView: WinampControlView {
     
     public override func keyDown(with event: NSEvent) {
         let flags = event.modifierFlags.intersection([.shift, .control, .option, .command])
-        if handlePlaylistKey(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers ?? "", flags: flags) {
+        if handlePlaylistKey(keyCode: event.keyCode, characters: event.hotkeyCharacters ?? "", flags: flags) {
             return
         }
         // Everything else (Z/X/C/V/B, Ctrl+P, ...) goes to the window-level Winamp hotkeys

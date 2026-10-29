@@ -104,7 +104,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKScriptMessageHa
     /// Minibrowser keys (2.95): ⌥← Back, ⌥→ Forward, ⌃R Reload, ⌃⌥R Update Links, ⌃O Open Internet Location
     func handleKey(_ event: NSEvent) -> Bool {
         let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
-        switch (mods, event.keyCode, event.charactersIgnoringModifiers?.lowercased() ?? "") {
+        switch (mods, event.keyCode, event.hotkeyCharacters?.lowercased() ?? "") {
         case ([.option], 123, _), ([.option, .function], 123, _): webView.goBack()
         case ([.option], 124, _), ([.option, .function], 124, _): webView.goForward()
         case ([.control], _, "r"): webView.reload()

@@ -370,7 +370,7 @@ final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
     /// Keys while the video window (or its fullscreen) has the focus
     func handleKey(_ event: NSEvent) -> Bool {
         let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
-        switch (mods, event.keyCode, event.charactersIgnoringModifiers ?? "") {
+        switch (mods, event.keyCode, event.hotkeyCharacters ?? "") {
         case ([.option], 36, _), ([.option], 76, _): toggleFullscreen()
         case ([], 53, _) where fullscreen != nil: exitFullscreen()
         case ([], _, "1"): setZoom(.normal)
