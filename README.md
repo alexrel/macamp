@@ -9,6 +9,8 @@ the same windows, skins, menus, Preferences, dialogs and hotkeys as Winamp 2.95,
 **Download:** [latest release](https://github.com/alexrel/macamp/releases/latest) (DMG, Apple Silicon and Intel,
 macOS 14 Sonoma or later).
 
+<p align="center"><img src=".github/screenshot.webp" width="400" alt="MacAmp main window, equalizer and playlist docked together"></p>
+
 ## Features
 
 - **Main window, Equalizer and Playlist Editor** with magnetic docking, shade modes and Double Size (2x).
