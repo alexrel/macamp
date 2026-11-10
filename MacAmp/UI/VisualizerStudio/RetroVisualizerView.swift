@@ -457,8 +457,9 @@ public final class RetroVisualizerView: NSView {
         let width = goomView?.isCube == true ? GoomView.cubeTextureSize : options.renderWidth
         let height = goomView?.isCube == true ? GoomView.cubeTextureSize : options.renderHeight
         let insets = GenWindowFrameView.insets
-        window.setContentSize(NSSize(width: CGFloat(width * item.tag) + insets.left + insets.right,
-                                     height: CGFloat(height * item.tag) + insets.top + insets.bottom))
+        let scale = PersistenceManager.shared.state.interfaceScale.multiplier
+        window.setContentSize(NSSize(width: (CGFloat(width * item.tag) + insets.left + insets.right) * scale,
+                                     height: (CGFloat(height * item.tag) + insets.top + insets.bottom) * scale))
     }
     
     public func cyclePreset() {

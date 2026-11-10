@@ -87,10 +87,11 @@ public class JumpToFileWindowController: NSWindowController, NSWindowDelegate {
             self?.close()
         }
         
-        let hostingView = NSHostingView(rootView: JumpToFileView(viewModel: vm, onClose: { [weak self] in
+        let content = JumpToFileView(viewModel: vm, onClose: { [weak self] in
             self?.close()
-        }))
-        window.contentView = hostingView
+        })
+        window.installScaledDialog(content, size: NSSize(width: 460, height: 360))
+        window.center()
     }
     
     public required init?(coder: NSCoder) {

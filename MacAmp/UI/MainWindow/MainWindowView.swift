@@ -75,26 +75,26 @@ public class MainWindowView: WinampControlView {
     private func setupControls() {
         typealias Layout = AppConstants.MainWindow.Layout
         
-        // 1. TitleBar Buttons (Top-right and Top-left)
-        optionsButton = SkinButton(normal: SpriteCatalog.optionsNormal, pressed: SpriteCatalog.optionsPressed) { [weak self] in
+        // The titlebar sprite contains the normal buttons for each focus state.
+        optionsButton = SkinButton(pressed: SpriteCatalog.optionsPressed) { [weak self] in
             self?.onOpenOptions?()
         }
         optionsButton.frame = Layout.optionsButton
         addSubview(optionsButton)
         
-        minimizeButton = SkinButton(normal: SpriteCatalog.minimizeNormal, pressed: SpriteCatalog.minimizePressed) {
+        minimizeButton = SkinButton(pressed: SpriteCatalog.minimizePressed) {
             PlayerCoordinator.shared.minimizeAll()
         }
         minimizeButton.frame = Layout.minimizeButton
         addSubview(minimizeButton)
         
-        shadeButton = SkinButton(normal: SpriteCatalog.shadeNormal, pressed: SpriteCatalog.shadePressed) { [weak self] in
+        shadeButton = SkinButton(pressed: SpriteCatalog.shadePressed) { [weak self] in
             self?.onToggleShade?()
         }
         shadeButton.frame = Layout.shadeButton
         addSubview(shadeButton)
         
-        closeButton = SkinButton(normal: SpriteCatalog.closeNormal, pressed: SpriteCatalog.closePressed) {
+        closeButton = SkinButton(pressed: SpriteCatalog.closePressed) {
             NSApp.terminate(nil)
         }
         closeButton.frame = Layout.closeButton
@@ -318,7 +318,6 @@ public class MainWindowView: WinampControlView {
             clutterVisualizerButton.isHidden = true
             
             // 2. Switch shade button to unshade sprite
-            shadeButton.normalSlice = SpriteCatalog.mainShadeButtonSelected
             shadeButton.pressedSlice = SpriteCatalog.mainShadeButtonSelectedDepressed
             
             // 3. Move visualizer & time display to shade strip
@@ -362,7 +361,6 @@ public class MainWindowView: WinampControlView {
             clutterVisualizerButton.isHidden = false
             
             // 2. Switch shade button back to normal shade sprite
-            shadeButton.normalSlice = SpriteCatalog.shadeNormal
             shadeButton.pressedSlice = SpriteCatalog.shadePressed
             
             // 3. Restore full seek bar

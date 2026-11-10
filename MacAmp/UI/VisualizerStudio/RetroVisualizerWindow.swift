@@ -3,13 +3,16 @@ import Cocoa
 /// A dedicated fullscreen/standalone window for the Retro Visualizer Studio (AVS style).
 public final class RetroVisualizerWindow: NSWindow, NSWindowDelegate {
     static let studioMinimumSize = NSSize(width: 480, height: 320)
+    private static let initialSize = NSSize(width: 800, height: 500)
     
     public let studioView: RetroVisualizerView
     let frameView: GenWindowFrameView
     private let skinManager = SkinManager.shared
+    private var interfaceScale: CGFloat = 1
+    private var windowedSize = initialSize
     
     public init() {
-        let initialRect = NSRect(x: 100, y: 100, width: 800, height: 500)
+        let initialRect = NSRect(origin: NSPoint(x: 100, y: 100), size: Self.initialSize)
         
         let studio = RetroVisualizerView(frame: NSRect(origin: .zero, size: initialRect.size))
         studioView = studio
@@ -29,10 +32,9 @@ public final class RetroVisualizerWindow: NSWindow, NSWindowDelegate {
         self.isOpaque = false
         self.hasShadow = false
         self.collectionBehavior = [.fullScreenPrimary, .canJoinAllSpaces]
-        self.contentMinSize = Self.studioMinimumSize
         self.contentView = frameView
         self.delegate = self
-        updateSkinMask()
+        updateInterfaceScale()
         frameView.onClose = { [weak self] in self?.orderOut(nil) }
         studioView.onPresetChanged = { [weak self] preset in
             switch preset {
@@ -62,6 +64,31 @@ public final class RetroVisualizerWindow: NSWindow, NSWindowDelegate {
     public override var canBecomeKey: Bool { true }
     public override var canBecomeMain: Bool { true }
 
+    func updateInterfaceScale() {
+        let scale = PersistenceManager.shared.state.interfaceScale.multiplier
+        interfaceScale = scale
+        let visible = (screen ?? NSScreen.main)?.visibleFrame
+        contentMinSize = NSSize(width: min(Self.studioMinimumSize.width * scale, visible?.width ?? .infinity),
+                                height: min(Self.studioMinimumSize.height * scale, visible?.height ?? .infinity))
+        if !frameView.isFrameHidden, !styleMask.contains(.fullScreen) {
+            let preferred = windowedSize
+            let size = NSSize(width: min((preferred.width * scale).rounded(), visible?.width ?? .infinity),
+                              height: min((preferred.height * scale).rounded(), visible?.height ?? .infinity))
+            var origin = NSPoint(x: frame.minX, y: frame.maxY - size.height)
+            if let visible {
+                origin.x = min(max(origin.x, visible.minX), visible.maxX - size.width)
+                origin.y = min(max(origin.y, visible.minY), visible.maxY - size.height)
+            }
+            let newFrame = NSRect(origin: origin, size: size)
+            if newFrame != frame { setFrame(newFrame, display: true) }
+            // setFrame ran windowDidResize, which recorded the screen-clamped size: keep the size the user chose,
+            // so a smaller scale brings it back
+            windowedSize = preferred
+        }
+        updateContentScale(scale)
+        updateSkinMask()
+    }
+
     func updateSkinMask() {
         let region = skinManager.currentSkin?.region
         let path = frameView.isFrameHidden ? nil : region?.normalMask(fitting: frameView.bounds.size)
@@ -73,9 +100,16 @@ public final class RetroVisualizerWindow: NSWindow, NSWindowDelegate {
         updateSkinMask()
     }
 
-    public func windowDidResize(_ notification: Notification) { updateSkinMask() }
+    public func windowDidResize(_ notification: Notification) {
+        updateContentScale(interfaceScale)
+        if !frameView.isFrameHidden { windowedSize = frameView.bounds.size }
+        updateSkinMask()
+    }
     public func windowWillEnterFullScreen(_ notification: Notification) { showFrame(false) }
-    public func windowDidExitFullScreen(_ notification: Notification) { showFrame(true) }
+    public func windowDidExitFullScreen(_ notification: Notification) {
+        showFrame(true)
+        updateInterfaceScale()
+    }
     public func windowDidFailToEnterFullScreen(_ window: NSWindow) { showFrame(true) }
     
     public func updateSpectrum(_ spectrum: [Float]) {

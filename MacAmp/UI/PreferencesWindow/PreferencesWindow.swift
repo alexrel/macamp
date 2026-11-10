@@ -61,10 +61,11 @@ public class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
         
-        let hostingView = NSHostingView(rootView: PreferencesView(viewModel: vm, onClose: { [weak self] in
+        let content = PreferencesView(viewModel: vm, onClose: { [weak self] in
             self?.close()
-        }))
-        window.contentView = hostingView
+        })
+        window.installScaledDialog(content, size: NSSize(width: 560, height: 440))
+        window.center()
     }
     
     public required init?(coder: NSCoder) {

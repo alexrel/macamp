@@ -26,6 +26,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKScriptMessageHa
         webView.configuration.userContentController.add(WeakScriptHandler(self), name: "macampPlay")
         webView.customUserAgent = nil
         window.contentView = frameView
+        window.updateContentScale(WindowLayoutManager.shared.scale(for: .browser))
         window.onKey = { [weak self] event in self?.handleKey(event) ?? false }
         frameView.onClose = { [weak self] in self?.hide() }
         frameView.onResized = { [weak self] _ in self?.coordinator.saveAuxFrame(self?.window, "browser") }

@@ -88,14 +88,13 @@ public class TrackInfoWindowController: NSWindowController, NSWindowDelegate {
             }
         )
         
-        let hostingView = NSHostingView(rootView: TrackInfoView(viewModel: viewModel, onClose: { [weak self] in
+        let content = TrackInfoView(viewModel: viewModel, onClose: { [weak self] in
             self?.close()
-        }))
+        })
         
         // Fixed-size dialog like Winamp's: fit the content (MPEG and non-MPEG layouts differ in height)
         window?.title = metadata.techInfo.isMPEG ? "MPEG file info box + ID3 tag editor" : "File info box"
-        window?.contentView = hostingView
-        window?.setContentSize(hostingView.fittingSize)
+        window?.installScaledDialog(content)
     }
     
     private func handleMetadataSaved(_ meta: AudioFileMetadata, at index: Int) {

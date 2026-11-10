@@ -91,9 +91,7 @@ public enum Win32Dialog {
             NSApp.stopModal()
         }
         window.onCancel = { finish(false) }
-        let hosting = NSHostingView(rootView: content(finish).frame(width: width).fixedSize(horizontal: false, vertical: true))
-        window.contentView = hosting
-        window.setContentSize(hosting.fittingSize)
+        window.installScaledDialog(content(finish).frame(width: width).fixedSize(horizontal: false, vertical: true))
         window.center()
         // Above the player windows, which may be floating (Always On Top)
         window.level = .modalPanel

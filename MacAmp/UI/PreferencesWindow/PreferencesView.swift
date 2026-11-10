@@ -63,14 +63,12 @@ public class PreferencesViewModel: ObservableObject {
             MainMenuManager.shared.updateStates()
         }
     }
-    
+
     @Published public var scaleFactor: ScaleFactor {
-        didSet {
-            PersistenceManager.shared.state.scaleFactor = scaleFactor
-            PersistenceManager.shared.saveSession()
-            PlayerCoordinator.shared.setScale(scaleFactor)
-            MainMenuManager.shared.updateStates()
-        }
+        didSet { PlayerCoordinator.shared.setScale(scaleFactor) }
+    }
+    @Published var interfaceScale: InterfaceScale {
+        didSet { PlayerCoordinator.shared.setInterfaceScale(interfaceScale) }
     }
     
     // Titles & Display State
@@ -284,6 +282,7 @@ public class PreferencesViewModel: ObservableObject {
         let state = PersistenceManager.shared.state
         self.isAlwaysOnTop = state.isAlwaysOnTop
         self.scaleFactor = state.scaleFactor
+        self.interfaceScale = state.interfaceScale
         self.marqueeFontMode = state.marqueeFontMode
         self.desktopFontFamily = state.desktopFontFamily
         self.desktopFontSize = state.desktopFontSize
@@ -513,7 +512,7 @@ public struct PreferencesView: View {
                 Spacer()
             }
             .padding(.horizontal, indented ? 2 : 4)
-            .padding(.vertical, 1)
+            .padding(.vertical, indented ? 0 : 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -618,6 +617,13 @@ public struct PreferencesView: View {
                             Win32ComboBox(selection: $viewModel.desktopFontSize,
                                           options: availableFontSizes.map { (value: $0, title: "\(Int($0)) pt") }, width: 64)
                         }
+                    }
+                }
+            }
+            Win32GroupBox("Interface scale") {
+                HStack(spacing: 12) {
+                    ForEach(InterfaceScale.allCases, id: \.rawValue) { scale in
+                        Win32RadioButton("\(scale.rawValue)%", isSelected: viewModel.interfaceScale == scale) { viewModel.interfaceScale = scale }
                     }
                 }
             }
@@ -1599,7 +1605,8 @@ private struct FileTypesSection: View {
 
     /// Winamp's icon chooser: vertical slider on the left, the icon Finder will show on the right
     private func iconBox(_ title: String, kind: DocumentIconManager.Kind) -> some View {
-        Win32GroupBox(title) {
+        let iconSize: CGFloat = 64
+        return Win32GroupBox(title) {
             HStack(spacing: 10) {
                 Win32VerticalTickSlider(
                     position: Binding(
@@ -1607,7 +1614,7 @@ private struct FileTypesSection: View {
                         set: { icons.preview($0, for: kind) } // dragging only changes the preview
                     ),
                     count: DocumentIconManager.resourceIDs.count,
-                    height: 64,
+                    height: iconSize,
                     onCommit: { Task { await icons.commit(for: kind) } } // applied once, on release
                 )
                 .disabled(!icons.canChangeIcons)
@@ -1615,13 +1622,14 @@ private struct FileTypesSection: View {
                     Image(nsImage: image)
                         .interpolation(.none) // original 32 px pixel art, doubled
                         .resizable()
-                        .frame(width: 64, height: 64)
+                        .frame(width: iconSize, height: iconSize)
                 } else {
-                    Rectangle().fill(Color.clear).frame(width: 64, height: 64)
+                    Color.clear.frame(width: iconSize, height: iconSize)
                 }
                 Spacer(minLength: 0)
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func run(_ work: @escaping () async -> Void) {

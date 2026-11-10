@@ -71,14 +71,14 @@ public class EqualizerWindowView: WinampControlView {
     private func setupControls() {
         typealias Layout = AppConstants.Equalizer.Layout
         
-        // 1. TitleBar Buttons (Close at x: 264, Shade at x: 254)
-        closeButton = SkinButton(normal: SpriteCatalog.eqCloseNormal, pressed: SpriteCatalog.eqClosePressed) { [weak self] in
+        // The titlebar sprite contains the normal buttons for each focus state.
+        closeButton = SkinButton(pressed: SpriteCatalog.eqClosePressed) { [weak self] in
             self?.onClose?()
         }
         closeButton.frame = Layout.closeButton
         addSubview(closeButton)
         
-        shadeButton = SkinButton(normal: SpriteCatalog.shadeNormal, pressed: SpriteCatalog.shadePressed) { [weak self] in
+        shadeButton = SkinButton(pressed: SpriteCatalog.shadePressed) { [weak self] in
             self?.onToggleShade?()
         }
         shadeButton.frame = Layout.shadeButton

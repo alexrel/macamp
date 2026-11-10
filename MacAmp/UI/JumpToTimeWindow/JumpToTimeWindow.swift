@@ -74,10 +74,11 @@ public class JumpToTimeWindowController: NSWindowController, NSWindowDelegate {
             self?.close()
         }
         
-        let hostingView = NSHostingView(rootView: JumpToTimeView(viewModel: vm, onClose: { [weak self] in
+        let content = JumpToTimeView(viewModel: vm, onClose: { [weak self] in
             self?.close()
-        }))
-        window.contentView = hostingView
+        })
+        window.installScaledDialog(content, size: NSSize(width: 320, height: 175))
+        window.center()
     }
     
     public required init?(coder: NSCoder) {

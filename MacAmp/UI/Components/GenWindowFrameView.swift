@@ -50,6 +50,7 @@ public class GenWindowFrameView: WinampControlView {
         let i = frameInsets
         contentView.frame = NSRect(x: i.left, y: i.top, width: max(0, bounds.width - i.left - i.right),
                                    height: max(0, bounds.height - i.top - i.bottom))
+        if contentView is ScaledHostingContent { contentView.needsLayout = true }
     }
 
     // MARK: Sprites (GEN.BMP layout, verified on the base skin)
@@ -153,6 +154,7 @@ public class GenWindowFrameView: WinampControlView {
     func draw(_ ctx: CGContext, _ image: CGImage?, x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat, cropFromLeft: Bool? = nil) {
         guard let image, w > 0, h > 0 else { return }
         ctx.saveGState()
+        ctx.setShouldAntialias(false)
         ctx.clip(to: CGRect(x: x, y: y, width: w, height: h))
         let full = CGFloat(image.width)
         let originX = (cropFromLeft == false) ? x + w - full : x
@@ -217,14 +219,18 @@ public class GenWindowFrameView: WinampControlView {
 
     /// Resize from the bottom-right grip, snapped to Winamp's 25 × 29 steps; the top-left corner stays put.
     private func trackResize(from start: NSEvent, in win: NSWindow) {
-        let startMouse = NSEvent.mouseLocation
+        let startMouse = win.convertPoint(toScreen: start.locationInWindow)
         let startFrame = win.frame
+        let scale = PersistenceManager.shared.state.interfaceScale.multiplier
+        let startSize = bounds.size
         while let event = win.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
-            let mouse = NSEvent.mouseLocation
-            let size = GenWindowFrameView.snappedSize(NSSize(width: startFrame.width + mouse.x - startMouse.x,
-                                                             height: startFrame.height - (mouse.y - startMouse.y)))
+            let mouse = win.convertPoint(toScreen: event.locationInWindow)
+            let logicalSize = GenWindowFrameView.snappedSize(NSSize(width: startSize.width + (mouse.x - startMouse.x) / scale,
+                                                                    height: startSize.height + (startMouse.y - mouse.y) / scale))
+            let size = WindowLayoutManager.scaled(logicalSize)
             if size != win.frame.size {
                 win.setFrame(NSRect(x: startFrame.minX, y: startFrame.maxY - size.height, width: size.width, height: size.height), display: true)
+                win.updateContentScale(scale, logicalSize: logicalSize)
                 onResized?(size)
             }
             if event.type == .leftMouseUp { return }

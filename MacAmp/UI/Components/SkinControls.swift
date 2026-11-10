@@ -12,6 +12,8 @@ extension CGContext {
     @inlinable
     public func drawSkinImage(_ image: CGImage, in rect: CGRect) {
         saveGState()
+        // Antialiased edges leave translucent seams between tiles at fractional scales.
+        setShouldAntialias(false)
         translateBy(x: rect.minX, y: rect.maxY)
         scaleBy(x: 1.0, y: -1.0)
         draw(image, in: CGRect(x: 0, y: 0, width: rect.width, height: rect.height))

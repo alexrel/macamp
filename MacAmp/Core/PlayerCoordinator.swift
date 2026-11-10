@@ -91,12 +91,17 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     func setupWindows() {
         let state = persistence.state
         let savedPositions = state.windowPositions
-        let scale: CGFloat = (state.scaleFactor == .x2) ? 2.0 : 1.0
-        windowManager.currentScale = scale
-        let eqScale: CGFloat = WindowID.equalizer.keepsOwnSize ? 1 : scale
+        windowManager.currentScale = state.scaleFactor.scale
+        let scale = windowManager.scale(for: .main)
+        let eqScale = windowManager.scale(for: .equalizer)
+        let plScale = windowManager.scale(for: .playlist)
+        let mainHeight = state.isMainWindowShade ? AppConstants.Window.shadeHeight : AppConstants.Window.height
+        let eqHeight = state.isEqWindowShade ? AppConstants.Window.shadeHeight : AppConstants.Window.height
+        let mainSize = windowManager.frameSize(for: .main, logical: NSSize(width: AppConstants.Window.width, height: mainHeight))
+        let eqSize = windowManager.frameSize(for: .equalizer, logical: NSSize(width: AppConstants.Window.width, height: eqHeight))
         
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 100, y: 100, width: 1200, height: 800)
-        let defaultOriginX = floor(screenFrame.minX + max(50, (screenFrame.width - AppConstants.Window.width * scale) / 2))
+        let defaultOriginX = floor(screenFrame.minX + max(50, (screenFrame.width - mainSize.width) / 2))
         let defaultOriginY = floor(screenFrame.maxY - 150)
         
         // Playlist sizing (canonical 25px X step, 29px Y step)
@@ -106,6 +111,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         let plW = AppConstants.Window.width + stepsX * AppConstants.Window.resizeStepX
         let stepsY = max(0, round((rawPlH - AppConstants.Window.height) / AppConstants.Window.resizeStepY))
         let plH = AppConstants.Window.height + stepsY * AppConstants.Window.resizeStepY
+        let plHeight = state.isPlaylistShade ? AppConstants.Window.shadeHeight : plH
+        let plSize = windowManager.frameSize(for: .playlist, logical: NSSize(width: plW, height: plHeight))
         
         let mainRect: NSRect
         let eqRect: NSRect
@@ -115,17 +122,14 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
            let ePos = savedPositions["equalizer"], ePos.count >= 2,
            let pPos = savedPositions["playlist"], pPos.count >= 2 {
             
-            let mW = (mPos.count >= 4) ? CGFloat(mPos[2]) : (AppConstants.Window.width * scale)
-            let mH = (mPos.count >= 4) ? CGFloat(mPos[3]) : (state.isMainWindowShade ? AppConstants.Window.shadeHeight * scale : AppConstants.Window.height * scale)
-            let rawMainRect = NSRect(x: CGFloat(mPos[0]), y: CGFloat(mPos[1]), width: mW, height: mH)
-            
-            let eW = (ePos.count >= 4) ? CGFloat(ePos[2]) : (AppConstants.Window.width * eqScale)
-            let eH = (ePos.count >= 4) ? CGFloat(ePos[3]) : (state.isEqWindowShade ? AppConstants.Window.shadeHeight * eqScale : AppConstants.Window.height * eqScale)
-            let rawEqRect = NSRect(x: CGFloat(ePos[0]), y: CGFloat(ePos[1]), width: eW, height: eH)
-            
-            let pW = (pPos.count >= 4) ? CGFloat(pPos[2]) : plW
-            let pH = (pPos.count >= 4) ? CGFloat(pPos[3]) : (state.isPlaylistShade ? AppConstants.Window.shadeHeight : plH)
-            let rawPlRect = NSRect(x: CGFloat(pPos[0]), y: CGFloat(pPos[1]), width: pW, height: pH)
+            // An entry gives the top-left corner (see savedFrame(of:)); the size follows from the state above
+            func restored(_ pos: [Double], _ size: NSSize) -> NSRect {
+                let top = pos.count >= 4 ? pos[1] + pos[3] : pos[1] + size.height
+                return NSRect(x: pos[0], y: top - size.height, width: size.width, height: size.height)
+            }
+            let rawMainRect = restored(mPos, mainSize)
+            let rawEqRect = restored(ePos, eqSize)
+            let rawPlRect = restored(pPos, plSize)
             
             // Check if saved position is visible on any currently connected screen
             if windowManager.isRectVisibleOnAnyScreen(rawMainRect) {
@@ -150,14 +154,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             }
         } else {
             // Default standard Winamp layout (Main top -> EQ middle -> PL bottom)
-            let mainH = state.isMainWindowShade ? AppConstants.Window.shadeHeight * scale : AppConstants.Window.height * scale
-            mainRect = NSRect(x: defaultOriginX, y: defaultOriginY, width: AppConstants.Window.width * scale, height: mainH)
-            
-            let eqH = state.isEqWindowShade ? AppConstants.Window.shadeHeight * eqScale : AppConstants.Window.height * eqScale
-            eqRect = NSRect(x: defaultOriginX, y: defaultOriginY - eqH, width: AppConstants.Window.width * eqScale, height: eqH)
-            
-            let pH = state.isPlaylistShade ? AppConstants.Window.shadeHeight : plH
-            plRect = NSRect(x: defaultOriginX, y: defaultOriginY - eqH - pH, width: plW, height: pH)
+            mainRect = NSRect(origin: NSPoint(x: defaultOriginX, y: defaultOriginY), size: mainSize)
+            eqRect = NSRect(origin: NSPoint(x: defaultOriginX, y: mainRect.minY - eqSize.height), size: eqSize)
+            plRect = NSRect(origin: NSPoint(x: defaultOriginX, y: eqRect.minY - plSize.height), size: plSize)
         }
         
         // 1. Main Window
@@ -166,34 +165,25 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         mainView = MainWindowView()
         mainView.isShadeMode = state.isMainWindowShade
         mainView.autoresizesSubviews = false
-        mainView.frame = NSRect(x: 0, y: 0, width: mainRect.width, height: mainRect.height)
-        let mainUnscaledH = state.isMainWindowShade ? AppConstants.Window.shadeHeight : AppConstants.Window.height
-        mainView.bounds = NSRect(x: 0, y: 0, width: AppConstants.Window.width, height: mainUnscaledH)
         mainWindow.contentView = mainView
+        mainWindow.updateContentScale(scale, logicalSize: NSSize(width: AppConstants.Window.width, height: mainHeight))
         
         // 2. Equalizer Window
         eqWindow = WinampWindow(windowID: .equalizer, contentRect: eqRect)
         eqView = EqualizerWindowView()
         eqView.isShadeMode = state.isEqWindowShade
         eqView.autoresizesSubviews = false
-        eqView.frame = NSRect(x: 0, y: 0, width: eqRect.width, height: eqRect.height)
-        let eqUnscaledH = state.isEqWindowShade ? AppConstants.Window.shadeHeight : AppConstants.Window.height
-        eqView.bounds = NSRect(x: 0, y: 0, width: AppConstants.Window.width, height: eqUnscaledH)
         eqWindow.contentView = eqView
+        eqWindow.updateContentScale(eqScale, logicalSize: NSSize(width: AppConstants.Window.width, height: eqHeight))
         
         // 3. Playlist Window
         plWindow = WinampWindow(windowID: .playlist, contentRect: plRect)
         plView = PlaylistWindowView(playlist: playlist)
         plView.isShadeMode = state.isPlaylistShade
-        plView.frame = NSRect(x: 0, y: 0, width: plRect.width, height: plRect.height)
-        plView.bounds = NSRect(x: 0, y: 0, width: plRect.width, height: plRect.height)
         plView.autoresizesSubviews = false
         plWindow.contentView = plView
+        plWindow.updateContentScale(plScale, logicalSize: NSSize(width: plW, height: plHeight))
         plWindow.initialFirstResponder = plView // playlist keyboard navigation works as soon as the window is key
-        
-        // Clamp and update adjacency graph
-        windowManager.clampToScreen()
-        windowManager.updateAdjacencies()
     }
     
     // MARK: - Window Display

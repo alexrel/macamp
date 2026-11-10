@@ -360,6 +360,11 @@ public struct AppState: Codable {
     }
     public var timeDisplayMode: TimeDisplayMode = .elapsed
     public var scaleFactor: ScaleFactor = .x1
+    public var interfaceScaleStorage: InterfaceScale?
+    public var interfaceScale: InterfaceScale {
+        get { interfaceScaleStorage ?? .standard }
+        set { interfaceScaleStorage = newValue }
+    }
     
     public var isMainWindowShade: Bool = false
     public var isEqWindowVisible: Bool = true

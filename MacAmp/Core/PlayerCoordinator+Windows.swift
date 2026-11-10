@@ -146,48 +146,37 @@ extension PlayerCoordinator {
     
     public func togglePlShade() {
         let newShade = !plView.isShadeMode
-        let newH: CGFloat = newShade ? AppConstants.Window.shadeHeight : AppConstants.Window.height
-        windowManager.handleWindowHeightChange(id: .playlist, newHeightUnscaled: newH)
+        let savedHeight = CGFloat(persistence.state.playlistWindowSize.last ?? 0)
+        let newH = newShade ? AppConstants.Window.shadeHeight : max(AppConstants.Window.height, savedHeight)
         plView.isShadeMode = newShade
-        
-        plView.needsLayout = true
-        plView.layoutSubtreeIfNeeded()
-        plView.needsDisplay = true
-        plView.subviews.forEach { $0.needsDisplay = true }
-        
-        persistence.state.isPlaylistShade = newShade
-        persistence.saveSession()
+        windowManager.handleWindowHeightChange(id: .playlist, newHeightUnscaled: newH)
     }
     
     // MARK: - Double Size Toggle (1x / 2x)
     public func setScale(_ factor: ScaleFactor) {
-        let newScale: CGFloat = (factor == .x2) ? 2.0 : 1.0
-        windowManager.setScale(newScale)
-        mainView?.doubleSizeButton.isSelected = (newScale == 2.0)
+        windowManager.setScale(factor.scale)
+        mainView?.doubleSizeButton.isSelected = factor == .x2
         persistence.state.scaleFactor = factor
         persistence.saveSession()
         updateWindowMasks()
         MainMenuManager.shared.updateStates()
     }
     
-    /// Options ▸ Equalizer doublesize linked: in Double Size, back to 1x and doubled again under the new rule
     public func setEqDoubleSizeLinked(_ linked: Bool) {
-        let doubled = windowManager.currentScale == 2
-        if doubled { windowManager.setScale(1) }
         persistence.state.eqDoubleSizeLinked = linked
-        persistence.saveSession()
-        if doubled { windowManager.setScale(2) }
-        updateWindowMasks()
+        setScale(persistence.state.scaleFactor)
     }
 
     public func toggleDoubleSize() {
-        let newScale: CGFloat = (windowManager.currentScale == 1.0) ? 2.0 : 1.0
-        windowManager.setScale(newScale)
-        mainView.doubleSizeButton.isSelected = (newScale == 2.0)
-        persistence.state.scaleFactor = (newScale == 2.0) ? .x2 : .x1
-        persistence.saveSession()
-        updateWindowMasks()
-        MainMenuManager.shared.updateStates()
+        setScale(persistence.state.scaleFactor.toggle)
+    }
+
+    func setInterfaceScale(_ scale: InterfaceScale) {
+        guard persistence.state.interfaceScale != scale else { return }
+        persistence.state.interfaceScale = scale
+        setScale(persistence.state.scaleFactor)
+        visualizerStudioWindow?.updateInterfaceScale()
+        NSApp.windows.forEach { $0.updateDialogScale(scale.multiplier) }
     }
     
     // MARK: - Window Masking & Transparency

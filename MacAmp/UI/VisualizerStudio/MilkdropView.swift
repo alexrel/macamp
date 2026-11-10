@@ -117,7 +117,7 @@ public final class MilkdropView: NSOpenGLView {
     private func applySize() {
         guard let projectM else { return }
         // convertToBacking ignores wantsBestResolutionOpenGLSurface: without the check a 1x surface got a 2x render (4x the GPU work, picture cropped)
-        let px = wantsBestResolutionOpenGLSurface ? convertToBacking(bounds).size : bounds.size
+        let px = wantsBestResolutionOpenGLSurface ? convertToBacking(bounds).size : convert(bounds, to: nil).size
         projectm_set_window_size(projectM, Int(px.width), Int(px.height))
     }
 

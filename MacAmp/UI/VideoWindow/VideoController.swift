@@ -64,6 +64,7 @@ final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
         surface.player = player
         surface.onDoubleClick = { [weak self] in self?.toggleFullscreen() }
         window.contentView = frameView
+        window.updateContentScale(WindowLayoutManager.shared.scale(for: .video))
         frameView.onClose = { [weak self] in self?.close() }
         frameView.onResized = { [weak self] _ in self?.coordinator.saveAuxFrame(self?.window, "video") }
         frameView.onButton = { [weak self] index in self?.button(index) }
@@ -290,13 +291,17 @@ final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
     func setZoom(_ zoom: Zoom) {
         guard let naturalSize, fullscreen == nil else { return }
         let screen = (window.screen ?? NSScreen.main)?.visibleFrame
-        let (size, scale) = VideoController.windowSize(video: naturalSize, zoom: zoom, insets: frameView.frameInsets, screen: screen?.size)
+        let interfaceScale = state.interfaceScale.multiplier
+        let room = screen.map { NSSize(width: $0.width / interfaceScale, height: $0.height / interfaceScale) }
+        let (logicalSize, scale) = VideoController.windowSize(video: naturalSize, zoom: zoom, insets: frameView.frameInsets, screen: room)
+        let size = WindowLayoutManager.scaled(logicalSize)
         var frame = NSRect(x: window.frame.minX, y: window.frame.maxY - size.height, width: size.width, height: size.height)
         if let screen { // keep it on the screen it's on
             frame.origin.x = min(max(frame.minX, screen.minX), screen.maxX - frame.width)
             frame.origin.y = min(max(frame.minY, screen.minY), screen.maxY - frame.height)
         }
         window.setFrame(frame, display: true)
+        window.updateContentScale(interfaceScale, logicalSize: logicalSize)
         frameView.info = "\(currentURL?.deletingPathExtension().lastPathComponent ?? "") (\(Int(naturalSize.width))x\(Int(naturalSize.height)), \(Int((scale * 100).rounded()))%)"
         coordinator.saveAuxFrame(window, "video")
     }

@@ -29,7 +29,8 @@ public final class MediaWindowFrameView: GenWindowFrameView {
     /// (this view is flipped: the menu's top-left corner is the point given)
     func menuOrigin(_ menu: NSMenu, button index: Int) -> NSPoint {
         let r = buttonRect(index)
-        return NSPoint(x: r.minX, y: r.minY - menu.size.height)
+        let height = convert(NSRect(origin: .zero, size: menu.size), from: nil).height
+        return NSPoint(x: r.minX, y: r.minY - height)
     }
 
     /// Opens a button's menu above it

@@ -48,10 +48,11 @@ public class AboutWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
         
-        let hostingView = NSHostingView(rootView: AboutView(onClose: { [weak self] in
+        let content = AboutView(onClose: { [weak self] in
             self?.close()
-        }))
-        window.contentView = hostingView
+        })
+        window.installScaledDialog(content, size: NSSize(width: 410, height: 310))
+        window.center()
     }
     
     public required init?(coder: NSCoder) {

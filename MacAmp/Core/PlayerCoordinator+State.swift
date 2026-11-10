@@ -154,28 +154,14 @@ extension PlayerCoordinator {
     public func saveWindowLayout() {
         guard let main = mainWindow, let eq = eqWindow, let pl = plWindow else { return }
         
-        persistence.state.windowPositions["main"] = [
-            Double(round(main.frame.minX)),
-            Double(round(main.frame.minY)),
-            Double(round(main.frame.width)),
-            Double(round(main.frame.height))
-        ]
-        persistence.state.windowPositions["equalizer"] = [
-            Double(round(eq.frame.minX)),
-            Double(round(eq.frame.minY)),
-            Double(round(eq.frame.width)),
-            Double(round(eq.frame.height))
-        ]
-        persistence.state.windowPositions["playlist"] = [
-            Double(round(pl.frame.minX)),
-            Double(round(pl.frame.minY)),
-            Double(round(pl.frame.width)),
-            Double(round(pl.frame.height))
-        ]
+        for (id, window) in [(WindowID.main, main), (.equalizer, eq), (.playlist, pl)] {
+            persistence.state.windowPositions[id.rawValue] = savedFrame(of: window)
+        }
         
         persistence.state.playlistWindowSize = [
-            Double(round(pl.frame.width)),
-            Double(round(pl.frame.height))
+            Double(plView.bounds.width.rounded()),
+            plView.isShadeMode ? (persistence.state.playlistWindowSize.last ?? Double(AppConstants.Window.height))
+                               : Double(plView.bounds.height.rounded())
         ]
         persistence.state.scaleFactor = (windowManager.currentScale == 2.0) ? .x2 : .x1
         persistence.state.isMainWindowShade = mainView.isShadeMode
