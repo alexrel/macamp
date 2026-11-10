@@ -1,0 +1,5 @@
+// projectM 4.1.8 (LGPL-2.1) C API; library built by scripts/build_projectm.sh
+module CProjectM [system] {
+    umbrella header "projectM-4/projectM.h"
+    export *
+}

@@ -29,6 +29,12 @@ public enum Win32Dialog {
         }
     }
 
+    static func inform(title: String, message: String) {
+        _ = runModal(title: title, width: 340) { finish in
+            ConfirmView(message: message, confirmTitle: "OK", cancelTitle: nil, finish: finish)
+        }
+    }
+
     private final class FieldsModel: ObservableObject {
         @Published var values: [String]
         init(values: [String]) { self.values = values }
@@ -130,7 +136,7 @@ public enum Win32Dialog {
     private struct ConfirmView: View {
         let message: String
         let confirmTitle: String
-        let cancelTitle: String
+        let cancelTitle: String?
         let finish: (Bool) -> Void
 
         var body: some View {
@@ -142,7 +148,7 @@ public enum Win32Dialog {
                 HStack(spacing: 6) {
                     Spacer()
                     DialogButton(confirmTitle, isDefault: true) { finish(true) }
-                    DialogButton(cancelTitle) { finish(false) }
+                    if let cancelTitle { DialogButton(cancelTitle) { finish(false) } }
                 }
             }
             .padding(12)

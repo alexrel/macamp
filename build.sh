@@ -76,11 +76,10 @@ link_and_register() {
 
 build_debug() {
     log_step "Building Debug configuration"
-    rm -rf "$DEBUG_APP"
-    xcodebuild -scheme "$SCHEME" \
+    xcodebuild -quiet -scheme "$SCHEME" \
                -configuration Debug \
                -derivedDataPath "$DERIVED_DATA" \
-               build | grep -E '\*\*\s*BUILD|error:|warning:' || true
+               build
     
     if [ -d "$DEBUG_APP" ]; then
         link_and_register "$DEBUG_APP"
@@ -94,11 +93,11 @@ build_debug() {
 build_release() {
     log_step "Building Release configuration"
     # generic destination: Apple Silicon + Intel in one binary (not just this Mac's architecture)
-    xcodebuild -scheme "$SCHEME" \
+    xcodebuild -quiet -scheme "$SCHEME" \
                -configuration Release \
                -destination "generic/platform=macOS" \
                -derivedDataPath "$DERIVED_DATA" \
-               build | grep -E '\*\*\s*BUILD|error:|warning:' || true
+               build
     
     if [ -d "$RELEASE_APP" ]; then
         link_and_register "$RELEASE_APP"
@@ -180,7 +179,13 @@ run_tests() {
     swiftc -module-cache-path "$DERIVED_DATA/ModuleCache" \
            -target arm64-apple-macos14.0 \
            -I "$DERIVED_DATA/Build/Products/Debug/" \
+           -I MacAmp/Vendor/GOOM \
            -framework Cocoa -framework AVFoundation -framework AppKit -framework WebKit -framework Carbon \
+           -framework OpenGL -framework SceneKit \
+           -L "$PWD/$BUILD_DIR/projectm/install/lib" -lprojectM-4 \
+           -L "$PWD/$BUILD_DIR/goom" -lgoom \
+           -Xlinker -rpath -Xlinker "$PWD/$BUILD_DIR/projectm/install/lib" \
+           -Xlinker -rpath -Xlinker "$PWD/$BUILD_DIR/goom" \
            $obj_files scripts/run_all_tests.swift -o "$BUILD_DIR/run_all_tests"
     
     # Run against a throwaway home directory: tests save session/playlist/skins through

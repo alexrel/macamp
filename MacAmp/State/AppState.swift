@@ -1,5 +1,22 @@
 import Foundation
 
+struct GoomOptions: Codable, Equatable {
+    static let widths = 240...800
+    static let heights = 160...600
+    static let frameRates = [5, 10, 15, 20, 25, 30, 0]
+
+    var width = 320
+    var height = 240
+    var frameRate = 30
+    var cinemascope = false
+    var showFPS = true
+    var showTitle = true
+
+    var renderWidth: Int { min(max(width, Self.widths.lowerBound), Self.widths.upperBound) }
+    var renderHeight: Int { min(max(height, Self.heights.lowerBound), Self.heights.upperBound) }
+    var frameLimit: Int { Self.frameRates.contains(frameRate) ? frameRate : 30 }
+}
+
 public struct AppState: Codable {
     public var volume: Double = AppConstants.Audio.defaultVolume
     public var balance: Double = AppConstants.Audio.defaultBalance
@@ -92,6 +109,36 @@ public struct AppState: Codable {
         set { autoStartVisPluginStorage = newValue }
     }
     
+    /// Modern: Milkdrop in the Visualizer Studio (random order, seconds per preset)
+    public var milkdropShuffleStorage: Bool? = nil
+    public var milkdropShuffle: Bool {
+        get { milkdropShuffleStorage ?? true }
+        set { milkdropShuffleStorage = newValue }
+    }
+    /// Full Retina resolution for Milkdrop: 4x the pixels (M1 fullscreen: ~6 ms a frame typical, a rare heavy preset 30 FPS)
+    public var milkdropRetinaStorage: Bool? = nil
+    public var milkdropRetina: Bool {
+        get { milkdropRetinaStorage ?? true }
+        set { milkdropRetinaStorage = newValue }
+    }
+    public var milkdropSecondsStorage: Int? = nil
+    public var milkdropSeconds: Int {
+        get { milkdropSecondsStorage ?? 30 }
+        set { milkdropSecondsStorage = newValue }
+    }
+
+    var goomPluginSelected: Bool {
+        get { goomPluginStorage ?? false }
+        set { goomPluginStorage = newValue }
+    }
+    var goomPluginStorage: Bool?
+
+    var goomOptions: GoomOptions {
+        get { goomOptionsStorage ?? GoomOptions() }
+        set { goomOptionsStorage = newValue }
+    }
+    var goomOptionsStorage: GoomOptions?
+
     /// Display: "Dim titlebars when inactive" and "Display tooltips in Winamp's main window" (both on in 2.95)
     public var dimTitlebarsStorage: Bool? = nil
     public var dimTitlebars: Bool {

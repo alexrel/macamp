@@ -20,17 +20,37 @@ extension PlayerCoordinator {
     
     /// Opens or closes the Fullscreen Retro Visualizer Studio window (Ctrl+Shift+K)
     public func toggleVisualizerStudio() {
+        if visualizerStudioWindow?.isVisible == true {
+            visualizerStudioWindow?.orderOut(nil)
+            updateActivityState()
+        } else {
+            startVisualizerStudio()
+        }
+    }
+
+    func startVisualizerStudio() {
         if visualizerStudioWindow == nil {
             visualizerStudioWindow = RetroVisualizerWindow()
         }
         guard let win = visualizerStudioWindow else { return }
-        
-        if win.isVisible {
-            win.orderOut(nil)
-        } else {
-            win.makeKeyAndOrderFront(nil)
+        if persistence.state.goomPluginSelected {
+            if win.studioView.currentPreset != .goom { win.studioView.currentPreset = .goom }
+        } else if win.studioView.currentPreset == .goom {
+            win.studioView.currentPreset = .fireSpectrum
         }
+        win.makeKeyAndOrderFront(nil)
         updateActivityState()
+    }
+
+    func raisePlayerWindows(for keyWindow: WinampWindow) {
+        guard let studio = visualizerStudioWindow, studio.isVisible,
+              !studio.styleMask.contains(.fullScreen),
+              keyWindow === mainWindow || keyWindow === eqWindow || keyWindow === plWindow else { return }
+        for window in [plWindow, eqWindow, mainWindow].compactMap({ $0 })
+        where window !== keyWindow && window.isVisible && window.isOnActiveSpace && !window.isMiniaturized {
+            window.orderFront(nil)
+        }
+        keyWindow.orderFront(nil)
     }
     
     /// Brings all currently visible MacAmp windows to the front in proper z-order (Playlist -> Equalizer -> MainWindow)
@@ -177,11 +197,12 @@ extension PlayerCoordinator {
         let mainPath = mainView.isShadeMode ? region?.windowShadeMask : region?.normalMask
         let eqPath = eqView.isShadeMode ? region?.equalizerShadeMask : region?.equalizerMask
         
-        applyWindowMask(path: mainPath, to: mainView)
-        applyWindowMask(path: eqPath, to: eqView)
+        Self.applyWindowMask(path: mainPath, to: mainView)
+        Self.applyWindowMask(path: eqPath, to: eqView)
+        visualizerStudioWindow?.updateSkinMask()
     }
     
-    func applyWindowMask(path: CGPath?, to view: NSView) {
+    static func applyWindowMask(path: CGPath?, to view: NSView) {
         guard let path = path else {
             view.layer?.mask = nil
             view.window?.invalidateShadow()

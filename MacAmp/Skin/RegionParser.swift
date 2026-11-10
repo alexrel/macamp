@@ -6,6 +6,33 @@ public struct SkinRegion {
     public var windowShadeMask: CGPath?
     public var equalizerMask: CGPath?
     public var equalizerShadeMask: CGPath?
+
+    func normalMask(fitting size: CGSize) -> CGPath? {
+        guard let normalMask else { return nil }
+        let path = CGMutablePath()
+        // Stretch the middle of the player outline while keeping the skin's corner cutouts at their original size.
+        func stretch(_ coordinate: CGFloat, from source: CGFloat, to target: CGFloat) -> CGFloat {
+            let corner = min(source, target) / 4
+            let fraction = (coordinate - corner) / (source - 2 * corner)
+            return coordinate + (target - source) * min(1, max(0, fraction))
+        }
+        normalMask.applyWithBlock { pointer in
+            let element = pointer.pointee
+            if element.type == .closeSubpath {
+                path.closeSubpath()
+                return
+            }
+            let point = element.points[0]
+            let fitted = CGPoint(x: stretch(point.x, from: AppConstants.Window.width, to: size.width),
+                                 y: stretch(point.y, from: AppConstants.Window.height, to: size.height))
+            if element.type == .moveToPoint {
+                path.move(to: fitted)
+            } else {
+                path.addLine(to: fitted)
+            }
+        }
+        return path
+    }
 }
 
 public class RegionParser {

@@ -14,6 +14,13 @@ public class GenWindowFrameView: WinampControlView {
     public let contentView: NSView
     public var onClose: (() -> Void)?
     public var onResized: ((NSSize) -> Void)?
+    var isFrameHidden = false {
+        didSet {
+            needsLayout = true
+            needsDisplay = true
+            window?.invalidateCursorRects(for: self)
+        }
+    }
     var closePressed = false
     /// Frame thickness of this kind of window (VIDEO.BMP / MB.BMP have a taller bottom bar)
     public var frameInsets: NSEdgeInsets { GenWindowFrameView.insets }
@@ -36,6 +43,10 @@ public class GenWindowFrameView: WinampControlView {
 
     public override func layout() {
         super.layout()
+        if isFrameHidden {
+            contentView.frame = bounds
+            return
+        }
         let i = frameInsets
         contentView.frame = NSRect(x: i.left, y: i.top, width: max(0, bounds.width - i.left - i.right),
                                    height: max(0, bounds.height - i.top - i.bottom))
@@ -56,7 +67,7 @@ public class GenWindowFrameView: WinampControlView {
     var resizeGripRect: NSRect { NSRect(x: bounds.width - 20, y: bounds.height - 20, width: 20, height: 20) }
 
     public override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        guard !isFrameHidden, let ctx = NSGraphicsContext.current?.cgContext else { return }
         ctx.interpolationQuality = .none
         let w = bounds.width, h = bounds.height
         let active = drawsActiveTitleBar
@@ -168,19 +179,24 @@ public class GenWindowFrameView: WinampControlView {
     // MARK: Mouse: title drags, close button, resize grip
 
     public override func skinCursorZones() -> [(rect: NSRect, name: String)] {
-        [(NSRect(x: 0, y: 0, width: bounds.width, height: 20), "TITLEBAR"), (resizeGripRect, "PSIZE")]
+        guard !isFrameHidden else { return [] }
+        return [(NSRect(x: 0, y: 0, width: bounds.width, height: 20), "TITLEBAR"), (resizeGripRect, "PSIZE")]
     }
 
     public override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        guard let win = window as? WinampWindow else { return }
+        guard !isFrameHidden, let win = window else { return }
         if closeRect.insetBy(dx: -2, dy: -2).contains(point) {
             trackCloseButton(in: win)
         } else if resizeGripRect.contains(point) {
             trackResize(from: event, in: win)
         } else if point.y <= 20 {
-            win.startWindowDrag(with: event)
-            trackWindowDrag(with: event, in: win)
+            if let dockable = win as? WinampWindow {
+                dockable.startWindowDrag(with: event)
+                trackWindowDrag(with: event, in: dockable)
+            } else {
+                win.performDrag(with: event)
+            }
         }
     }
 

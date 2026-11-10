@@ -238,6 +238,7 @@ public class AudioEngine {
             var silentWindows = 0 // tap thread only
             engine.mainMixerNode.installTap(onBus: 0, bufferSize: AppConstants.Audio.bufferSize, format: tapFormat) { [weak self] buffer, _ in
                 guard let channels = buffer.floatChannelData else { return }
+                VisualizerPCMFeed.add(buffer)
                 let window = analyzer.windowSize
                 let frameCount = Int(buffer.frameLength)
                 let windows = max(1, min(VisualizerFrameBuffer.slotCount / 2, frameCount / window))

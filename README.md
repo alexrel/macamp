@@ -23,7 +23,7 @@ macOS 14 Sonoma or later).
 - **Internet radio:** SHOUTcast and Icecast streams with live titles.
 - **Audio CD:** play and rip to FLAC, ALAC, AAC, WAV or AIFF, with M3U/PLS playlists of the rip.
 - **Media Library** with local media, playlists and Internet Radio; **Minibrowser** and **Video** window.
-- **Visualizer:** spectrum and oscilloscope in the main window, full-screen Visualizer Studio.
+- **Visualizer:** spectrum and oscilloscope in the main window, full-screen Visualizer Studio, MilkDrop through projectM, and What A Goom! 1.99.4.
 - **Track Info** with ID3 tag editing, Winamp-style Preferences, About, context menus and the 2.95 hotkeys
   (on any keyboard layout), global hotkeys and media keys.
 - **Plug-ins:** the optional FFmpeg plug-in plays MKV/WebM/AVI/WMV and WMA/APE/WavPack (see the release assets).
@@ -48,9 +48,23 @@ Why the document icon chooser works: Finder takes document icons from the app bu
 the icon inside `MacAmp.app` and re-signs itself with a local (ad-hoc) signature. That is only possible
 because the app isn't signed with a Developer ID, which a local re-sign would replace.
 
+## Visualization
+
+MacAmp ships with GOOM and its effects, plus the projectM engine for MilkDrop. The app bundle includes
+both libraries' licenses and matching source archives.
+
+Download MilkDrop presets separately. In **Preferences ▸ Plug-ins ▸ Visualization**, choose
+**Open presets folder** and extract the pack there. The folder is
+`~/Library/Application Support/MacAmp/Milkdrop`. Use [Cream of the Crop](https://github.com/projectM-visualizer/presets-cream-of-the-crop)
+or the [original MilkDrop pack](https://github.com/projectM-visualizer/presets-milkdrop-original)
+with its [texture pack](https://github.com/projectM-visualizer/presets-milkdrop-texture-pack).
+
+Press **Tab** to switch Studio modes. In MilkDrop and GOOM, **L** opens the list, and the highlighted
+preset or effect applies immediately. Close the list with **L**, **Return** or **Esc**.
+
 ## Building
 
-Requires Xcode 16 or later.
+Requires Xcode 16 and CMake 3.21 or later. The first build downloads and builds the pinned projectM release for MilkDrop.
 
 ```bash
 ./build.sh            # Debug build

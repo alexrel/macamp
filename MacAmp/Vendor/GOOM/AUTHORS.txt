@@ -1,0 +1,10 @@
+What a GOOM!
+============
+
+Copyright (c) 2000-2001, Jean-Christophe Hoelt <jeko@free.fr>
+Programmer and Software Designer at iOS software.
+
+but also :
+
+Fred for the Win32 port.
+Gyom for the MacOSX port.

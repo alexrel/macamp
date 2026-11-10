@@ -1,0 +1,4 @@
+module CGoom [system] {
+    header "MacAmpGoom.h"
+    export *
+}

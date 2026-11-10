@@ -97,6 +97,17 @@
 		AADB0851B80A783027FF2DFB /* FileAssociationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3D82961B6FAC94F43B75D1 /* FileAssociationManager.swift */; };
 		AA3C91FDED6774422B41A404 /* DocumentIconManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA466F9A66ACD7BC92C4FDD0 /* DocumentIconManager.swift */; };
 		AAE3548D0386B294262440E0 /* MacAmpNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6F767C53DC44A8F4F93E11 /* MacAmpNetwork.swift */; };
+		AA0D5C1E00000000000000A2 /* MilkdropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000A1 /* MilkdropView.swift */; };
+		AA0D5C1E00000000000000A4 /* libprojectM-4.4.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000A3 /* libprojectM-4.4.dylib */; };
+		AA0D5C1E00000000000000A5 /* libprojectM-4.4.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000A3 /* libprojectM-4.4.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		AA0D5C1E00000000000000A9 /* projectM-LGPL-2.1.txt in Resources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000A8 /* projectM-LGPL-2.1.txt */; };
+		AA0D5C1E00000000000000AB /* projectM-source.tar.gz in Resources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000AA /* projectM-source.tar.gz */; };
+		AA0D5C1E00000000000000B6 /* GoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B1 /* GoomView.swift */; };
+		AA0D5C1E00000000000000B7 /* VisualizerSelectionList.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B2 /* VisualizerSelectionList.swift */; };
+		AA0D5C1E00000000000000B8 /* libgoom.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B3 /* libgoom.dylib */; };
+		AA0D5C1E00000000000000B9 /* libgoom.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B3 /* libgoom.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		AA0D5C1E00000000000000BA /* GOOM-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B4 /* GOOM-LICENSE.txt */; };
+		AA0D5C1E00000000000000BB /* GOOM-source.zip in Resources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B5 /* GOOM-source.zip */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -192,13 +203,39 @@
 		AA3D82961B6FAC94F43B75D1 /* FileAssociationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAssociationManager.swift; sourceTree = "<group>"; };
 		AA466F9A66ACD7BC92C4FDD0 /* DocumentIconManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentIconManager.swift; sourceTree = "<group>"; };
 		AA6F767C53DC44A8F4F93E11 /* MacAmpNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAmpNetwork.swift; sourceTree = "<group>"; };
+		AA0D5C1E00000000000000A1 /* MilkdropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MilkdropView.swift"; sourceTree = "<group>"; };
+		AA0D5C1E00000000000000A3 /* libprojectM-4.4.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = "libprojectM-4.4.dylib"; path = "build/projectm/install/lib/libprojectM-4.4.dylib"; sourceTree = SOURCE_ROOT; };
+		AA0D5C1E00000000000000A8 /* projectM-LGPL-2.1.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "projectM-LGPL-2.1.txt"; path = "build/projectm/projectM-LGPL-2.1.txt"; sourceTree = SOURCE_ROOT; };
+		AA0D5C1E00000000000000AA /* projectM-source.tar.gz */ = {isa = PBXFileReference; lastKnownFileType = archive.gzip; name = "projectM-source.tar.gz"; path = "build/projectm/projectM-source.tar.gz"; sourceTree = SOURCE_ROOT; };
+		AA0D5C1E00000000000000B1 /* GoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "GoomView.swift"; path = "GoomView.swift"; sourceTree = "<group>"; };
+		AA0D5C1E00000000000000B2 /* VisualizerSelectionList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "VisualizerSelectionList.swift"; path = "VisualizerSelectionList.swift"; sourceTree = "<group>"; };
+		AA0D5C1E00000000000000B3 /* libgoom.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = "libgoom.dylib"; path = "build/goom/libgoom.dylib"; sourceTree = SOURCE_ROOT; };
+		AA0D5C1E00000000000000B4 /* GOOM-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "GOOM-LICENSE.txt"; path = "build/goom/GOOM-LICENSE.txt"; sourceTree = SOURCE_ROOT; };
+		AA0D5C1E00000000000000B5 /* GOOM-source.zip */ = {isa = PBXFileReference; lastKnownFileType = archive.zip; name = "GOOM-source.zip"; path = "build/goom/GOOM-source.zip"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AA0D5C1E00000000000000A6 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				AA0D5C1E00000000000000A5 /* libprojectM-4.4.dylib in Embed Frameworks */,
+				AA0D5C1E00000000000000B9 /* libgoom.dylib in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		BDC0693D2B887D8B0009C001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA0D5C1E00000000000000A4 /* libprojectM-4.4.dylib in Frameworks */,
+				AA0D5C1E00000000000000B8 /* libgoom.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -491,6 +528,11 @@
 			children = (
 				AABE9A70ACCC9353179DCC5D /* RetroVisualizerView.swift */,
 				AAAE1F0C29EF5855E6B39317 /* RetroVisualizerWindow.swift */,
+				AA0D5C1E00000000000000A1 /* MilkdropView.swift */,
+				AA0D5C1E00000000000000B1 /* GoomView.swift */,
+				AA0D5C1E00000000000000B2 /* VisualizerSelectionList.swift */,
+				AA0D5C1E00000000000000B3 /* libgoom.dylib */,
+				AA0D5C1E00000000000000A3 /* libprojectM-4.4.dylib */,
 			);
 			path = "VisualizerStudio";
 			sourceTree = "<group>";
@@ -502,9 +544,12 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = BDC0694F2B887D910009C001 /* Build configuration list for PBXNativeTarget "MacAmp" */;
 			buildPhases = (
+				AA0D5C1E00000000000000A7 /* Build projectM */,
+				AA0D5C1E00000000000000BC /* Build GOOM */,
 				BDC0693C2B887D8B0009C001 /* Sources */,
 				BDC0693D2B887D8B0009C001 /* Frameworks */,
 				BDC0693E2B887D8B0009C001 /* Resources */,
+				AA0D5C1E00000000000000A6 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -554,6 +599,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */,
+				AA0D5C1E00000000000000A9 /* projectM-LGPL-2.1.txt in Resources */,
+				AA0D5C1E00000000000000AB /* projectM-source.tar.gz in Resources */,
+				AA0D5C1E00000000000000BA /* GOOM-LICENSE.txt in Resources */,
+				AA0D5C1E00000000000000BB /* GOOM-source.zip in Resources */,
 				AADC170587A89F4091446E8E /* DocumentIconChoices in Resources */,
 				AAB30301AFC2DAF68138D1B9 /* WinampAudioFile.icns in Resources */,
 				AA1439011306C7704675E1C9 /* WinampPlaylist.icns in Resources */,
@@ -581,6 +630,42 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		AA0D5C1E00000000000000A7 /* Build projectM */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = (
+				"$(SRCROOT)/scripts/build_projectm.sh",
+			);
+			name = "Build projectM";
+			outputPaths = (
+				"$(SRCROOT)/build/projectm/install/lib/libprojectM-4.4.dylib",
+				"$(SRCROOT)/build/projectm/install/lib/libprojectM-4.dylib",
+				"$(SRCROOT)/build/projectm/projectM-LGPL-2.1.txt",
+				"$(SRCROOT)/build/projectm/projectM-source.tar.gz",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$SRCROOT/scripts/build_projectm.sh\"\n";
+		};
+		AA0D5C1E00000000000000BC /* Build GOOM */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			name = "Build GOOM";
+			outputPaths = (
+				"$(SRCROOT)/build/goom/libgoom.dylib",
+				"$(SRCROOT)/build/goom/GOOM-LICENSE.txt",
+				"$(SRCROOT)/build/goom/GOOM-source.zip",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$SRCROOT/scripts/build_goom.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		BDC0693C2B887D8B0009C001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -603,6 +688,9 @@
 				AA9DAD216D7E3F566897F67A /* MainWindowView.swift in Sources */,
 				AA195EB9DE640C5112A89966 /* RetroVisualizerView.swift in Sources */,
 				AA41F9DD7C55435BD6A690A7 /* RetroVisualizerWindow.swift in Sources */,
+				AA0D5C1E00000000000000A2 /* MilkdropView.swift in Sources */,
+				AA0D5C1E00000000000000B6 /* GoomView.swift in Sources */,
+				AA0D5C1E00000000000000B7 /* VisualizerSelectionList.swift in Sources */,
 				AAF0E2D4D2A02A51FE841B73 /* CubicSpline.swift in Sources */,
 				AA9E25734126AF5A37B18D2E /* EqualizerWindowView.swift in Sources */,
 				AA49E4E81FD4135DED9F929D /* PlaylistWindowView.swift in Sources */,
@@ -804,6 +892,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"MacAmp/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MacAmp/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
@@ -812,10 +901,16 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/build/projectm/install/lib",
+					"$(SRCROOT)/build/goom",
+				);
 				MARKETING_VERSION = 0.8;
 				PRODUCT_BUNDLE_IDENTIFIER = alexrel.MacAmp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INCLUDE_PATHS = ("$(SRCROOT)/MacAmp/Vendor/projectM", "$(SRCROOT)/MacAmp/Vendor/GOOM");
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -832,6 +927,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"MacAmp/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MacAmp/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
@@ -840,10 +936,16 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/build/projectm/install/lib",
+					"$(SRCROOT)/build/goom",
+				);
 				MARKETING_VERSION = 0.8;
 				PRODUCT_BUNDLE_IDENTIFIER = alexrel.MacAmp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INCLUDE_PATHS = ("$(SRCROOT)/MacAmp/Vendor/projectM", "$(SRCROOT)/MacAmp/Vendor/GOOM");
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;

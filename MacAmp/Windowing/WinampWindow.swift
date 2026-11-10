@@ -29,6 +29,7 @@ public class WinampWindow: NSWindow {
     
     public override func becomeKey() {
         super.becomeKey()
+        PlayerCoordinator.shared.raisePlayerWindows(for: self)
         PlayerCoordinator.shared.updateTitleBarFocus()
     }
     
@@ -38,8 +39,12 @@ public class WinampWindow: NSWindow {
     }
     
     public override func sendEvent(_ event: NSEvent) {
-        if event.type == .leftMouseDown && !isKeyWindow {
-            makeKey()
+        if event.type == .leftMouseDown {
+            if isKeyWindow {
+                PlayerCoordinator.shared.raisePlayerWindows(for: self)
+            } else {
+                makeKey()
+            }
         }
         super.sendEvent(event)
     }

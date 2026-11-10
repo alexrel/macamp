@@ -464,14 +464,12 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self else { return }
-                self.mainView.setNeedsDisplayRecursively()
-                self.eqView.setNeedsDisplayRecursively()
-                self.plView.setNeedsDisplayRecursively()
-                self.updateWindowMasks()
+                self.refreshAllViews()
                 // New skin, new cursors
                 self.mainView.invalidateSkinCursorsRecursively()
                 self.eqView.invalidateSkinCursorsRecursively()
                 self.plView.invalidateSkinCursorsRecursively()
+                self.visualizerStudioWindow?.frameView.invalidateSkinCursorsRecursively()
             }
             .store(in: &cancellables)
             
@@ -527,12 +525,14 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         libraryWindow?.contentView?.needsDisplay = true
         video?.frameView.needsDisplay = true
         browser?.frameView.needsDisplay = true
+        visualizerStudioWindow?.frameView.needsDisplay = true
     }
     
     public func refreshAllViews() {
         mainView?.setNeedsDisplayRecursively()
         eqView?.setNeedsDisplayRecursively()
         plView?.setNeedsDisplayRecursively()
+        visualizerStudioWindow?.frameView.setNeedsDisplayRecursively()
         updateWindowMasks()
     }
     
@@ -549,6 +549,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         guard let mainView else { return }
         let mainVisible = isWindowOnScreen(mainWindow)
         let studioVisible = isWindowOnScreen(visualizerStudioWindow)
+        visualizerStudioWindow?.studioView.setActivity(visible: studioVisible, playing: audioEngine.status == .playing)
         audioEngine.isAnalysisEnabled = (mainVisible && mainView.visualizer.mode != .off) || studioVisible
         mainView.marquee.isScrollingActive = mainVisible && audioEngine.status == .playing
         updateBlinkState(for: audioEngine.status)

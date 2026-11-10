@@ -136,6 +136,17 @@ public struct AboutView: View {
                     .font(.system(size: 10))
                     .foregroundColor(Win32Colors.text)
                     .textSelection(.enabled)
+
+                // projectM is LGPL and linked dynamically: the library inside the app can be replaced by a build of the same version
+                Text("MilkDrop: projectM 4.1.8, copyright © 2003–2009 projectM Team, LGPL 2.1 or later. The license (projectM-LGPL-2.1.txt) and corresponding modified source (projectM-source.tar.gz) are in MacAmp.app/Contents/Resources.")
+                    .font(.system(size: 10))
+                    .foregroundColor(Win32Colors.text)
+                    .textSelection(.enabled)
+
+                Text("What A Goom! v1.99.4 by Jean-Christophe Hoelt (Jeko) and Fred Howell, LGPL. The license (GOOM-LICENSE.txt) and corresponding modified source (GOOM-source.zip) are in MacAmp.app/Contents/Resources.")
+                    .font(.system(size: 10))
+                    .foregroundColor(Win32Colors.text)
+                    .textSelection(.enabled)
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)

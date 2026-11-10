@@ -1,5 +1,6 @@
 import Cocoa
 import CoreGraphics
+import Carbon.HIToolbox
 
 /// Visualizer presets available in Retro Visualizer Studio
 public enum StudioVisualizerPreset: Int, CaseIterable {
@@ -8,6 +9,8 @@ public enum StudioVisualizerPreset: Int, CaseIterable {
     case neonCyber = 2
     case matrixRain = 3
     case solarOrb = 4
+    case milkdrop = 5
+    case goom = 6
     
     public var title: String {
         switch self {
@@ -16,6 +19,8 @@ public enum StudioVisualizerPreset: Int, CaseIterable {
         case .neonCyber: return "Neon Cyber City Spectrum"
         case .matrixRain: return "Matrix Digital Rain"
         case .solarOrb: return "Solar Radial Orb"
+        case .milkdrop: return "Milkdrop (projectM)"
+        case .goom: return "What A Goom!"
         }
     }
 }
@@ -27,8 +32,176 @@ public final class RetroVisualizerView: NSView {
     // MARK: - Properties
     public var currentPreset: StudioVisualizerPreset = .fireSpectrum {
         didSet {
+            if oldValue != currentPreset { closeSelectionList() }
             triggerHUD()
+            syncMilkdrop()
+            syncGoom()
+            updateAnimation()
+            onPresetChanged?(currentPreset)
             needsDisplay = true
+        }
+    }
+
+    // Milkdrop sits on top of the view as a GL subview and exists only while it is the shown preset
+    private var milkdropView: MilkdropView?
+    private var milkdropLabel: NSTextField?
+    private var selectionList: VisualizerSelectionList?
+    private var milkdropListedPresets: [URL] = []
+    private var milkdropTick = 0
+    private var showMilkdropInfo = true // F5 toggles preset name and FPS
+    private var isOnScreen = false
+    private var isPlaying = false
+    private var goomView: GoomView?
+    // GOOM's filter IDs are zero-based, while its force-effect commands start at 1.
+    private static let goomEffects = [
+        (key: kVK_F1, title: "Normal"), (key: kVK_F2, title: "Wave"),
+        (key: kVK_F3, title: "Crystal Ball"), (key: kVK_F4, title: "Scrunch"),
+        (key: kVK_F5, title: "Amulette"), (key: kVK_F6, title: "Water"),
+        (key: kVK_F7, title: "Hypercos I"), (key: kVK_F8, title: "Hypercos II")
+    ]
+
+    /// The plate is as wide as its text, cut off (with …) only when the window is narrower
+    private func layoutMilkdropLabel() {
+        guard let label = milkdropLabel else { return }
+        let width = max(0, min(label.intrinsicContentSize.width, bounds.width - 20))
+        label.frame = NSRect(x: bounds.width - width - 10, y: bounds.height - 26, width: width, height: 18)
+    }
+
+    private func syncMilkdrop(closing: Bool = false) {
+        if currentPreset == .milkdrop && !closing {
+            guard isOnScreen, milkdropLabel == nil else { return }
+            if let view = MilkdropView(studioFrame: bounds) {
+                view.isOnScreen = true
+                addSubview(view)
+                milkdropView = view
+                view.onPresetsChanged = { [weak self] in
+                    self?.reloadMilkdropPresetList()
+                    self?.updateAnimation()
+                    self?.updateMilkdropLabel()
+                }
+            }
+            let label = NSTextField(labelWithString: "")
+            label.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
+            label.textColor = .white
+            label.drawsBackground = true
+            label.backgroundColor = NSColor.black.withAlphaComponent(0.55)
+            label.lineBreakMode = .byTruncatingTail
+            label.alignment = .right
+            label.autoresizingMask = [.minXMargin, .minYMargin]
+            label.isHidden = !showMilkdropInfo
+            addSubview(label)
+            milkdropLabel = label
+            updateMilkdropLabel()
+        } else {
+            milkdropView?.shutdown()
+            milkdropView?.removeFromSuperview()
+            milkdropLabel?.removeFromSuperview()
+            milkdropView = nil
+            milkdropLabel = nil
+        }
+    }
+
+    private func updateMilkdropLabel() {
+        guard let label = milkdropLabel else { return }
+        if let failed = milkdropView?.failedPresetName {
+            label.stringValue = " Could not load \(failed) "
+            label.isHidden = false
+        } else if let view = milkdropView, !view.initializationFailed {
+            let status = !isPlaying && Date() >= view.renderUntil ? "paused" : (view.fps > 0 ? "\(view.fps) FPS" : "starting")
+            label.stringValue = " \(status)  ·  \(view.presetName)  ·  L = presets "
+            label.isHidden = !showMilkdropInfo
+        } else {
+            label.stringValue = " MilkDrop could not start "
+        }
+        layoutMilkdropLabel()
+    }
+
+    public override func layout() {
+        super.layout()
+        layoutMilkdropLabel()
+        layoutSelectionList()
+    }
+
+    private func layoutSelectionList() {
+        guard let list = selectionList else { return }
+        let height = min(list.contentHeight, floor(bounds.height * 0.72))
+        list.frame = NSRect(x: 12, y: bounds.height - 28 - height, width: max(0, bounds.width - 36), height: height)
+    }
+
+    @objc private func toggleSelectionList() {
+        if selectionList != nil {
+            closeSelectionList()
+            return
+        }
+        if let view = goomView {
+            let list = VisualizerSelectionList(frame: .zero, titles: Self.goomEffects.map(\.title),
+                                               selectedRow: view.lastForcedEffect.map { $0 - 1 },
+                                               accessibilityLabel: "GOOM effects")
+            list.onSelectionChanged = { [weak view] in view?.forceEffect($0 + 1) }
+            showSelectionList(list, above: view)
+            return
+        }
+        guard let view = milkdropView else { return }
+        let list = VisualizerSelectionList(frame: .zero, titles: [], selectedRow: nil, accessibilityLabel: "MilkDrop presets")
+        list.onSelectionChanged = { [weak self] in self?.applyMilkdropPreset(at: $0) }
+        list.onOpenFolder = { MilkdropView.openPresetsFolder() }
+        showSelectionList(list, above: view)
+        view.stopPresetClock()
+        reloadMilkdropPresetList()
+        view.rescanPresets()
+    }
+
+    private func showSelectionList(_ list: VisualizerSelectionList, above view: NSView) {
+        list.onKeyDown = { [weak self] in self?.keyDown(with: $0) }
+        addSubview(list, positioned: .above, relativeTo: view)
+        selectionList = list
+        layoutSelectionList()
+        list.focusList()
+    }
+
+    private func reloadMilkdropPresetList() {
+        guard let list = selectionList, let view = milkdropView else { return }
+        let presets = view.presets
+        let selectedURL = list.selectedRow.flatMap { milkdropListedPresets.indices.contains($0) ? milkdropListedPresets[$0] : nil }
+        let selectedRow = (selectedURL ?? view.currentPresetURL).flatMap { presets.firstIndex(of: $0) }
+        milkdropListedPresets = presets
+        list.reload(titles: presets.map { $0.deletingPathExtension().lastPathComponent }, selectedRow: selectedRow)
+        layoutSelectionList()
+        list.focusList()
+    }
+
+    private func closeSelectionList() {
+        guard let list = selectionList else { return }
+        window?.makeFirstResponder(self)
+        list.removeFromSuperview()
+        selectionList = nil
+        milkdropListedPresets = []
+    }
+
+    private func applyMilkdropPreset(at row: Int) {
+        milkdropView?.selectPreset(at: row, smooth: false)
+        updateAnimation()
+        updateMilkdropLabel()
+    }
+
+    private func syncGoom(closing: Bool = false) {
+        if currentPreset == .goom && !closing {
+            if let goomView {
+                goomView.setVisible(isOnScreen)
+                return
+            }
+            guard isOnScreen else { return }
+            let view = GoomView(frame: bounds)
+            addSubview(view)
+            view.setVisible(true)
+            goomView = view
+            let insets = GenWindowFrameView.insets
+            window?.contentMinSize = NSSize(width: CGFloat(GoomOptions.widths.lowerBound) + insets.left + insets.right,
+                                           height: CGFloat(GoomOptions.heights.lowerBound) + insets.top + insets.bottom)
+        } else if let view = goomView {
+            view.removeFromSuperview()
+            goomView = nil
+            window?.contentMinSize = RetroVisualizerWindow.studioMinimumSize
         }
     }
     
@@ -73,6 +246,7 @@ public final class RetroVisualizerView: NSView {
     // Actions
     public var onExit: (() -> Void)?
     public var onToggleFullScreen: (() -> Void)?
+    var onPresetChanged: ((StudioVisualizerPreset) -> Void)?
     
     // MARK: - Lifecycle
     public override init(frame frameRect: NSRect) {
@@ -82,7 +256,6 @@ public final class RetroVisualizerView: NSView {
         setupTrackingArea()
         initMatrixDrops()
         initSolarParticles()
-        startAnimation()
     }
     
     public required init?(coder: NSCoder) {
@@ -105,16 +278,47 @@ public final class RetroVisualizerView: NSView {
         addTrackingArea(area)
     }
     
-    public func startAnimation() {
+    func setActivity(visible: Bool, playing: Bool) {
+        isOnScreen = visible
+        isPlaying = playing
+        syncMilkdrop()
+        syncGoom()
+        milkdropView?.isOnScreen = visible
+        if !visible || !playing { milkdropView?.stopPresetClock() }
+        updateAnimation()
+    }
+
+    func updateAnimation() {
+        let milkdrop = currentPreset == .milkdrop
+        let canRenderMilkdrop = milkdropView.map { !$0.initializationFailed } ?? false
+        VisualizerPCMFeed.setActive(isOnScreen && isPlaying && (goomView != nil || (milkdrop && canRenderMilkdrop)))
+        let previewing = milkdropView.map { Date() < $0.renderUntil } ?? false
+        guard isOnScreen && (!milkdrop || (canRenderMilkdrop && (isPlaying || previewing))) else {
+            displayTimer?.invalidate()
+            displayTimer = nil
+            updateMilkdropLabel()
+            return
+        }
+        let goomLimit = currentPreset == .goom ? PersistenceManager.shared.state.goomOptions.frameLimit : 60
+        let fps = goomLimit == 0 ? window?.screen?.maximumFramesPerSecond ?? 60 : goomLimit
+        let interval = 1.0 / Double(max(1, fps))
+        guard displayTimer?.timeInterval != interval else { return }
         displayTimer?.invalidate()
-        displayTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+        lastFrameTime = Date().timeIntervalSince1970
+        // .common: the default mode pauses while another window is being dragged (event tracking), and the picture froze
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             self?.renderTick()
         }
+        RunLoop.main.add(timer, forMode: .common)
+        displayTimer = timer
     }
     
-    public func stopAnimation() {
-        displayTimer?.invalidate()
-        displayTimer = nil
+    func closeVisualization() {
+        closeSelectionList()
+        isOnScreen = false
+        syncMilkdrop(closing: true)
+        syncGoom(closing: true)
+        updateAnimation()
     }
     
     // MARK: - Input & Hotkeys
@@ -122,21 +326,50 @@ public final class RetroVisualizerView: NSView {
         triggerHUD()
     }
     
+    // A click switches the preset, a drag moves the window (the window has no title bar to grab)
+    private var mouseDownEvent: NSEvent?
+
     public override func mouseDown(with event: NSEvent) {
         triggerHUD()
-        cyclePreset()
+        mouseDownEvent = event
+    }
+
+    public override func mouseDragged(with event: NSEvent) {
+        guard let down = mouseDownEvent else { return }
+        mouseDownEvent = nil
+        window?.performDrag(with: down)
+    }
+
+    public override func mouseUp(with event: NSEvent) {
+        guard mouseDownEvent != nil else { return }
+        mouseDownEvent = nil
+        // Milkdrop has its own , / . keys; a stray click must not throw the user out of it
+        if currentPreset != .milkdrop && currentPreset != .goom { cyclePreset() }
     }
     
     public override func keyDown(with event: NSEvent) {
         triggerHUD()
+        if (currentPreset == .milkdrop || currentPreset == .goom) && handleSelectionListKey(event) { return }
+        if currentPreset == .goom && handleGoomKey(event) { return }
         
         switch event.keyCode {
         case 53: // Esc -> Exit
             onExit?()
         case 3: // 'F' -> Toggle Fullscreen
             onToggleFullScreen?()
-        case 49: // Space -> Next Preset
+        case 49, 48: // Space / Tab -> next Studio visualization (everywhere, so Milkdrop can be left the same way)
             cyclePreset()
+        // Milkdrop presets on , / . (physical keys, so б / ю on a Russian layout); letters stay the player's hotkeys
+        case 43 where currentPreset == .milkdrop: // ',' -> previous Milkdrop preset
+            milkdropView?.nextPreset(backwards: true)
+            updateAnimation()
+        case 47 where currentPreset == .milkdrop: // '.' -> next Milkdrop preset
+            milkdropView?.nextPreset()
+            updateAnimation()
+        case 96 where currentPreset == .milkdrop: // F5 -> show / hide preset name and FPS
+            showMilkdropInfo.toggle()
+            milkdropLabel?.isHidden = !showMilkdropInfo
+            updateMilkdropLabel()
         case 8: // 'C' -> Toggle Play / Pause
             PlayerCoordinator.shared.handlePlayPause()
         case 123: // Left Arrow -> Prev Track
@@ -150,6 +383,82 @@ public final class RetroVisualizerView: NSView {
         default:
             super.keyDown(with: event)
         }
+    }
+
+    private func handleSelectionListKey(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option])
+        guard modifiers.isEmpty else { return false }
+        let key = Int(event.keyCode)
+        if key == kVK_ANSI_L {
+            if !event.isARepeat { toggleSelectionList() }
+            return true
+        }
+        guard let list = selectionList else { return false }
+        switch key {
+        case kVK_UpArrow, kVK_ANSI_Comma: list.moveSelection(by: -1)
+        case kVK_DownArrow, kVK_ANSI_Period: list.moveSelection(by: 1)
+        case kVK_PageUp: list.moveSelection(by: -10)
+        case kVK_PageDown: list.moveSelection(by: 10)
+        case kVK_Return, kVK_ANSI_KeypadEnter, kVK_Escape: closeSelectionList()
+        default: return false
+        }
+        return true
+    }
+
+    private func handleGoomKey(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        let key = Int(event.keyCode)
+        if modifiers == [.option] && (key == kVK_Return || key == kVK_ANSI_KeypadEnter) {
+            onToggleFullScreen?()
+            return true
+        }
+        guard modifiers.isEmpty else { return PlayerCoordinator.shared.handleKeyDown(event) }
+        if let effect = Self.goomEffects.firstIndex(where: { $0.key == key }) {
+            goomView?.forceEffect(effect + 1)
+            return true
+        }
+        switch key {
+        case kVK_Space: goomView?.showCredits()
+        case kVK_ANSI_M: goomView?.toggleCube()
+        case kVK_Escape where goomView?.isShowingCredits == true: goomView?.hideCredits()
+        case kVK_ANSI_KeypadPlus where goomView?.isCube == true: goomView?.moveCamera(by: -1)
+        case kVK_ANSI_KeypadMinus where goomView?.isCube == true: goomView?.moveCamera(by: 1)
+        case kVK_ANSI_F, kVK_Escape, kVK_Tab: return false
+        default: return PlayerCoordinator.shared.handleKeyDown(event)
+        }
+        return true
+    }
+
+    public override func menu(for event: NSEvent) -> NSMenu? {
+        guard currentPreset == .milkdrop || currentPreset == .goom else { return super.menu(for: event) }
+        let menu = NSMenu()
+        let selectionTitle = currentPreset == .milkdrop ? "Load Preset…" : "Choose Effect…"
+        let selection = NSMenuItem(title: selectionTitle, action: #selector(toggleSelectionList), keyEquivalent: "")
+        selection.target = self
+        menu.addItem(selection)
+        if currentPreset == .milkdrop {
+            let fullScreen = NSMenuItem(title: "Toggle Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "")
+            fullScreen.target = window
+            menu.addItem(fullScreen)
+            return menu
+        }
+        for factor in [1, 2, 4] {
+            let item = NSMenuItem(title: "Zoom \(factor)×", action: #selector(zoomGoom(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = factor
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func zoomGoom(_ item: NSMenuItem) {
+        guard let window, !window.styleMask.contains(.fullScreen) else { return }
+        let options = PersistenceManager.shared.state.goomOptions
+        let width = goomView?.isCube == true ? GoomView.cubeTextureSize : options.renderWidth
+        let height = goomView?.isCube == true ? GoomView.cubeTextureSize : options.renderHeight
+        let insets = GenWindowFrameView.insets
+        window.setContentSize(NSSize(width: CGFloat(width * item.tag) + insets.left + insets.right,
+                                     height: CGFloat(height * item.tag) + insets.top + insets.bottom))
     }
     
     public func cyclePreset() {
@@ -165,6 +474,21 @@ public final class RetroVisualizerView: NSView {
     
     // MARK: - Update Tick
     private func renderTick() {
+        if let goomView {
+            let trackTitle = isPlaying ? PlayerCoordinator.shared.playlist.currentTrack?.displayName : nil
+            goomView.renderFrame(playing: isPlaying, trackTitle: trackTitle)
+            return
+        }
+        if currentPreset == .milkdrop, let milkdropView {
+            guard !milkdropView.initializationFailed && (isPlaying || Date() < milkdropView.renderUntil) else {
+                updateAnimation()
+                return
+            }
+            milkdropView.renderFrame(playing: isPlaying && selectionList == nil)
+            milkdropTick += 1
+            if milkdropTick % 30 == 0, showMilkdropInfo { updateMilkdropLabel() }
+            return
+        }
         let now = Date().timeIntervalSince1970
         let delta = now - lastFrameTime
         lastFrameTime = now
@@ -218,6 +542,9 @@ public final class RetroVisualizerView: NSView {
     // MARK: - Drawing Engine
     public override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        defer { context.restoreGState() }
+        context.clip(to: bounds)
         let w = bounds.width
         let h = bounds.height
         
@@ -237,6 +564,8 @@ public final class RetroVisualizerView: NSView {
             drawMatrixRain(in: context, width: w, height: h)
         case .solarOrb:
             drawSolarOrb(in: context, width: w, height: h)
+        case .milkdrop, .goom:
+            return
         }
         
         // CRT Scanline Overlay

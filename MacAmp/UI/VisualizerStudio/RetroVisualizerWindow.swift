@@ -1,30 +1,47 @@
 import Cocoa
 
 /// A dedicated fullscreen/standalone window for the Retro Visualizer Studio (AVS style).
-public final class RetroVisualizerWindow: NSWindow {
+public final class RetroVisualizerWindow: NSWindow, NSWindowDelegate {
+    static let studioMinimumSize = NSSize(width: 480, height: 320)
     
     public let studioView: RetroVisualizerView
+    let frameView: GenWindowFrameView
+    private let skinManager = SkinManager.shared
     
     public init() {
         let initialRect = NSRect(x: 100, y: 100, width: 800, height: 500)
         
-        self.studioView = RetroVisualizerView(frame: NSRect(origin: .zero, size: initialRect.size))
+        let studio = RetroVisualizerView(frame: NSRect(origin: .zero, size: initialRect.size))
+        studioView = studio
+        frameView = GenWindowFrameView(title: "Visualizer Studio", content: studio)
         
         super.init(
             contentRect: initialRect,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.borderless, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         
+        // The coordinator retains the window between uses.
+        self.isReleasedWhenClosed = false
         self.title = "Winamp Retro Visualizer Studio"
-        self.titleVisibility = .hidden
-        self.titlebarAppearsTransparent = true
-        self.backgroundColor = .black
-        self.isOpaque = true
+        self.backgroundColor = .clear
+        self.isOpaque = false
+        self.hasShadow = false
         self.collectionBehavior = [.fullScreenPrimary, .canJoinAllSpaces]
-        self.minSize = NSSize(width: 480, height: 320)
-        self.contentView = studioView
+        self.contentMinSize = Self.studioMinimumSize
+        self.contentView = frameView
+        self.delegate = self
+        updateSkinMask()
+        frameView.onClose = { [weak self] in self?.orderOut(nil) }
+        studioView.onPresetChanged = { [weak self] preset in
+            switch preset {
+            case .milkdrop: self?.frameView.title = "MilkDrop"
+            case .goom: self?.frameView.title = "What A Goom"
+            default: self?.frameView.title = "Visualizer Studio"
+            }
+            if let title = self?.frameView.title { self?.title = title }
+        }
         
         // Window Actions
         studioView.onExit = { [weak self] in
@@ -41,6 +58,25 @@ public final class RetroVisualizerWindow: NSWindow {
         
         center()
     }
+
+    public override var canBecomeKey: Bool { true }
+    public override var canBecomeMain: Bool { true }
+
+    func updateSkinMask() {
+        let region = skinManager.currentSkin?.region
+        let path = frameView.isFrameHidden ? nil : region?.normalMask(fitting: frameView.bounds.size)
+        PlayerCoordinator.applyWindowMask(path: path, to: frameView)
+    }
+
+    private func showFrame(_ show: Bool) {
+        frameView.isFrameHidden = !show
+        updateSkinMask()
+    }
+
+    public func windowDidResize(_ notification: Notification) { updateSkinMask() }
+    public func windowWillEnterFullScreen(_ notification: Notification) { showFrame(false) }
+    public func windowDidExitFullScreen(_ notification: Notification) { showFrame(true) }
+    public func windowDidFailToEnterFullScreen(_ window: NSWindow) { showFrame(true) }
     
     public func updateSpectrum(_ spectrum: [Float]) {
         // Expand 19 or 32 bands to 64 interpolated bands for smooth rendering
@@ -68,14 +104,13 @@ public final class RetroVisualizerWindow: NSWindow {
         studioView.waveform = wave
     }
     
-    public override func orderFront(_ sender: Any?) {
-        super.orderFront(sender)
-        studioView.startAnimation()
-        makeFirstResponder(studioView)
-    }
-    
-    public override func orderOut(_ sender: Any?) {
-        super.orderOut(sender)
-        studioView.stopAnimation()
+    // Every show / hide goes through here (makeKeyAndOrderFront skips orderFront: after a close the Studio stayed black and deaf to keys)
+    public override func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+        super.order(place, relativeTo: otherWin)
+        if place == .out {
+            studioView.closeVisualization()
+        } else {
+            makeFirstResponder(studioView)
+        }
     }
 }

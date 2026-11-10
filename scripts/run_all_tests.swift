@@ -5,6 +5,7 @@ import CoreMedia
 import Network
 import UniformTypeIdentifiers
 import SwiftUI
+import CGoom
 @testable import MacAmp
 
 /// Test groups run on the main thread, where the app's UI and coordinator live.
@@ -401,12 +402,14 @@ testGroup("Global Hotkeys Controller") {
 // 6. Retro Visualizer Studio Mode & Presets Tests
 testGroup("Retro Visualizer Studio & Presets") {
     let presets = StudioVisualizerPreset.allCases
-    assertEqual(presets.count, 5, "Studio should have exactly 5 retro presets")
+    assertEqual(presets.count, 7, "Studio has 5 retro presets plus MilkDrop and GOOM")
     assertEqual(presets[0].title, "Fire Spectrum & Peak Glow", "Preset 0 title matches")
     assertEqual(presets[1].title, "Retro Phosphor CRT Oscilloscope", "Preset 1 title matches")
     assertEqual(presets[2].title, "Neon Cyber City Spectrum", "Preset 2 title matches")
     assertEqual(presets[3].title, "Matrix Digital Rain", "Preset 3 title matches")
     assertEqual(presets[4].title, "Solar Radial Orb", "Preset 4 title matches")
+    assertEqual(presets[5].title, "Milkdrop (projectM)", "Preset 5 title matches")
+    assertEqual(presets[6].title, "What A Goom!", "Preset 6 title matches")
     
     // Dockable Winamp windows: main, equalizer, playlist and the Media Library
     let windowIDs = WindowID.allCases
@@ -416,6 +419,127 @@ testGroup("Retro Visualizer Studio & Presets") {
     assertTrue(windowIDs.contains(.main), "WindowID contains .main")
     assertTrue(windowIDs.contains(.equalizer), "WindowID contains .equalizer")
     assertTrue(windowIDs.contains(.playlist), "WindowID contains .playlist")
+}
+
+testGroup("MilkDrop preset catalog and visualizer PCM") {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let nested = folder.appendingPathComponent("Pack", isDirectory: true)
+    try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    for file in [folder.appendingPathComponent("Preset 10.milk"), nested.appendingPathComponent("Preset 2.MILK"),
+                 folder.appendingPathComponent(".hidden.milk"), folder.appendingPathComponent("not-a-preset.txt")] {
+        try Data().write(to: file)
+    }
+    try FileManager.default.createDirectory(at: folder.appendingPathComponent("directory.milk"), withIntermediateDirectories: true)
+    assertEqual(MilkdropView.findPresets(in: folder).map(\.lastPathComponent), ["Preset 2.MILK", "Preset 10.milk"])
+
+    let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
+    let audio = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 2)!
+    audio.frameLength = 2
+    audio.floatChannelData![0][0] = 0.1
+    audio.floatChannelData![0][1] = 0.2
+    audio.floatChannelData![1][0] = 0.3
+    audio.floatChannelData![1][1] = 0.4
+    VisualizerPCMFeed.setActive(true)
+    defer { VisualizerPCMFeed.setActive(false) }
+    VisualizerPCMFeed.add(audio)
+    var received: [Float] = []
+    VisualizerPCMFeed.consume { received = Array(UnsafeBufferPointer(start: $0, count: $1 * 2)) }
+    assertEqual(received, [0.1, 0.3, 0.2, 0.4], "Both channels reach the visualizer in frame order")
+    VisualizerPCMFeed.consume { _, _ in assertTrue(false, "A snapshot must only be consumed once") }
+    VisualizerPCMFeed.add(audio)
+    VisualizerPCMFeed.setActive(false)
+    VisualizerPCMFeed.add(audio)
+    VisualizerPCMFeed.consume { _, _ in assertTrue(false, "An inactive visualizer must not receive PCM") }
+}
+
+testGroup("Visualizer skin mask keeps the player's corner cutouts") {
+    let size = CGSize(width: 800, height: 500)
+    assertTrue(RegionParser.parse(text: "").normalMask(fitting: size) == nil, "Rectangular skins need no mask")
+    let region = RegionParser.parse(text: """
+        [Normal]
+        NumPoints=8
+        PointList=5,0 270,0 275,5 275,111 270,116 5,116 0,111 0,5
+        """)
+    guard let mask = region.normalMask(fitting: size) else {
+        assertTrue(false, "Expected the skin's outline")
+        return
+    }
+    assertEqual(mask.boundingBox.size, size)
+    for corner in [CGPoint(x: 1, y: 1), CGPoint(x: 799, y: 1), CGPoint(x: 1, y: 499), CGPoint(x: 799, y: 499)] {
+        assertTrue(!mask.contains(corner), "The 5 px cutout stays transparent")
+    }
+    assertTrue(mask.contains(CGPoint(x: 6, y: 1)), "The corner does not grow with the window")
+    assertTrue(mask.contains(CGPoint(x: 400, y: 499)), "The stretched edge stays opaque")
+}
+
+testGroup("Visualizer list applies changes to the highlighted row") {
+    _ = NSApplication.shared
+    let titles = (0..<10_000).map { "Preset \($0)" }
+    let list = VisualizerSelectionList(frame: NSRect(x: 0, y: 0, width: 500, height: 300),
+                                       titles: titles, selectedRow: 5_000, accessibilityLabel: "Presets")
+    var selections: [Int] = []
+    list.onSelectionChanged = { selections.append($0) }
+    assertEqual(list.selectedRow, 5_000)
+    list.moveSelection(by: -1)
+    assertEqual(list.selectedRow, 4_999)
+    list.moveSelection(by: 10_000)
+    assertEqual(list.selectedRow, 9_999)
+    list.moveSelection(by: 1)
+    assertEqual(selections, [4_999, 9_999], "Selection previews immediately and only once per row change")
+    list.reload(titles: titles, selectedRow: 2)
+    assertEqual(list.selectedRow, 2)
+    assertEqual(selections, [4_999, 9_999], "Opening or refreshing the catalog does not switch presets")
+    list.reload(titles: [], selectedRow: nil)
+    assertEqual(list.selectedRow, nil)
+    list.reload(titles: ["Normal", "Wave"], selectedRow: nil)
+    list.moveSelection(by: 1)
+    assertEqual(selections, [4_999, 9_999, 0], "The first move selects the first effect when there is no previous choice")
+}
+
+testGroup("GOOM original engine and preferences") {
+    var state = AppState()
+    assertTrue(!state.goomPluginSelected, "Older sessions default to Studio")
+    assertEqual(state.goomOptions, GoomOptions())
+    state.goomOptions.frameRate = 15
+    let decoded = try JSONDecoder().decode(AppState.self, from: JSONEncoder().encode(state))
+    assertEqual(decoded.goomOptions.frameLimit, 15)
+
+    assertTrue(!macamp_goom_start(0, 240, false), "The engine rejects invalid dimensions")
+    assertTrue(macamp_goom_start(320, 240, false), "The original engine starts")
+    defer { macamp_goom_stop() }
+    let samples = (0..<1024).map { sin(Float($0) / 8) }
+    for effect in Int32(1)...8 {
+        let rendered = samples.withUnsafeBufferPointer {
+            macamp_goom_render($0.baseAddress, 512, effect, 30, "100% stereo", nil)
+        }
+        assertTrue(rendered != nil, "Original effect \(effect) renders")
+    }
+    assertTrue(macamp_goom_resize(256, 256, true), "Cube texture dimensions and CinemaScope are supported")
+    assertTrue(macamp_goom_render(nil, 0, 0, -1, nil, macamp_goom_credits()) != nil, "Credits render with silent input")
+}
+
+testGroup("GOOM titles and manual credits") {
+    _ = NSApplication.shared
+    let previousOptions = PersistenceManager.shared.state.goomOptionsStorage
+    PersistenceManager.shared.state.goomOptions = GoomOptions()
+    defer { PersistenceManager.shared.state.goomOptionsStorage = previousOptions }
+    let goom = GoomView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+    for _ in 0..<105 { goom.renderFrame(playing: false, trackTitle: nil) }
+    assertTrue(!goom.isShowingCredits, "Silence does not start the credits")
+    goom.showCredits()
+    goom.renderFrame(playing: false, trackTitle: nil)
+    assertTrue(goom.isShowingCredits, "Credits still work on demand")
+    goom.hideCredits()
+
+    let title = "Калинов Мост — Вымыты дождём волосы"
+    goom.renderFrame(playing: true, trackTitle: title)
+    let label = goom.subviews.compactMap { $0 as? NSTextField }.first
+    assertEqual(label?.stringValue, title, "The Unicode overlay preserves the original title")
+    assertTrue(label?.isHidden == false, "The Unicode title is visible")
+    PersistenceManager.shared.state.goomOptions.showTitle = false
+    goom.renderFrame(playing: true, trackTitle: title)
+    assertTrue(label?.isHidden == true, "The title setting hides the Unicode overlay as well")
 }
 
 // 7. Playback State & Position Persistence Tests

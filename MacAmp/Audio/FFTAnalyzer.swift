@@ -1,6 +1,54 @@
 import Foundation
 import AVFoundation
 import Accelerate
+import os
+
+/// The mixer publishes a bounded stereo snapshot. Only the visualizer's render thread calls its engine.
+enum VisualizerPCMFeed {
+    private static let capacity = Int(AppConstants.Audio.bufferSize)
+
+    private struct Buffer: Sendable {
+        var isActive = false
+        var frameCount = 0
+        var samples = [Float](repeating: 0, count: capacity * 2)
+    }
+
+    private static let buffer = OSAllocatedUnfairLock(initialState: Buffer())
+
+    static func setActive(_ active: Bool) {
+        buffer.withLock {
+            $0.isActive = active
+            if !active { $0.frameCount = 0 }
+        }
+    }
+
+    static func add(_ audio: AVAudioPCMBuffer) {
+        guard let channels = audio.floatChannelData else { return }
+        buffer.withLockIfAvailableUnchecked { buffer in
+            guard buffer.isActive else { return }
+            let count = min(Int(audio.frameLength), capacity)
+            let stride = audio.stride
+            let start = (Int(audio.frameLength) - count) * stride
+            let left = channels[0]
+            let right = channels[audio.format.channelCount > 1 ? 1 : 0]
+            for frame in 0..<count {
+                buffer.samples[frame * 2] = left[start + frame * stride]
+                buffer.samples[frame * 2 + 1] = right[start + frame * stride]
+            }
+            buffer.frameCount = count
+        }
+    }
+
+    static func consume(_ read: (UnsafePointer<Float>, Int) -> Void) {
+        buffer.withLockUnchecked { buffer in
+            guard buffer.frameCount > 0 else { return }
+            buffer.samples.withUnsafeBufferPointer {
+                read($0.baseAddress!, buffer.frameCount)
+            }
+            buffer.frameCount = 0
+        }
+    }
+}
 
 /// Spectrum (19 bars) and oscilloscope (76 points) analysis for the Winamp visualizer.
 ///

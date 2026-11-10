@@ -447,14 +447,14 @@ extension PlayerCoordinator {
         PreferencesWindow.show(treeItem: .visualization)
     }
     
-    /// Configure plug-in: open the visualizer studio (its window holds the settings).
+    /// Configure plug-in: its settings live on Preferences ▸ Plug-ins ▸ Visualization (it used to only open the Studio, which did nothing when it was already open).
     @objc public func handleConfigureVisPlugin() {
-        if visualizerStudioWindow?.isVisible != true { toggleVisualizerStudio() }
+        PreferencesWindow.show(treeItem: .visPlugin)
     }
     
-    /// Select plug-in: Preferences (Plug-ins ▸ Visualization once that page exists).
+    /// Select plug-in: Preferences ▸ Plug-ins ▸ Visualization.
     @objc public func handleSelectVisPlugin() {
-        PreferencesWindow.show(treeItem: .visualization)
+        PreferencesWindow.show(treeItem: .visPlugin)
     }
     
     @objc public func handleSkinBrowser() {

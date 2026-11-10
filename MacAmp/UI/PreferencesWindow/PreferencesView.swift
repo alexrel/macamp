@@ -1,4 +1,5 @@
 import SwiftUI
+import CGoom
 import AppKit
 
 // MARK: - Preferences tree (Winamp 2.95: docs/UI-screens/pref-*.png)
@@ -473,7 +474,11 @@ public struct PreferencesView: View {
                         case .plugins: pluginsSection
                         case .input: inputSection
                         case .output: outputPluginSection
-                        case .visPlugin: visPluginSection
+                        case .visPlugin:
+                            VStack(alignment: .leading, spacing: 10) {
+                                visPluginSection
+                                if PersistenceManager.shared.state.goomPluginSelected { goomSection } else { milkdropSection }
+                            }
                         case .dsp: dspPluginSection
                         case .general: generalSection
                         case .skins: skinsSection
@@ -515,8 +520,8 @@ public struct PreferencesView: View {
         .focusable(false)
     }
     
-    /// A Bool setting stored in AppState, redrawing the page when it changes.
-    private func setting(_ keyPath: WritableKeyPath<AppState, Bool>, onChange: ((Bool) -> Void)? = nil) -> Binding<Bool> {
+    /// A setting stored in AppState, redrawing the page when it changes.
+    private func setting<Value>(_ keyPath: WritableKeyPath<AppState, Value>, onChange: ((Value) -> Void)? = nil) -> Binding<Value> {
         Binding(
             get: { PersistenceManager.shared.state[keyPath: keyPath] },
             set: { value in
@@ -1097,10 +1102,12 @@ public struct PreferencesView: View {
     private var visPluginSection: some View {
         Win32GroupBox("Visualization plug-ins") {
             VStack(alignment: .leading, spacing: 8) {
-                PluginListBox(rows: ["MacAmp Retro Visualizer Studio \(AppConstants.App.version) [vis_studio]"], selection: .constant(0))
+                let goom = setting(\.goomPluginSelected)
+                PluginListBox(rows: ["MacAmp Retro Visualizer Studio \(AppConstants.App.version) [vis_studio]", "What A Goom! v1.99.4"],
+                              selection: Binding(get: { goom.wrappedValue ? 1 : 0 }, set: { goom.wrappedValue = $0 == 1 }))
                 HStack(spacing: 6) {
                     Win32Button("Start", width: 70) {
-                        if PlayerCoordinator.shared.visualizerStudioWindow?.isVisible != true { PlayerCoordinator.shared.toggleVisualizerStudio() }
+                        PlayerCoordinator.shared.startVisualizerStudio()
                     }
                     Win32Button("Stop", width: 70) {
                         if PlayerCoordinator.shared.visualizerStudioWindow?.isVisible == true { PlayerCoordinator.shared.toggleVisualizerStudio() }
@@ -1109,6 +1116,73 @@ public struct PreferencesView: View {
                 }
             }
         }
+    }
+
+    /// Modern, so it sits in its own group at the bottom of the page (not in Winamp 2.95)
+    private var milkdropSection: some View {
+        Win32GroupBox("Milkdrop (modern)") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Use Tab to switch Studio modes. In MilkDrop, L opens presets. Use ↑ / ↓, scroll or click to load the highlighted preset immediately. , / . switch presets directly and F5 shows FPS.")
+                    .font(.system(size: 11)).foregroundColor(Win32Colors.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 6) {
+                    Win32Button("Open presets folder", width: 140) {
+                        MilkdropView.openPresetsFolder()
+                    }
+                    // Not bundled: 131 MB and no clear license; projectM's default pack, unzip into the folder
+                    Win32Button("Get presets", width: 90) {
+                        NSWorkspace.shared.open(URL(string: "https://github.com/projectM-visualizer/presets-cream-of-the-crop")!)
+                    }
+                    Spacer()
+                }
+                Win32Checkbox("Random order", isOn: setting(\.milkdropShuffle))
+                Win32Checkbox("Sharp Retina rendering (slower; applies when Milkdrop is selected again)", isOn: setting(\.milkdropRetina))
+                HStack(spacing: 6) {
+                    Text("Next preset after:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
+                    Win32ComboBox(selection: setting(\.milkdropSeconds),
+                                  options: [15, 30, 60, 120, 300].map { (value: $0, title: "\($0) seconds") }, width: 120)
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private var goomSection: some View {
+        Win32GroupBox("What A Goom!") {
+            VStack(alignment: .leading, spacing: 6) {
+                goomResolution("Width", setting(\.goomOptions.width), range: GoomOptions.widths)
+                goomResolution("Height", setting(\.goomOptions.height), range: GoomOptions.heights)
+                Win32Checkbox("CinemaScope", isOn: setting(\.goomOptions.cinemascope))
+                Win32Checkbox("Show frame rate", isOn: setting(\.goomOptions.showFPS))
+                Win32Checkbox("Show song title", isOn: setting(\.goomOptions.showTitle))
+                HStack {
+                    Text("Frame rate limit").font(.system(size: 11)).foregroundColor(Win32Colors.text)
+                    Win32ComboBox(selection: setting(\.goomOptions.frameRate) { _ in
+                        PlayerCoordinator.shared.visualizerStudioWindow?.studioView.updateAnimation()
+                    }, options: GoomOptions.frameRates.map { (value: $0, title: $0 == 0 ? "None" : "\($0) FPS") }, width: 85)
+                    Spacer()
+                    Win32Button("About", width: 70) {
+                        if let credits = macamp_goom_credits() {
+                            Win32Dialog.inform(title: "What A Goom!", message: String(cString: credits))
+                        }
+                    }
+                }
+                note("L opens effects. Highlight an effect to apply it, then close with L, Return or Esc. M toggles the cube, keypad + / − moves the camera, and Space shows credits.")
+            }
+        }
+    }
+
+    private func goomResolution(_ title: String, _ value: Binding<Int>, range: ClosedRange<Int>) -> some View {
+        HStack {
+            Text(title).frame(width: 38, alignment: .leading)
+            Win32Slider(value: Binding(get: { Double(value.wrappedValue) }, set: { value.wrappedValue = Int($0) }),
+                        in: Double(range.lowerBound)...Double(range.upperBound), step: 1)
+                .accessibilityLabel(title)
+                .accessibilityValue("\(value.wrappedValue) pixels")
+            Text("\(value.wrappedValue) px").monospacedDigit().frame(width: 42, alignment: .trailing)
+        }
+        .font(.system(size: 11))
+        .foregroundColor(Win32Colors.text)
     }
     
     private var dspPluginSection: some View {
