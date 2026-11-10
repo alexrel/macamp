@@ -196,11 +196,27 @@ public struct TrackItem: Codable, Identifiable, Equatable {
 }
 
 public class PlaylistModel: ObservableObject {
-    @Published public private(set) var tracks: [TrackItem] = []
-    @Published public var currentIndex: Int? = nil {
-        didSet { if !isUpdatingShuffle { alignShuffleToCurrent() } }
+    /// Not @Published: its setter copies the whole array on every change, 3 ms per tag read in a 19 000-track list.
+    /// A didSet that doesn't read oldValue lets `tracks[i] = ...` and `append` work in place.
+    public private(set) var tracks: [TrackItem] = [] {
+        didSet {
+            objectWillChange.send()
+            cachedTotalDuration = nil
+            cachedRunningTimeMessage = nil
+        }
     }
-    @Published public var selectedIndices: Set<Int> = []
+    @Published public var currentIndex: Int? = nil {
+        didSet {
+            if selectedIndices.isEmpty { cachedRunningTimeMessage = nil }
+            if !isUpdatingShuffle { alignShuffleToCurrent() }
+        }
+    }
+    @Published public var selectedIndices: Set<Int> = [] {
+        didSet { cachedRunningTimeMessage = nil }
+    }
+
+    private var cachedTotalDuration: TimeInterval?
+    private var cachedRunningTimeMessage: String?
     
     @Published public var isShuffle: Bool = false {
         didSet { if isShuffle && !oldValue { rebuildShuffleOrder() } }
@@ -221,7 +237,10 @@ public class PlaylistModel: ObservableObject {
     }
     
     public var totalDuration: TimeInterval {
-        tracks.reduce(0) { $0 + $1.duration }
+        if let cachedTotalDuration { return cachedTotalDuration }
+        let duration = tracks.reduce(0) { $0 + $1.duration }
+        cachedTotalDuration = duration
+        return duration
     }
     
     public var selectedDuration: TimeInterval {
@@ -256,9 +275,11 @@ public class PlaylistModel: ObservableObject {
     }
     
     public var runningTimeMessage: String {
+        if let cachedRunningTimeMessage { return cachedRunningTimeMessage }
         let selStr = PlaylistModel.formatTime(selectedDuration)
-        let totalStr = PlaylistModel.formatTime(totalDuration)
-        return "\(selStr)/\(totalStr)"
+        let message = "\(selStr)/\(formattedTotalDuration)"
+        cachedRunningTimeMessage = message
+        return message
     }
     
     // MARK: - Mutating Methods
@@ -366,23 +387,36 @@ public class PlaylistModel: ObservableObject {
         tracks[index] = track
     }
     
+    /// Tracks waiting for their tags and length, read a few at a time in playlist order. (A task per added batch
+    /// opened every folder of a dropped music share at once.)
+    private var prefetchQueue: ArraySlice<TrackItem> = []
+    private var prefetchReaders = 0
+    /// Files whose tags are read at the same time (a network share answers a few requests at once, not dozens)
+    private static let prefetchReaderLimit = 4
+
     public func prefetchMetadata(for ids: [UUID]) {
-        let targets = tracks.filter { ids.contains($0.id) && $0.duration <= 0 }
-        guard !targets.isEmpty else { return }
-        
-        Task { [weak self] in
-            for target in targets {
-                let resolved = await TrackItem.resolveMetadataAsync(from: target.url)
-                await MainActor.run { [weak self] in
-                    self?.updateTrack(
-                        id: target.id,
-                        duration: resolved.duration,
-                        artist: resolved.artist,
-                        title: resolved.title
-                    )
+        let ids = Set(ids)
+        prefetchQueue += tracks.filter { $0.duration <= 0 && ids.contains($0.id) }
+        while prefetchReaders < Self.prefetchReaderLimit, prefetchReaders < prefetchQueue.count {
+            prefetchReaders += 1
+            Task { @MainActor [weak self] in
+                while let target = self?.prefetchQueue.popFirst() {
+                    let resolved = await TrackItem.resolveMetadataAsync(from: target.url)
+                    self?.updateTrack(id: target.id, duration: resolved.duration, artist: resolved.artist, title: resolved.title)
                 }
+                self?.prefetchReaders -= 1
             }
         }
+    }
+    
+    /// Moves the waiting tracks of these rows to the front of the queue: what is on screen gets its length first,
+    /// wherever the list is scrolled to, as in Winamp.
+    public func prefetchFirst(_ rows: Range<Int>) {
+        guard !prefetchQueue.isEmpty else { return }
+        let ids = Set(tracks[rows.clamped(to: 0..<tracks.count)].lazy.filter { $0.duration <= 0 }.map(\.id))
+        let shown = prefetchQueue.filter { ids.contains($0.id) }
+        guard !shown.isEmpty else { return }
+        prefetchQueue = ArraySlice(shown + prefetchQueue.filter { !ids.contains($0.id) })
     }
     
     public func remove(at index: Int) {
@@ -416,7 +450,12 @@ public class PlaylistModel: ObservableObject {
         syncShuffleOrder()
     }
     
+    /// How many times the list was cleared: a folder still being added checks it to stop
+    public private(set) var clearCount = 0
+
     public func clear() {
+        clearCount += 1
+        prefetchQueue = []
         tracks.removeAll()
         selectedIndices.removeAll()
         currentIndex = nil

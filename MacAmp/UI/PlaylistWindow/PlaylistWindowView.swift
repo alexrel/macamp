@@ -236,6 +236,8 @@ public class PlaylistWindowView: WinampControlView {
         setNeedsDisplay(NSRect(x: origin.x - 1, y: origin.y - 1, width: 34, height: 9))
     }
     private var scrollOffset: Int = 0
+    private var pendingScrollRows: CGFloat = 0
+    private var prefetchedRows: [Int] = []
     private var isDraggingScrollThumb: Bool = false
     private var selectionAnchorIndex: Int? = nil
     /// Row the keyboard cursor is on (last clicked or arrowed-to row); drives arrows, Shift+arrows and Enter.
@@ -256,13 +258,14 @@ public class PlaylistWindowView: WinampControlView {
     }
     
     private func clampScrollOffset() {
-        let topH = AppConstants.Playlist.Layout.topBarHeight
-        let botH = AppConstants.Playlist.Layout.bottomBarHeight
-        let rowH = AppConstants.Playlist.trackRowHeight
-        let availableH = max(0, bounds.height - topH - botH)
-        let visibleRows = max(1, Int(availableH / rowH))
-        let maxScroll = max(0, playlist.tracks.count - visibleRows)
-        scrollOffset = max(0, min(scrollOffset, maxScroll))
+        scrollOffset = max(0, min(scrollOffset, max(0, playlist.tracks.count - visibleRowCount())))
+    }
+
+    private func scroll(to offset: Int) {
+        let previous = scrollOffset
+        scrollOffset = offset
+        clampScrollOffset()
+        if scrollOffset != previous { setNeedsDisplay(scrollableRect) }
     }
     
     // Callbacks to PlayerCoordinator
@@ -431,14 +434,7 @@ public class PlaylistWindowView: WinampControlView {
     }
     
     public func scrollByPages(_ direction: Int) {
-        let step = 4 * direction
-        let topH = AppConstants.Playlist.Layout.topBarHeight
-        let botH = AppConstants.Playlist.Layout.bottomBarHeight
-        let rowH = AppConstants.Playlist.trackRowHeight
-        let visibleRows = Int((bounds.height - topH - botH) / rowH)
-        let maxOffset = max(0, playlist.tracks.count - visibleRows)
-        scrollOffset = max(0, min(maxOffset, scrollOffset + step))
-        needsDisplay = true
+        scroll(to: scrollOffset + 4 * direction)
     }
     
     /// Positions titlebar and toolbar buttons relative to current dynamic window dimensions
@@ -1011,56 +1007,61 @@ public class PlaylistWindowView: WinampControlView {
         }
         
         let topH = Layout.topBarHeight
-        let leftSlice = isKey ? SpriteCatalog.plTopLeftSel : SpriteCatalog.plTopLeft
-        let titleSlice = isKey ? SpriteCatalog.plTopTitleSel : SpriteCatalog.plTopTitle
-        let tileSlice = isKey ? SpriteCatalog.plTopTileSel : SpriteCatalog.plTopTile
-        let rightSlice = isKey ? SpriteCatalog.plTopRightSel : SpriteCatalog.plTopRight
-        
-        // 1. Draw Top Bar (height: 20 in normal mode)
-        // Authentic Winamp geometry: Left corner (25px), Centered Title (100px), Right corner (25px)
-        let titleW = Layout.titlePieceWidth
-        let leftW = Layout.cornerPieceWidth
-        let rightW = Layout.cornerPieceWidth
-        let titleX = round((bounds.width - titleW) / 2.0)
-        
-        if let leftImg = SkinManager.shared.image(for: leftSlice) {
-            context.drawSkinImage(leftImg, in: NSRect(x: 0, y: 0, width: leftW, height: topH))
+        if dirtyRect.minY < topH {
+            let leftSlice = isKey ? SpriteCatalog.plTopLeftSel : SpriteCatalog.plTopLeft
+            let titleSlice = isKey ? SpriteCatalog.plTopTitleSel : SpriteCatalog.plTopTitle
+            let tileSlice = isKey ? SpriteCatalog.plTopTileSel : SpriteCatalog.plTopTile
+            let rightSlice = isKey ? SpriteCatalog.plTopRightSel : SpriteCatalog.plTopRight
+
+            // 1. Draw Top Bar (height: 20 in normal mode)
+            // Authentic Winamp geometry: Left corner (25px), Centered Title (100px), Right corner (25px)
+            let titleW = Layout.titlePieceWidth
+            let leftW = Layout.cornerPieceWidth
+            let rightW = Layout.cornerPieceWidth
+            let titleX = round((bounds.width - titleW) / 2.0)
+
+            if let leftImg = SkinManager.shared.image(for: leftSlice) {
+                context.drawSkinImage(leftImg, in: NSRect(x: 0, y: 0, width: leftW, height: topH))
+            }
+            if let tileImg = SkinManager.shared.image(for: tileSlice) {
+                context.drawTiledHorizontal(image: tileImg, from: leftW, to: titleX, y: 0, width: leftW, height: topH)
+            }
+            if let titleImg = SkinManager.shared.image(for: titleSlice) {
+                context.drawSkinImage(titleImg, in: NSRect(x: titleX, y: 0, width: titleW, height: topH))
+            }
+            if let tileImg = SkinManager.shared.image(for: tileSlice) {
+                context.drawTiledHorizontal(image: tileImg, from: titleX + titleW, to: bounds.width - rightW, y: 0, width: leftW, height: topH)
+            }
+            if let rightImg = SkinManager.shared.image(for: rightSlice) {
+                context.drawSkinImage(rightImg, in: NSRect(x: bounds.width - rightW, y: 0, width: rightW, height: topH))
+            }
         }
-        if let tileImg = SkinManager.shared.image(for: tileSlice) {
-            context.drawTiledHorizontal(image: tileImg, from: leftW, to: titleX, y: 0, width: leftW, height: topH)
-        }
-        if let titleImg = SkinManager.shared.image(for: titleSlice) {
-            context.drawSkinImage(titleImg, in: NSRect(x: titleX, y: 0, width: titleW, height: topH))
-        }
-        if let tileImg = SkinManager.shared.image(for: tileSlice) {
-            context.drawTiledHorizontal(image: tileImg, from: titleX + titleW, to: bounds.width - rightW, y: 0, width: leftW, height: topH)
-        }
-        if let rightImg = SkinManager.shared.image(for: rightSlice) {
-            context.drawSkinImage(rightImg, in: NSRect(x: bounds.width - rightW, y: 0, width: rightW, height: topH))
-        }
-        
+
         // 2. Draw Bottom Bar (height: 38)
         let botH = Layout.bottomBarHeight
         let botY = bounds.height - botH
-        if let bLeft = SkinManager.shared.image(for: SpriteCatalog.plBottomLeft) {
-            context.drawSkinImage(bLeft, in: NSRect(x: 0, y: botY, width: Layout.bottomLeftWidth, height: botH))
+        let redrawBottom = dirtyRect.maxY > botY
+        if redrawBottom {
+            if let bLeft = SkinManager.shared.image(for: SpriteCatalog.plBottomLeft) {
+                context.drawSkinImage(bLeft, in: NSRect(x: 0, y: botY, width: Layout.bottomLeftWidth, height: botH))
+            }
+            if let bTile = SkinManager.shared.image(for: SpriteCatalog.plBottomTile) {
+                context.drawTiledHorizontal(
+                    image: bTile,
+                    from: Layout.bottomLeftWidth,
+                    to: bounds.width - Layout.bottomRightWidth,
+                    y: botY,
+                    width: Layout.bottomTileWidth,
+                    height: botH
+                )
+            }
+            if let bRight = SkinManager.shared.image(for: SpriteCatalog.plBottomRight) {
+                context.drawSkinImage(bRight, in: NSRect(x: bounds.width - Layout.bottomRightWidth, y: botY, width: Layout.bottomRightWidth, height: botH))
+            }
         }
-        if let bTile = SkinManager.shared.image(for: SpriteCatalog.plBottomTile) {
-            context.drawTiledHorizontal(
-                image: bTile,
-                from: Layout.bottomLeftWidth,
-                to: bounds.width - Layout.bottomRightWidth,
-                y: botY,
-                width: Layout.bottomTileWidth,
-                height: botH
-            )
-        }
-        if let bRight = SkinManager.shared.image(for: SpriteCatalog.plBottomRight) {
-            context.drawSkinImage(bRight, in: NSRect(x: bounds.width - Layout.bottomRightWidth, y: botY, width: Layout.bottomRightWidth, height: botH))
-        }
-        
+
         // 2b. Draw Left and Right Side Borders
-        if let lTile = SkinManager.shared.image(for: SpriteCatalog.plLeftTile) {
+        if dirtyRect.minX < Layout.leftBorderWidth, let lTile = SkinManager.shared.image(for: SpriteCatalog.plLeftTile) {
             context.drawTiledVertical(image: lTile, x: 0, from: topH, to: botY, width: Layout.leftBorderWidth, height: Layout.sideBorderTileHeight)
         }
         if let rTile = SkinManager.shared.image(for: SpriteCatalog.plRightTile) {
@@ -1086,9 +1087,17 @@ public class PlaylistWindowView: WinampControlView {
         
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineBreakMode = .byClipping // letters are cut at the duration column, no ellipsis
+        let durationStyle = NSMutableParagraphStyle()
+        durationStyle.alignment = .right
         
         // Time ticks only invalidate the mini time rect in the bottom bar: skip laying out track text then
         let rowsToDraw = dirtyRect.intersects(listRect) ? visibleRows : 0
+        // Rows that came on screen (scrolling, resizing, tracks still arriving) have their tags read first
+        let shown = [scrollOffset, visibleRows, playlist.tracks.count]
+        if rowsToDraw > 0, shown != prefetchedRows {
+            prefetchedRows = shown
+            playlist.prefetchFirst(scrollOffset..<(scrollOffset + visibleRows))
+        }
         for i in 0..<rowsToDraw {
             let trackIndex = scrollOffset + i
             guard trackIndex < playlist.tracks.count else { break }
@@ -1127,11 +1136,7 @@ public class PlaylistWindowView: WinampControlView {
             let durAttrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: textColor,
-                .paragraphStyle: {
-                    let p = NSMutableParagraphStyle()
-                    p.alignment = .right
-                    return p
-                }()
+                .paragraphStyle: durationStyle
             ]
             (durStr as NSString).draw(in: durRect, withAttributes: durAttrs)
         }
@@ -1163,28 +1168,30 @@ public class PlaylistWindowView: WinampControlView {
             }
         }
         
-        // 5. Draw Running Duration in bottom bar (selectedTime / totalTime)
-        let runMsg = playlist.runningTimeMessage
-        BitmapFont.draw(string: runMsg, in: context, at: CGPoint(
-            x: bounds.width - Layout.runningTimeOffsetFromRight,
-            y: botY + Layout.runningTimeYOffsetFromBottom
-        ))
-        
-        // 6. Draw Mini Track Time in bottom bar
-        let mins = Int(currentTime) / 60
-        let secs = Int(currentTime) % 60
-        BitmapFont.drawMiniTime(
-            minutes: mins,
-            seconds: secs,
-            isNegative: false,
-            status: status,
-            isBlinkVisible: isBlinkVisible,
-            in: context,
-            at: CGPoint(
-                x: bounds.width - Layout.miniTimeOffsetFromRight,
-                y: botY + Layout.miniTimeYOffsetFromBottom
+        if redrawBottom {
+            // 5. Draw Running Duration in bottom bar (selectedTime / totalTime)
+            let runMsg = playlist.runningTimeMessage
+            BitmapFont.draw(string: runMsg, in: context, at: CGPoint(
+                x: bounds.width - Layout.runningTimeOffsetFromRight,
+                y: botY + Layout.runningTimeYOffsetFromBottom
+            ))
+
+            // 6. Draw Mini Track Time in bottom bar
+            let mins = Int(currentTime) / 60
+            let secs = Int(currentTime) % 60
+            BitmapFont.drawMiniTime(
+                minutes: mins,
+                seconds: secs,
+                isNegative: false,
+                status: status,
+                isBlinkVisible: isBlinkVisible,
+                in: context,
+                at: CGPoint(
+                    x: bounds.width - Layout.miniTimeOffsetFromRight,
+                    y: botY + Layout.miniTimeYOffsetFromBottom
+                )
             )
-        )
+        }
     }
     
     public override func viewDidMoveToWindow() {
@@ -1345,9 +1352,14 @@ public class PlaylistWindowView: WinampControlView {
     }
     
     private func visibleRowCount() -> Int {
-        let topH = AppConstants.Playlist.Layout.topBarHeight
-        let botH = AppConstants.Playlist.Layout.bottomBarHeight
-        return max(1, Int(max(0, bounds.height - topH - botH) / AppConstants.Playlist.trackRowHeight))
+        max(1, Int(scrollableRect.height / AppConstants.Playlist.trackRowHeight))
+    }
+
+    private var scrollableRect: NSRect {
+        let top = AppConstants.Playlist.Layout.topBarHeight
+        let left = AppConstants.Playlist.Layout.leftBorderWidth
+        let bottom = AppConstants.Playlist.Layout.bottomBarHeight
+        return NSRect(x: left, y: top, width: max(0, bounds.width - left), height: max(0, bounds.height - top - bottom))
     }
     
     /// Scrolls the list so `index` is visible: centered (on launch / restore) or with minimal movement.
@@ -1489,15 +1501,12 @@ public class PlaylistWindowView: WinampControlView {
                 let targetThumbY = local.y - thumbH / 2.0
                 let clampedThumbY = max(topH, min(topH + travelRange, targetThumbY))
                 let norm = (clampedThumbY - topH) / travelRange
-                let newOffset = max(0, min(maxScroll, Int(round(norm * CGFloat(maxScroll)))))
-                if newOffset != scrollOffset {
-                    scrollOffset = newOffset
-                }
+                scroll(to: Int(round(norm * CGFloat(maxScroll))))
                 thumbClickOffsetY = thumbH / 2.0
             }
             
             isDraggingScrollThumb = true
-            needsDisplay = true
+            setNeedsDisplay(scrollTrackRect)
             
             guard let win = self.window else { return }
             var keepTracking = true
@@ -1509,15 +1518,11 @@ public class PlaylistWindowView: WinampControlView {
                     let targetThumbY = currentPoint.y - thumbClickOffsetY
                     let clampedThumbY = max(topH, min(topH + travelRange, targetThumbY))
                     let norm = (clampedThumbY - topH) / travelRange
-                    let newOffset = max(0, min(maxScroll, Int(round(norm * CGFloat(maxScroll)))))
-                    if newOffset != scrollOffset {
-                        scrollOffset = newOffset
-                        needsDisplay = true
-                    }
+                    scroll(to: Int(round(norm * CGFloat(maxScroll))))
                 case .leftMouseUp:
                     keepTracking = false
                     isDraggingScrollThumb = false
-                    needsDisplay = true
+                    setNeedsDisplay(scrollTrackRect)
                 default:
                     break
                 }
@@ -1626,23 +1631,27 @@ public class PlaylistWindowView: WinampControlView {
     }
     
     public override func scrollWheel(with event: NSEvent) {
-        if event.deltaY > 0 {
-            scrollOffset = max(0, scrollOffset - 1)
-        } else if event.deltaY < 0 {
-            let rowH = AppConstants.Playlist.trackRowHeight
-            let topH = AppConstants.Playlist.Layout.topBarHeight
-            let botH = AppConstants.Playlist.Layout.bottomBarHeight
-            let visibleRows = Int((bounds.height - topH - botH) / rowH)
-            let maxOffset = max(0, playlist.tracks.count - visibleRows)
-            scrollOffset = min(maxOffset, scrollOffset + 1)
+        guard !isShadeMode else { return }
+        if event.hasPreciseScrollingDeltas {
+            if event.phase.contains(.began) || event.phase.contains(.cancelled) { pendingScrollRows = 0 }
+            let rowHeight = convert(NSRect(x: 0, y: 0, width: 1, height: AppConstants.Playlist.trackRowHeight), to: nil).height
+            guard rowHeight > 0 else { return }
+            pendingScrollRows -= event.scrollingDeltaY / rowHeight
+            let rows = Int(pendingScrollRows)
+            pendingScrollRows -= CGFloat(rows)
+            if rows != 0 { scroll(to: scrollOffset + rows) }
+        } else if event.deltaY != 0 {
+            pendingScrollRows = 0
+            scroll(to: scrollOffset + (event.deltaY > 0 ? -1 : 1))
         }
-        needsDisplay = true
     }
     
     /// Interactive playlist resizing loop snapped to canonical 25px horizontal and 29px vertical steps
     private func startResizeDrag(with initialEvent: NSEvent, in win: WinampWindow) {
-        let initialMouse = NSEvent.mouseLocation
+        let initialMouse = win.convertPoint(toScreen: initialEvent.locationInWindow)
         let initialFrame = win.frame
+        let initialSize = bounds.size
+        let scale = WindowLayoutManager.shared.scale(for: .playlist)
         let isShade = self.isShadeMode
         
         var keepTracking = true
@@ -1650,12 +1659,12 @@ public class PlaylistWindowView: WinampControlView {
             guard let nextEvent = win.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) else { continue }
             switch nextEvent.type {
             case .leftMouseDragged:
-                let currentMouse = NSEvent.mouseLocation
-                let deltaX = currentMouse.x - initialMouse.x
-                let deltaY = initialMouse.y - currentMouse.y // mouse moving down = larger height
+                let currentMouse = win.convertPoint(toScreen: nextEvent.locationInWindow)
+                let deltaX = (currentMouse.x - initialMouse.x) / scale
+                let deltaY = (initialMouse.y - currentMouse.y) / scale
                 
                 let stepsX = round(deltaX / AppConstants.Window.resizeStepX)
-                let baseWidth = max(AppConstants.Window.width, round(initialFrame.width))
+                let baseWidth = max(AppConstants.Window.width, round(initialSize.width))
                 let newWidth = max(AppConstants.Window.width, baseWidth + stepsX * AppConstants.Window.resizeStepX)
                 
                 let newHeight: CGFloat
@@ -1663,27 +1672,20 @@ public class PlaylistWindowView: WinampControlView {
                     newHeight = AppConstants.Window.shadeHeight
                 } else {
                     let stepsY = round(deltaY / AppConstants.Window.resizeStepY)
-                    let baseHeight = max(AppConstants.Window.height, round(initialFrame.height))
+                    let baseHeight = max(AppConstants.Window.height, round(initialSize.height))
                     newHeight = max(AppConstants.Window.height, baseHeight + stepsY * AppConstants.Window.resizeStepY)
                 }
                 
-                let newMinX = round(initialFrame.minX)
-                let newMaxY = round(initialFrame.maxY)
-                let newMinY = round(newMaxY - newHeight)
-                
-                let newFrame = NSRect(x: newMinX, y: newMinY, width: newWidth, height: newHeight)
+                let size = WindowLayoutManager.scaled(NSSize(width: newWidth, height: newHeight))
+                let newFrame = NSRect(x: initialFrame.minX, y: initialFrame.maxY - size.height, width: size.width, height: size.height)
                 if newFrame != win.frame {
                     win.setFrame(newFrame, display: true, animate: false)
-                    self.frame = NSRect(x: 0, y: 0, width: newWidth, height: newHeight)
-                    self.layoutButtons()
-                    self.needsDisplay = true
+                    win.updateContentScale(scale, logicalSize: NSSize(width: newWidth, height: newHeight))
                 }
                 
             case .leftMouseUp:
                 keepTracking = false
                 WindowLayoutManager.shared.updateAdjacencies()
-                PersistenceManager.shared.state.playlistWindowSize = [Double(round(win.frame.width)), Double(round(win.frame.height))]
-                PersistenceManager.shared.saveSession()
                 PlayerCoordinator.shared.saveWindowLayout()
                 
             default:

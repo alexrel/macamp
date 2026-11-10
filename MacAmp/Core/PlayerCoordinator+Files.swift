@@ -89,13 +89,15 @@ extension PlayerCoordinator {
     /// the first dropped track starts.
     public func handleDroppedFiles(_ paths: [String]) {
         Task { @MainActor in
-            let tracksToAdd = await collectTracks(fromPaths: paths)
-            guard !tracksToAdd.isEmpty else { return }
-            let wasStopped = (audioEngine.status == .stopped)
-            playlist.add(tracks: tracksToAdd)
-            plView.needsDisplay = true
-            if wasStopped {
-                loadAndPlay(track: tracksToAdd[0])
+            var first = true
+            await collectTracks(fromPaths: paths) { batch in
+                let wasStopped = (audioEngine.status == .stopped)
+                playlist.add(tracks: batch)
+                plView.needsDisplay = true
+                if first && wasStopped {
+                    loadAndPlay(track: batch[0])
+                }
+                first = false
             }
         }
     }
@@ -104,13 +106,24 @@ extension PlayerCoordinator {
     /// Playback starts only if the playlist was empty and nothing was playing.
     public func handleFilesDroppedInPlaylist(_ paths: [String], at index: Int) {
         Task { @MainActor in
-            let tracks = await collectTracks(fromPaths: paths)
-            guard !tracks.isEmpty else { return }
-            let wasEmpty = playlist.tracks.isEmpty
-            playlist.insert(tracks: tracks, at: min(index, playlist.tracks.count))
-            plView.needsDisplay = true
-            if wasEmpty && audioEngine.status == .stopped {
-                loadAndPlay(track: tracks[0])
+            var start: Int?
+            var end = index // each batch goes in right after the one before it
+            await collectTracks(fromPaths: paths) { batch in
+                let wasEmpty = playlist.tracks.isEmpty
+                end = min(end, playlist.tracks.count)
+                let first = start == nil
+                // Everything dropped stays selected while it arrives, until the user selects something else
+                let selection = playlist.selectedIndices
+                let keepsDropSelected = first || selection == Set(start!..<end)
+                playlist.insert(tracks: batch, at: end)
+                start = start ?? end
+                playlist.selectedIndices = keepsDropSelected ? Set(start!..<(end + batch.count))
+                    : Set(selection.map { $0 >= end ? $0 + batch.count : $0 })
+                end += batch.count
+                plView.needsDisplay = true
+                if first && wasEmpty && audioEngine.status == .stopped {
+                    loadAndPlay(track: batch[0])
+                }
             }
         }
     }
@@ -122,8 +135,16 @@ extension PlayerCoordinator {
     
     /// Turns dropped / opened paths into playlist entries: audio files, folders (recursively), M3U/PLS.
     /// Skins (.wsz/.zip or an unpacked skin folder) are installed and applied instead.
-    /// Tags are read off the main thread, so a big folder doesn't freeze the windows.
+    /// Files are read off the main thread, so a big folder doesn't freeze the windows.
     func collectTracks(fromPaths allPaths: [String]) async -> [TrackItem] {
+        var tracks: [TrackItem] = []
+        await collectTracks(fromPaths: allPaths) { tracks += $0 }
+        return tracks
+    }
+
+    /// The same, handing the tracks over as they are found: a folder arrives one directory at a time, as in Winamp,
+    /// instead of after its whole tree is read (minutes on a network share).
+    func collectTracks(fromPaths allPaths: [String], each: ([TrackItem]) -> Void) async {
         // Plug-ins (.macampplugin) are installed, after the user says yes
         let plugins = allPaths.filter { $0.lowercased().hasSuffix(".macampplugin") }
         plugins.forEach(confirmAndInstallPlugin)
@@ -136,11 +157,20 @@ extension PlayerCoordinator {
             .first(where: { PluginManager.ffmpegFormats.contains($0) && !supported.contains($0) }) {
             mainView?.marquee.showTemporaryMessage("\(missing.uppercased()) files need the FFmpeg plug-in (Preferences ▸ Plug-ins ▸ Input)", duration: 5)
         }
-        let (tracks, skins) = await Task.detached(priority: .userInitiated) {
-            await PlayerCoordinator.scanPaths(paths)
-        }.value
-        skins.forEach(installAndApplySkin)
-        return tracks
+        let (batches, continuation) = AsyncStream.makeStream(of: [TrackItem].self)
+        let scan = Task.detached(priority: .userInitiated) {
+            let skins = await PlayerCoordinator.scanPaths(paths) { continuation.yield($0) }
+            continuation.finish()
+            return skins
+        }
+        // Clearing the playlist stops a folder that is still coming in (a clear made by `each` itself doesn't count)
+        var clears = playlist.clearCount
+        for await batch in batches {
+            guard playlist.clearCount == clears else { scan.cancel(); break }
+            each(batch)
+            clears = playlist.clearCount
+        }
+        await scan.value.forEach(installAndApplySkin)
     }
 
     /// Installing a plug-in runs its programs on this Mac, so it asks first (as Winamp's installers did)
@@ -163,11 +193,25 @@ extension PlayerCoordinator {
     }
 
     nonisolated static func scanPaths(_ paths: [String]) async -> (tracks: [TrackItem], skins: [URL]) {
-        var entries: [TrackItem] = []
+        var tracks: [TrackItem] = []
+        let skins = await scanPaths(paths) { tracks += $0 }
+        return (tracks, skins)
+    }
+
+    /// Hands the entries of `paths` to `found` in order, non-empty batches as they turn up; returns the skins among them.
+    /// Files and playlists come with their tags read; a folder comes by file name (see scanFolder).
+    nonisolated static func scanPaths(_ paths: [String], found: ([TrackItem]) -> Void) async -> [URL] {
         var skins: [URL] = []
+        var loose: [TrackItem] = [] // files and playlist entries: their tags are read at once, in parallel
+        func flush() async {
+            guard !loose.isEmpty else { return }
+            found(await TrackItem.resolveAll(loose))
+            loose = []
+        }
         let audioExtensions = AppConstants.Audio.supportedExtensions
         let skinExtensions = AppConstants.Audio.skinExtensions
         let playlistExtensions = AppConstants.Audio.playlistExtensions
+        let fm = FileManager.default
         
         for path in paths {
             let url = URL(fileURLWithPath: path)
@@ -176,40 +220,52 @@ extension PlayerCoordinator {
             if skinExtensions.contains(ext) {
                 skins.append(url)
             } else if playlistExtensions.contains(ext) {
-                entries.append(contentsOf: await PlaylistIO.loadEntries(from: url))
+                loose.append(contentsOf: await PlaylistIO.loadEntries(from: url))
             } else {
                 var isDir: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else { continue }
+                guard fm.fileExists(atPath: path, isDirectory: &isDir) else { continue }
                 if isDir.boolValue {
                     // Unpacked skin folder?
-                    let fm = FileManager.default
                     if fm.fileExists(atPath: url.appendingPathComponent("MAIN.BMP").path) || fm.fileExists(atPath: url.appendingPathComponent("main.bmp").path) {
                         skins.append(url)
                         continue
                     }
-                    // Recursively scan for audio files, in name order like Winamp's "Add directory"
-                    let all = fm.enumerator(at: url, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? []
-                    // An album rip with a CUE sheet is listed as its tracks, not as one long file
-                    let sheets = all.filter { $0.pathExtension.lowercased() == "cue" }
-                        .compactMap { cue in (try? Data(contentsOf: cue)).map { (cue, TextEncoding.decode($0)) } }
-                    let covered = Set(sheets.flatMap { CueSheet.referencedFiles(content: $0.1, baseURL: $0.0.deletingLastPathComponent()) })
-                    var found = all.filter { audioExtensions.contains($0.pathExtension.lowercased()) && !covered.contains($0.standardizedFileURL) }
-                        + sheets.map(\.0)
-                    found.sort { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
-                    for file in found {
-                        if let sheet = sheets.first(where: { $0.0 == file }) {
-                            entries.append(contentsOf: CueSheet.parse(content: sheet.1, baseURL: file.deletingLastPathComponent()))
-                        } else {
-                            entries.append(TrackItem.entry(url: file))
-                        }
-                    }
+                    await flush()
+                    await scanFolder(url, found: found)
                 } else if audioExtensions.contains(ext) {
-                    entries.append(TrackItem.entry(url: url))
+                    loose.append(TrackItem.entry(url: url))
                 }
             }
         }
-        // Read all tags at once, in parallel
-        return (await TrackItem.resolveAll(entries), skins)
+        await flush()
+        return skins
+    }
+
+    /// A folder's audio files, recursively and in name order like Winamp's "Add directory", one directory per batch.
+    /// They go in by file name: PlaylistModel.prefetchMetadata reads tags and lengths once they are in the list.
+    private nonisolated static func scanFolder(_ folder: URL, found: ([TrackItem]) -> Void) async {
+        let audioExtensions = AppConstants.Audio.supportedExtensions
+        let items = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey])) ?? [])
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        // An album rip with a CUE sheet is listed as its tracks, not as one long file
+        // shortcut: a sheet only hides files of its own folder; look across folders if rips ever keep the audio elsewhere
+        let sheets = items.filter { $0.pathExtension.lowercased() == "cue" }
+            .compactMap { cue in (try? Data(contentsOf: cue)).map { (cue, TextEncoding.decode($0)) } }
+        let covered = Set(sheets.flatMap { CueSheet.referencedFiles(content: $0.1, baseURL: folder) })
+        var entries: [TrackItem] = []
+        for item in items where !Task.isCancelled {
+            if (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                if !entries.isEmpty { found(entries) }
+                entries = []
+                await scanFolder(item, found: found)
+            } else if let sheet = sheets.first(where: { $0.0 == item }) {
+                // CUE tracks are read now: prefetch would give them the album file's tags and length
+                entries += await TrackItem.resolveAll(CueSheet.parse(content: sheet.1, baseURL: folder))
+            } else if audioExtensions.contains(item.pathExtension.lowercased()), !covered.contains(item.standardizedFileURL) {
+                entries.append(TrackItem.entry(url: item))
+            }
+        }
+        if !entries.isEmpty { found(entries) }
     }
     
     func installAndApplySkin(at url: URL) {
@@ -232,9 +288,16 @@ extension PlayerCoordinator {
             return
         }
         Task { @MainActor in
-            let tracks = await collectTracks(fromPaths: paths)
-            guard !tracks.isEmpty else { return }
-            addOpenedTracks(tracks, fromPaths: paths, enqueue: shouldEnqueue)
+            var first = true
+            await collectTracks(fromPaths: paths) { batch in
+                if first {
+                    addOpenedTracks(batch, fromPaths: paths, enqueue: shouldEnqueue)
+                } else {
+                    playlist.add(tracks: batch)
+                    plView.needsDisplay = true
+                }
+                first = false
+            }
         }
     }
 

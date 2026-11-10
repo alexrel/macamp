@@ -45,6 +45,71 @@ print("━━━━━━━━━━━━━━━━━━━━━━━━�
 print("⚡ MacAmp Test Runner — Phase 2 Verification Suite")
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+testGroup("Skin tiles stay opaque at fractional scale") {
+    func bitmap(width: Int, height: Int) -> CGContext {
+        CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    }
+    let tile = bitmap(width: 25, height: 29)
+    tile.setFillColor(CGColor(gray: 0.4, alpha: 1))
+    tile.fill(CGRect(x: 0, y: 0, width: 25, height: 29))
+
+    let sprite = tile.makeImage()!
+    let gen = GenWindowFrameView(title: "", content: NSView())
+    for crop in [false, true] {
+        let frame = bitmap(width: 226, height: 88)
+        frame.clear(CGRect(x: 0, y: 0, width: 226, height: 88))
+        frame.setAllowsAntialiasing(true)
+        frame.setShouldAntialias(true)
+        frame.interpolationQuality = .none
+        frame.scaleBy(x: 226.0 / 75, y: 88.0 / 29)
+        if crop {
+            gen.tile(frame, sprite, from: 0, to: 75, y: 0, tileWidth: 25, height: 29)
+        } else {
+            frame.drawTiledHorizontal(image: sprite, from: 0, to: 75, y: 0, width: 25, height: 29)
+        }
+
+        let pixels = frame.data!.assumingMemoryBound(to: UInt8.self)
+        let scanline = pixels.advanced(by: 44 * frame.bytesPerRow)
+        assertTrue((1..<225).allSatisfy { scanline[$0 * 4 + 3] == 255 },
+                   "Opaque skin slices meet without translucent seams (clipping: \(crop))")
+    }
+}
+
+testGroup("Large playlist scrolling and duration totals") {
+    let playlist = PlaylistModel()
+    let url = URL(fileURLWithPath: "/tmp/macamp-long-playlist.mp3")
+    playlist.add(tracks: (0..<5_000).map { TrackItem(url: url, title: "Track \($0)", duration: 60) })
+    playlist.selectAll()
+    assertEqual(playlist.runningTimeMessage, "83:20:00/83:20:00")
+    playlist.updateTrack(at: 0, duration: 120)
+    assertEqual(playlist.runningTimeMessage, "83:21:00/83:21:00", "Duration changes invalidate both totals")
+    playlist.selectNone()
+    assertEqual(playlist.runningTimeMessage, "2:00/83:21:00")
+    playlist.currentIndex = 4_999
+    assertEqual(playlist.runningTimeMessage, "1:00/83:21:00", "With no selection the current track supplies the first duration")
+
+    let view = PlaylistWindowView(playlist: playlist)
+    view.frame.size = NSSize(width: 275, height: 232)
+    func wheel(_ units: CGScrollEventUnit, _ delta: Int32) -> NSEvent {
+        NSEvent(cgEvent: CGEvent(scrollWheelEvent2Source: nil, units: units, wheelCount: 1,
+                                 wheel1: delta, wheel2: 0, wheel3: 0)!)!
+    }
+    view.scrollWheel(with: wheel(.line, -1))
+    assertEqual(view.firstVisibleTrackIndex, 1, "A mouse wheel notch keeps the classic single-row step")
+    view.scrollWheel(with: wheel(.pixel, -5))
+    assertEqual(view.firstVisibleTrackIndex, 1, "A small trackpad delta accumulates without a row jump")
+    view.scrollWheel(with: wheel(.pixel, -35))
+    assertEqual(view.firstVisibleTrackIndex, 4, "A faster gesture crosses multiple rows")
+    view.scrollToTrack(4_999, centered: false)
+    let lastPage = view.firstVisibleTrackIndex
+    view.scrollWheel(with: wheel(.pixel, -100))
+    assertEqual(view.firstVisibleTrackIndex, lastPage, "The viewport stays clamped at the end")
+
+    playlist.clear()
+    assertEqual(playlist.runningTimeMessage, "0:00/0:00", "Clearing the list resets both durations")
+}
+
 // 1. WindowLayoutManager & Magnetic Snapping Tests
 testGroup("WindowLayoutManager & Magnetic Snapping") {
     let wlm = WindowLayoutManager.shared
@@ -124,6 +189,68 @@ testGroup("WindowLayoutManager & Magnetic Snapping") {
     let pl1x = winC.frame
     assertTrue(abs(eq1x.minY - main1x.maxY) <= 1.0, "At 1x: EQ bottom must touch Main top with 0 gap")
     assertTrue(abs(pl1x.minY - eq1x.maxY) <= 1.0, "At 1x: Playlist bottom must touch EQ top with 0 gap (no overlap)")
+
+    // A wide playlist touches both side-by-side windows. Its left edge identifies the anchor.
+    for mainOnLeft in [true, false] {
+        let left = mainOnLeft ? winA : winB
+        let right = mainOnLeft ? winB : winA
+        left.setFrameOrigin(NSPoint(x: 300, y: 380))
+        right.setFrameOrigin(NSPoint(x: left.frame.maxX, y: left.frame.minY))
+        let playlistSize = NSSize(width: 550, height: 145)
+        winC.setFrame(NSRect(origin: NSPoint(x: left.frame.minX, y: left.frame.minY - playlistSize.height),
+                             size: playlistSize), display: false)
+        wlm.updateAdjacencies()
+
+        for scale: CGFloat in [2, 1] {
+            wlm.setScale(scale)
+            assertEqual(right.frame.minX, left.frame.maxX, "Player and EQ stay side by side at \(scale)×")
+            assertEqual(right.frame.maxY, left.frame.maxY, "Player and EQ stay top-aligned at \(scale)×")
+            assertEqual(winC.frame.minX, left.frame.minX, "Wide playlist stays left-aligned at \(scale)×")
+            assertEqual(winC.frame.maxY, left.frame.minY, "Wide playlist stays docked below at \(scale)×")
+            assertEqual(winC.frame.size, playlistSize, "Playlist keeps its own size")
+        }
+    }
+
+    let persistence = PersistenceManager.shared
+    winA.setFrameOrigin(NSPoint(x: 100, y: 380))
+    winB.setFrameOrigin(NSPoint(x: winA.frame.maxX, y: winA.frame.minY))
+    winC.setFrameOrigin(NSPoint(x: winA.frame.minX, y: winA.frame.minY - winC.frame.height))
+    wlm.updateAdjacencies()
+    persistence.state.interfaceScale = .large
+    for classicScale: CGFloat in [1, 2, 1] {
+        wlm.setScale(classicScale)
+        assertEqual(winA.frame.width, 413 * classicScale, "Double Size multiplies the interface scale")
+        assertEqual(winB.frame.minX, winA.frame.maxX, "EQ stays docked at 150%")
+        assertEqual(winC.frame.size, NSSize(width: 826, height: 218), "Each 275 px column of the playlist is rounded like a window")
+        if classicScale == 1 {
+            assertEqual(winC.frame.maxX, winB.frame.maxX, "The playlist's right edge matches the EQ's at 150%")
+        } else {
+            assertEqual(winC.frame.width, winA.frame.width, "The playlist is as wide as the doubled main window at 150%")
+        }
+        let logicalBounds = winC.contentView!.bounds
+        assertTrue(abs(logicalBounds.width - 550) < 0.001 && abs(logicalBounds.height - 145) < 0.001,
+                   "Playlist retains the skin's coordinates")
+        assertEqual(winC.frame.minX, winA.frame.minX, "Wide playlist stays left-aligned at 150%")
+        assertEqual(winC.frame.maxY, winA.frame.minY, "Wide playlist remains docked at 150%")
+    }
+    winC.setFrameOrigin(NSPoint(x: winC.frame.minX + 30, y: winC.frame.minY))
+    wlm.endDrag(for: .playlist)
+    assertEqual(winC.frame.width, 826, "The width doesn't depend on what the playlist is docked to")
+    winB.orderOut(nil)
+    persistence.state.interfaceScale = .standard
+    wlm.setScale(1)
+    assertEqual(winB.frame.size, NSSize(width: 275, height: 116), "Hidden EQ returns to 100%")
+    winB.orderFront(nil)
+
+    winB.setFrameOrigin(NSPoint(x: 650, y: 380))
+    winC.setFrameOrigin(NSPoint(x: winB.frame.minX, y: winB.frame.minY - winC.frame.height))
+    wlm.updateAdjacencies()
+    persistence.state.interfaceScale = .large
+    wlm.setScale(1)
+    assertEqual(winC.frame.maxY, winB.frame.minY, "A group detached from Main stays docked")
+    assertEqual(winC.frame.minX, winB.frame.minX, "Detached group keeps its left edge aligned")
+    persistence.state.interfaceScale = .standard
+    wlm.setScale(1)
     
     // Test onLayoutChanged callback trigger
     var layoutChangedFired = false
@@ -2136,6 +2263,65 @@ testGroup("CUE Sheets") {
     assertTrue(Date().timeIntervalSince(began) < 0.9, "Stops at the next track's start, not the end of the file")
 }
 
+testGroup("Big folders go in at once; one saved-frame format; dialogs measured once") {
+    let fm = FileManager.default
+    let dir = fm.temporaryDirectory.appendingPathComponent("macamp-big-folder-\(UUID().uuidString)")
+    try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: dir) }
+    // Name order (Album 2 before Album 10), a batch per directory
+    for sub in ["Album 2", "Album 10/Disc"] { try fm.createDirectory(at: dir.appendingPathComponent(sub), withIntermediateDirectories: true) }
+    for file in ["z.mp3", "b.mp3", "cover.jpg", "Album 10/1.mp3", "Album 10/Disc/9.mp3", "Album 2/1.mp3"] {
+        try Data().write(to: dir.appendingPathComponent(file))
+    }
+    var batches: [[String]] = []
+    _ = awaitValue { await PlayerCoordinator.scanPaths([dir.path]) { batch in batches.append(batch.map { $0.url.pathComponents.suffix(from: $0.url.pathComponents.firstIndex(of: dir.lastPathComponent)! + 1).joined(separator: "/") }) } }
+    assertEqual(batches, [["Album 2/1.mp3"], ["Album 10/1.mp3"], ["Album 10/Disc/9.mp3"], ["b.mp3", "z.mp3"]],
+                "A folder arrives one directory at a time, in name order, audio files only")
+    // Shape of a dropped music share: 19 000 tracks in folders of 13, then every tag arriving
+    let share = PlaylistModel()
+    share.isShuffle = true
+    let shareStart = Date()
+    for folder in 0..<1_460 { share.add(tracks: (0..<13).map { TrackItem(url: URL(fileURLWithPath: "/nonexistent/\(folder)/\($0).mp3"), title: "t", duration: 1) }) }
+    let added = Date().timeIntervalSince(shareStart)
+    let ids = share.tracks.map(\.id)
+    let tagStart = Date()
+    for id in ids { share.updateTrack(id: id, duration: 200) }
+    print(String(format: "  big playlist: %.2f s to add 1460 folders, %.2f s for %d tag updates", added, Date().timeIntervalSince(tagStart), ids.count))
+
+    // Rows on screen are read before the rest of the queue: of two real files, the one in view is read first
+    let wav = dir.appendingPathComponent("shown.wav")
+    let pcm = AVAudioFile.self
+    do {
+        let format = AVAudioFormat(standardFormatWithSampleRate: 8_000, channels: 1)!
+        let file = try pcm.init(forWriting: wav, settings: format.settings)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 8_000)!
+        buffer.frameLength = 8_000
+        try file.write(from: buffer)
+    }
+    let queued = PlaylistModel()
+    queued.add(tracks: (0..<400).map { TrackItem(url: $0 == 390 || $0 == 100 ? wav : dir.appendingPathComponent("missing\($0).mp3"), title: "t\($0)") })
+    queued.prefetchFirst(385..<395)
+    _ = spinRunLoop(until: { queued.tracks[390].duration > 0 || queued.tracks[100].duration > 0 }, timeout: 5)
+    assertTrue(queued.tracks[390].duration > 0 && queued.tracks[100].duration == 0,
+               "A row scrolled into view gets its length before the rows above it")
+    queued.clear()
+
+    let model = PlaylistModel()
+    model.add(tracks: (0..<10).map { TrackItem(url: dir.appendingPathComponent("missing\($0).mp3"), title: "t\($0)") })
+    model.clear()
+    assertEqual(model.tracks.count, 0, "Clearing the list while tags are still being read is safe")
+
+    let window = NSWindow(contentRect: NSRect(x: 200, y: 300, width: 100, height: 100), styleMask: [.titled], backing: .buffered, defer: true)
+    window.installScaledDialog(Color.red.frame(width: 320, height: 90))
+    assertEqual(window.contentRect(forFrameRect: window.frame).size, NSSize(width: 320, height: 90), "A dialog takes its content's size")
+
+    let coordinator = PlayerCoordinator.shared
+    let player = NSWindow(contentRect: NSRect(x: 40, y: 500, width: 826, height: 174), styleMask: [.borderless], backing: .buffered, defer: true)
+    player.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 826, height: 174))
+    player.updateContentScale(1.5, logicalSize: NSSize(width: 550, height: 116))
+    assertEqual(coordinator.savedFrame(of: player) ?? [], [40, 674 - 116, 550, 116], "Saved frame: top-left corner and the size in skin pixels")
+}
+
 testGroup("Status Bar Menu Title") {
     let font = [NSAttributedString.Key.font: NSFont.menuFont(ofSize: 0)]
     let long = "▶ Шок видео! Гитара с одной наклейкой! Эксклюзив (нет) 2016 год [cdJzZETdxYY]"
@@ -2902,6 +3088,7 @@ testGroup("Settings from older versions still load") {
     let decoded = try? JSONDecoder().decode(AppState.self, from: JSONSerialization.data(withJSONObject: old))
     assertTrue(decoded != nil, "A session without the new settings decodes")
     assertEqual(decoded?.isShuffle, true, "and keeps the user's settings")
+    assertEqual(decoded?.interfaceScale, .standard, "Older sessions open at 100%")
     // Settings that must be present in every session.json: frozen at 1.0. A new setting needs the
     // `...Storage: T?` pattern, or old sessions stop loading (this list then no longer matches)
     let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(AppState())) as! [String: Any]
