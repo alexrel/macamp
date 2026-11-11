@@ -179,12 +179,20 @@ public class WindowLayoutManager: NSObject {
         let totalShiftX = roundedDeltaX + bestSnapX
         let totalShiftY = roundedDeltaY + bestSnapY
         
-        for (gid, startOrigin) in startOrigins {
-            guard let win = windows[gid], win.isVisible else { continue }
-            win.setFrameOrigin(NSPoint(
-                x: round(startOrigin.x + totalShiftX),
-                y: round(startOrigin.y + totalShiftY)
-            ))
+        // macOS stops a window at the menu bar by itself. The whole group must stop with it, or the windows docked
+        // below slide under the one that was held back: move the group, see how far the system let each window go,
+        // and give every window the shortest of those moves.
+        var allowedX = totalShiftX, allowedY = totalShiftY
+        for pass in 0..<2 {
+            for (gid, startOrigin) in startOrigins {
+                guard let win = windows[gid], win.isVisible else { continue }
+                win.setFrameOrigin(NSPoint(x: round(startOrigin.x + allowedX), y: round(startOrigin.y + allowedY)))
+                guard pass == 0 else { continue }
+                let movedX = win.frame.minX - startOrigin.x, movedY = win.frame.minY - startOrigin.y
+                if abs(movedX) < abs(allowedX) { allowedX = movedX }
+                if abs(movedY) < abs(allowedY) { allowedY = movedY }
+            }
+            if allowedX == totalShiftX && allowedY == totalShiftY { break }
         }
     }
     

@@ -148,6 +148,18 @@ testGroup("WindowLayoutManager & Magnetic Snapping") {
     wlm.applyDrag(id: .main, totalDelta: CGPoint(x: 20, y: -20), startOrigins: origins)
     let movedMainOrigin = winA.frame.origin
     assertTrue(movedMainOrigin.x > initialMainOrigin.x, "Main window should move with drag delta")
+
+    // Dragged up against the menu bar the group stops together (issue 1: the playlist slid under the main window)
+    if let screenTop = winA.screen?.visibleFrame.maxY {
+        winA.setFrameOrigin(NSPoint(x: 100, y: screenTop - 116 - 10))
+        winB.setFrameOrigin(NSPoint(x: 100, y: screenTop - 232 - 10))
+        winC.setFrameOrigin(NSPoint(x: 100, y: screenTop - 348 - 10))
+        wlm.updateAdjacencies()
+        wlm.applyDrag(id: .main, totalDelta: CGPoint(x: 0, y: 60), startOrigins: wlm.startDrag(for: .main))
+        print("  menu bar drag: main top \(winA.frame.maxY), screen top \(screenTop)")
+        assertEqual(winB.frame.maxY, winA.frame.minY, "Equalizer stays docked under the main window")
+        assertEqual(winC.frame.maxY, winB.frame.minY, "Playlist stays docked under the equalizer")
+    }
     
     // Restore window positions
     winA.setFrameOrigin(NSPoint(x: 100, y: 500))
