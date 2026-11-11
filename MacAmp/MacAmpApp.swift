@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await FileAssociationManager.shared.reapplyOnLaunchIfNeeded()
             // A rebuild restores the default document icons; put the chosen ones back
             await DocumentIconManager.shared.reapplyOnLaunchIfNeeded()
+            await UpdateChecker.check(manual: false)
         }
         NSApp.activate(ignoringOtherApps: true)
         

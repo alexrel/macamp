@@ -1719,6 +1719,7 @@ private struct PluginListBox: View {
 private struct SetupSection: View {
     @State private var offline = PersistenceManager.shared.state.networkOffline
     @State private var proxy = PersistenceManager.shared.state.httpProxy
+    @State private var checksForUpdates = PersistenceManager.shared.state.checkForUpdates
 
     var body: some View {
         Win32GroupBox("MacAmp setup") {
@@ -1742,6 +1743,19 @@ private struct SetupSection: View {
                                         .font(.system(size: 10)).foregroundColor(.red)
                                 }
                             }
+                        }
+                        .disabled(offline)
+                        HStack {
+                            Win32Checkbox("Check for new versions of MacAmp at startup", isOn: Binding(
+                                get: { checksForUpdates },
+                                set: { newValue in
+                                    checksForUpdates = newValue
+                                    PersistenceManager.shared.state.checkForUpdates = newValue
+                                    PersistenceManager.shared.scheduleSave()
+                                }
+                            ))
+                            Spacer()
+                            Win32Button("Check now", width: 80) { Task { await UpdateChecker.check(manual: true) } }
                         }
                         .disabled(offline)
                     }

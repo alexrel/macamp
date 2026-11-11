@@ -16,6 +16,11 @@ public enum AppConstants {
         /// MacAmp's page: updates (About), plug-ins (Get plug-ins, #plugins), Minibrowser start page
         public static let website = URL(string: "https://alexrel.com/macamp")!
         public static let pluginsPage = URL(string: "https://alexrel.com/macamp#plugins")!
+        /// GitHub repository the releases come from (Setup ▸ Check for new versions)
+        public static let repository = "alexrel/macamp"
+        public static let latestRelease = URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!
+        /// Only a file of MacAmp's own releases is downloaded, whatever GitHub's reply names
+        public static let releaseDownloadPrefix = "https://github.com/\(repository)/releases/download/"
     }
     
     // MARK: - Window Dimensions (1x Base Scale)

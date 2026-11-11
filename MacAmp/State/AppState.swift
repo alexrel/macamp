@@ -46,6 +46,10 @@ public struct AppState: Codable {
         get { networkOfflineStorage ?? false }
         set { networkOfflineStorage = newValue }
     }
+    /// Winamp "Check for new versions of Winamp at startup"
+    public var checkForUpdatesStorage: Bool? = nil
+    public var checkForUpdates: Bool { get { checkForUpdatesStorage ?? true } set { checkForUpdatesStorage = newValue } }
+    public var lastUpdateCheck: Date? = nil
     /// Winamp "HTTP proxy: 'Server:Port' (blank for none)"
     public var httpProxy: String {
         get { httpProxyStorage ?? "" }

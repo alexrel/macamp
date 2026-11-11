@@ -1844,6 +1844,42 @@ testGroup("Icon Slider: Press, Drag, Release") {
     win.orderOut(nil)
 }
 
+testGroup("Setup: Check for New Versions") {
+    assertTrue(UpdateChecker.isNewer("0.9", than: "0.8") && UpdateChecker.isNewer("0.10", than: "0.9") && UpdateChecker.isNewer("1.0", than: "0.10"), "Newer by number, not by text")
+    assertTrue(UpdateChecker.isNewer("0.8.1", than: "0.8"), "A fix release is newer")
+    assertTrue(!UpdateChecker.isNewer("0.8", than: "0.8") && !UpdateChecker.isNewer("0.8", than: "0.9") && !UpdateChecker.isNewer("0.8", than: "0.8.0"), "Same or older is not")
+    func reply(_ link: String) -> Data {
+        try! JSONSerialization.data(withJSONObject: ["tag_name": "v0.9", "body": "Fixes\r\nand more", "assets": [
+            ["browser_download_url": "https://github.com/alexrel/macamp/releases/download/v0.9/MacAmp-0.9.zip"],
+            ["browser_download_url": link]]])
+    }
+    let release = UpdateChecker.parse(reply("https://github.com/alexrel/macamp/releases/download/v0.9/MacAmp-0.9.dmg"))
+    assertEqual(release?.version, "0.9", "Version from the tag")
+    assertEqual(release?.notes, "Fixes\nand more", "Release notes")
+    assertEqual(release?.dmg.lastPathComponent, "MacAmp-0.9.dmg", "The disk image, not the zip")
+    assertTrue(UpdateChecker.parse(reply("https://example.com/alexrel/macamp/releases/download/v0.9/MacAmp-0.9.dmg")) == nil, "A file from elsewhere is not offered")
+    assertTrue(UpdateChecker.parse(Data("{\"message\":\"Not Found\"}".utf8)) == nil, "No release, no offer")
+    let now = Date()
+    assertTrue(UpdateChecker.isDue(last: nil, now: now) && UpdateChecker.isDue(last: now.addingTimeInterval(-90_000), now: now), "Never checked or a day ago: check")
+    assertTrue(!UpdateChecker.isDue(last: now.addingTimeInterval(-3_600), now: now), "Checked an hour ago: don't")
+    assertTrue(AppState().checkForUpdates, "On by default, as in Winamp")
+
+    // The download lands at the target, over an older copy, and reports its progress
+    let source = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-update-source.dmg")
+    let target = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-update-target.dmg")
+    try Data(repeating: 7, count: 300_000).write(to: source)
+    try Data("old".utf8).write(to: target)
+    var percents: [Int] = []
+    var finished = false
+    Task { @MainActor in
+        try? await UpdateChecker.download(source, to: target) { percents.append($0) }
+        finished = true
+    }
+    _ = spinRunLoop(until: { finished && percents.last == 100 }, timeout: 5)
+    assertEqual((try? Data(contentsOf: target))?.count, 300_000, "Downloaded file replaces the old one")
+    assertEqual(percents.last, 100, "Progress reaches 100% (\(percents))")
+}
+
 testGroup("Setup: Internet Settings") {
     assertTrue(MacAmpNetwork.parseProxy("") == nil, "Blank proxy = none")
     assertTrue(MacAmpNetwork.parseProxy("proxy.example.com:8080")! == ("proxy.example.com", 8080), "server:port")

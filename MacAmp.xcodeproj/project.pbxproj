@@ -98,6 +98,7 @@
 		AADB0851B80A783027FF2DFB /* FileAssociationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3D82961B6FAC94F43B75D1 /* FileAssociationManager.swift */; };
 		AA3C91FDED6774422B41A404 /* DocumentIconManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA466F9A66ACD7BC92C4FDD0 /* DocumentIconManager.swift */; };
 		AAE3548D0386B294262440E0 /* MacAmpNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6F767C53DC44A8F4F93E11 /* MacAmpNetwork.swift */; };
+		AAC0FFEE0000000000000901 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAC0FFEE0000000000000902 /* UpdateChecker.swift */; };
 		AA0D5C1E00000000000000A2 /* MilkdropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000A1 /* MilkdropView.swift */; };
 		AA0D5C1E00000000000000A4 /* libprojectM-4.4.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000A3 /* libprojectM-4.4.dylib */; };
 		AA0D5C1E00000000000000A5 /* libprojectM-4.4.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000A3 /* libprojectM-4.4.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
@@ -205,6 +206,7 @@
 		AA3D82961B6FAC94F43B75D1 /* FileAssociationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAssociationManager.swift; sourceTree = "<group>"; };
 		AA466F9A66ACD7BC92C4FDD0 /* DocumentIconManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentIconManager.swift; sourceTree = "<group>"; };
 		AA6F767C53DC44A8F4F93E11 /* MacAmpNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAmpNetwork.swift; sourceTree = "<group>"; };
+		AAC0FFEE0000000000000902 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 		AA0D5C1E00000000000000A1 /* MilkdropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MilkdropView.swift"; sourceTree = "<group>"; };
 		AA0D5C1E00000000000000A3 /* libprojectM-4.4.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = "libprojectM-4.4.dylib"; path = "build/projectm/install/lib/libprojectM-4.4.dylib"; sourceTree = SOURCE_ROOT; };
 		AA0D5C1E00000000000000A8 /* projectM-LGPL-2.1.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "projectM-LGPL-2.1.txt"; path = "build/projectm/projectM-LGPL-2.1.txt"; sourceTree = SOURCE_ROOT; };
@@ -343,6 +345,7 @@
 				AA3D82961B6FAC94F43B75D1 /* FileAssociationManager.swift */,
 				AA466F9A66ACD7BC92C4FDD0 /* DocumentIconManager.swift */,
 				AA6F767C53DC44A8F4F93E11 /* MacAmpNetwork.swift */,
+				AAC0FFEE0000000000000902 /* UpdateChecker.swift */,
 );
 			path = "Core";
 			sourceTree = "<group>";
@@ -761,6 +764,7 @@
 				AADB0851B80A783027FF2DFB /* FileAssociationManager.swift in Sources */,
 				AA3C91FDED6774422B41A404 /* DocumentIconManager.swift in Sources */,
 				AAE3548D0386B294262440E0 /* MacAmpNetwork.swift in Sources */,
+				AAC0FFEE0000000000000901 /* UpdateChecker.swift in Sources */,
 );
 			runOnlyForDeploymentPostprocessing = 0;
 		};

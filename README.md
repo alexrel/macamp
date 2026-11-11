@@ -44,6 +44,8 @@ macOS 14 Sonoma or later).
 - **Tag editor:** a long file path no longer stretches the window; a genre picked from the list replaces what
   was typed; the genre list button sits inside its field.
 - **Dialogs:** a button that opens another dialog no longer stays pressed.
+- **New versions:** MacAmp checks GitHub once a day at startup and offers to download a newer release
+  (Preferences ▸ Setup; "Check now" asks at once). It opens the disk image and never replaces itself.
 - **Fixed:** the playlist keeps its height after leaving shade mode; title bar buttons follow the window's
   focus; window title bars stay reachable when the windows don't fit the screen.
 
