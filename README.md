@@ -48,6 +48,8 @@ macOS 14 Sonoma or later).
   (Preferences ▸ Setup; "Check now" asks at once). It opens the disk image and never replaces itself.
 - **Fixed:** the playlist keeps its height after leaving shade mode; title bar buttons follow the window's
   focus; window title bars stay reachable when the windows don't fit the screen.
+- **0.9.1:** windows docked together stop together at the menu bar; the playlist no longer slides under the
+  main window.
 
 ## Roadmap
 
