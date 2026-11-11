@@ -29,7 +29,7 @@ macOS 14 Sonoma or later).
   (on any keyboard layout), global hotkeys and media keys.
 - **Plug-ins:** the optional FFmpeg plug-in plays MKV/WebM/AVI/WMV and WMA/APE/WavPack (see the release assets).
 
-## What's new since 0.8
+## What's new in 0.9
 
 - **Interface scale:** Preferences ▸ Display ▸ Interface scale makes every window and dialog 100%, 150% or 200%;
   Double Size still works on top of it.
