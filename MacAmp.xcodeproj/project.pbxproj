@@ -89,6 +89,7 @@
 		AA19012C99F123220CCB3149 /* WinampSkin.icns in Resources */ = {isa = PBXBuildFile; fileRef = AADC824D32AEE8B01AAC3A5C /* WinampSkin.icns */; };
 		AADC170587A89F4091446E8E /* DocumentIconChoices in Resources */ = {isa = PBXBuildFile; fileRef = AA7724DF12051809CF150D4D /* DocumentIconChoices */; };
 		AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */ = {isa = PBXBuildFile; fileRef = AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */; };
+		AAA142DA03338E56678187C0 /* demo.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = AAD8DBF0CFBC66555CB1BA74 /* demo.mp3 */; };
 		BDC069482B887D910009C001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDC069472B887D910009C001 /* Assets.xcassets */; };
 		BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDC0694A2B887D910009C001 /* Preview Assets.xcassets */; };
 		AAEE792FED080B14A71932A6 /* TextEncoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAEF3EA851E4615920CAD18C /* TextEncoding.swift */; };
@@ -193,6 +194,7 @@
 		AADC824D32AEE8B01AAC3A5C /* WinampSkin.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = "Resources/DocumentIcons/WinampSkin.icns"; sourceTree = "<group>"; };
 		AA7724DF12051809CF150D4D /* DocumentIconChoices */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DocumentIconChoices; path = Resources/DocumentIcons/Choices; sourceTree = "<group>"; };
 		AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */ = {isa = PBXFileReference; lastKnownFileType = file; path = "base-2.91.wsz"; sourceTree = "<group>"; };
+		AAD8DBF0CFBC66555CB1BA74 /* demo.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = demo.mp3; sourceTree = "<group>"; };
 		BDC069402B887D8B0009C001 /* MacAmp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacAmp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BDC069472B887D910009C001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BDC0694A2B887D910009C001 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
@@ -298,6 +300,7 @@
 				AA467705E65615588891A2B1 /* State */,
 				AA69FDE20A9A6E5FEABD7AC7 /* MacAmpApp.swift */,
 				AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */,
+				AAD8DBF0CFBC66555CB1BA74 /* demo.mp3 */,
 				AA7724DF12051809CF150D4D /* DocumentIconChoices */,
 				AA04AC56F1DC09A5377AC512 /* WinampAudioFile.icns */,
 				AA82159D5E1FC971DD090475 /* WinampPlaylist.icns */,
@@ -599,6 +602,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */,
+				AAA142DA03338E56678187C0 /* demo.mp3 in Resources */,
 				AA0D5C1E00000000000000A9 /* projectM-LGPL-2.1.txt in Resources */,
 				AA0D5C1E00000000000000AB /* projectM-source.tar.gz in Resources */,
 				AA0D5C1E00000000000000BA /* GOOM-LICENSE.txt in Resources */,

@@ -17,6 +17,7 @@ public enum Win32Colors {
 // MARK: - Win32 3D Borders
 public struct Win32SunkenBorder: ViewModifier {
     public var cornerRadius: CGFloat = 0
+    public var isHidden = false
     public func body(content: Content) -> some View {
         content
             .overlay(
@@ -44,6 +45,7 @@ public struct Win32SunkenBorder: ViewModifier {
                         Rectangle().fill(Win32Colors.borderLight).frame(width: 1)
                     }
                 }
+                .opacity(isHidden ? 0 : 1)
             )
     }
 }
@@ -124,7 +126,9 @@ public struct Win32Button: View {
     }
     
     public var body: some View {
-        let button = Button(action: action) {
+        // After the click is handled: an action that opens a modal dialog would otherwise hold the button pressed.
+        // A run loop block, not the main queue, which a modal dialog opened from one of its blocks would stall.
+        let button = Button(action: { RunLoop.main.perform(inModes: [.common], block: action) }) {
             Text(title)
                 .font(.system(size: 11))
                 .multilineTextAlignment(.center)
@@ -546,9 +550,11 @@ struct Win32NSTextField: NSViewRepresentable {
 
     func updateNSView(_ field: NSTextField, context: Context) {
         context.coordinator.text = $text
-        if field.stringValue != text, field.currentEditor() == nil {
+        // While the field is being edited only a change made elsewhere (a genre picked from the list) replaces its text
+        if field.stringValue != text, field.currentEditor() == nil || text != context.coordinator.typed {
             field.stringValue = text
         }
+        context.coordinator.typed = text
         field.isEnabled = isEnabled
         field.textColor = isEnabled ? .black : NSColor(white: 128 / 255, alpha: 1)
     }
@@ -557,7 +563,9 @@ struct Win32NSTextField: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var text: Binding<String>
-        init(text: Binding<String>) { self.text = text }
+        /// What the binding held after the last keystroke
+        var typed: String
+        init(text: Binding<String>) { self.text = text; typed = text.wrappedValue }
 
         func controlTextDidChange(_ notification: Notification) {
             guard let field = notification.object as? NSTextField else { return }
@@ -566,6 +574,7 @@ struct Win32NSTextField: NSViewRepresentable {
             if field.stringValue != text.wrappedValue {
                 field.stringValue = text.wrappedValue
             }
+            typed = text.wrappedValue
         }
     }
 }
@@ -576,7 +585,8 @@ public struct Win32ComboBox<Value: Hashable>: View {
     @Binding public var selection: Value
     public let options: [(value: Value, title: String)]
     public var width: CGFloat?
-    /// Text shown in the closed box instead of the selected option ("" = just the drop-down arrow)
+    /// Text shown in the closed box instead of the selected option ("" = just the ▼ button, no box: it goes inside
+    /// the caller's edit box, which makes that an editable combo box)
     public var label: String?
     
     @Environment(\.isEnabled) private var isEnabled
@@ -595,12 +605,14 @@ public struct Win32ComboBox<Value: Hashable>: View {
     public var body: some View {
         Button(action: showMenu) {
             HStack(spacing: 0) {
-                Text(currentTitle)
-                    .font(.system(size: 11))
-                    .foregroundColor(isEnabled ? Win32Colors.text : Win32Colors.textDisabled)
-                    .lineLimit(1)
-                    .padding(.horizontal, 4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if label != "" {
+                    Text(currentTitle)
+                        .font(.system(size: 11))
+                        .foregroundColor(isEnabled ? Win32Colors.text : Win32Colors.textDisabled)
+                        .lineLimit(1)
+                        .padding(.horizontal, 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 Text("▼")
                     .font(.system(size: 7))
                     .foregroundColor(isEnabled ? Win32Colors.text : Win32Colors.textDisabled)
@@ -610,8 +622,8 @@ public struct Win32ComboBox<Value: Hashable>: View {
                     .padding(.trailing, 2)
             }
             .frame(width: width, height: 20)
-            .background(isEnabled ? Color.white : Win32Colors.dialogBg)
-            .win32Sunken()
+            .background(label == "" ? Color.clear : isEnabled ? Color.white : Win32Colors.dialogBg)
+            .modifier(Win32SunkenBorder(isHidden: label == ""))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

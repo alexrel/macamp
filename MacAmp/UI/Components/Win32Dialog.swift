@@ -188,6 +188,7 @@ final class Win32PushButton: NSButton {
         self.title = title
         isBordered = false
         setButtonType(.momentaryPushIn)
+        focusRingType = .none // Win32 has no glow around the focused button
         font = .systemFont(ofSize: 11)
         keyEquivalent = isDefault ? "\r" : (title == "Cancel" ? "\u{1b}" : "")
         target = self

@@ -145,7 +145,7 @@ public struct TrackInfoView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .padding(.horizontal, 4)
-                .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
+                .frame(idealWidth: 0, maxWidth: .infinity, minHeight: 20, alignment: .leading) // a long path must not widen the box
                 .win32Sunken()
             
             HStack(alignment: .top, spacing: 8) {
@@ -276,16 +276,15 @@ public struct TrackInfoView: View {
                     HStack(spacing: 6) {
                         field("Year", $viewModel.metadata.id3v2.year, width: 44)
                         label("Genre")
-                        HStack(spacing: 2) {
-                            Win32TextField(text: $viewModel.metadata.id3v2.genre)
-                            Win32ComboBox(
-                                selection: $viewModel.metadata.id3v2.genre,
-                                options: ID3Genre.allGenres.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-                                    .map { (value: $0, title: $0) },
-                                width: 20, // just the drop-down arrow: the text field next to it is the editable part
-                                label: ""
-                            )
-                        }
+                        Win32TextField(text: $viewModel.metadata.id3v2.genre)
+                            .overlay(alignment: .trailing) {
+                                Win32ComboBox(
+                                    selection: $viewModel.metadata.id3v2.genre,
+                                    options: ID3Genre.allGenres.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+                                        .map { (value: $0, title: $0) },
+                                    label: ""
+                                )
+                            }
                     }
                     HStack(alignment: .top, spacing: 6) {
                         label("Comment").frame(width: v2LabelWidth, alignment: .trailing).padding(.top, 3)

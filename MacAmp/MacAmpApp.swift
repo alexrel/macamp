@@ -70,9 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let titleItem: NSMenuItem
         if let track = coord.playlist.currentTrack {
             let name = track.displayName
-            let prefix = isPlaying ? "▶ " : "❚❚ "
+            let prefix = StatusBarManager.stateMark(playing: isPlaying)
             let displayName = name.isEmpty ? track.url.lastPathComponent : name
-            titleItem = NSMenuItem(title: prefix + displayName, action: nil, keyEquivalent: "")
+            // Cut like the menu bar item's title
+            titleItem = NSMenuItem(title: StatusBarManager.truncated(prefix + displayName, toWidth: StatusBarManager.titleWidth),
+                                   action: nil, keyEquivalent: "")
         } else {
             titleItem = NSMenuItem(title: "MacAmp \(AppConstants.App.version) [Stopped]", action: nil, keyEquivalent: "")
         }

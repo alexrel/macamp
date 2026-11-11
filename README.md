@@ -13,7 +13,8 @@ macOS 14 Sonoma or later).
 
 ## Features
 
-- **Main window, Equalizer and Playlist Editor** with magnetic docking, shade modes and Double Size (2x).
+- **Main window, Equalizer and Playlist Editor** with magnetic docking, shade modes and Double Size (2x);
+  interface scale of 100%, 150% or 200% for large and high-resolution displays.
 - **Classic skins:** any Winamp 2.x `.wsz` or skin folder, read on the fly; the base 2.91 skin is built in.
   Cyrillic titles in the skin's own font colors.
 - **Playback:** MP3, AAC/M4A, FLAC, WAV/AIFF, Ogg Vorbis/Opus, MP2, AU, MIDI; crossfade and fades,
@@ -27,6 +28,35 @@ macOS 14 Sonoma or later).
 - **Track Info** with ID3 tag editing, Winamp-style Preferences, About, context menus and the 2.95 hotkeys
   (on any keyboard layout), global hotkeys and media keys.
 - **Plug-ins:** the optional FFmpeg plug-in plays MKV/WebM/AVI/WMV and WMA/APE/WavPack (see the release assets).
+
+## What's new since 0.8
+
+- **Interface scale:** Preferences ▸ Display ▸ Interface scale makes every window and dialog 100%, 150% or 200%;
+  Double Size still works on top of it.
+- **Big folders:** a dropped or added folder shows up in the playlist one directory at a time, the way Winamp
+  did it, and track lengths fill in afterwards. A music share with thousands of files no longer looks frozen.
+  Clearing the playlist stops a folder that is still loading.
+- **Playlist:** smooth trackpad scrolling, and the list only redraws the part that changed.
+- **Llama:** the first launch plays the Winamp intro, then leaves it in the playlist as an ordinary entry.
+- **Big folders, continued:** rows on screen get their lengths first, wherever the list is scrolled.
+- **Menu bar menu:** a long track title scrolls while the menu is open, as it does in the main window; the Dock
+  menu cuts it to the same width.
+- **Tag editor:** a long file path no longer stretches the window; a genre picked from the list replaces what
+  was typed; the genre list button sits inside its field.
+- **Dialogs:** a button that opens another dialog no longer stays pressed.
+- **Fixed:** the playlist keeps its height after leaving shade mode; title bar buttons follow the window's
+  focus; window title bars stay reachable when the windows don't fit the screen.
+
+## Roadmap
+
+Planned, in no fixed order:
+
+- MOD / XM / S3M / IT playback.
+- MP3 and Ogg Vorbis encoders for CD ripping.
+- Last.fm scrobbling, off by default.
+- Subsonic servers (Navidrome and others) as a Media Library source.
+
+Not planned: Winamp 3/5 "Modern" skins and a Linux or Windows version.
 
 ## Installation
 

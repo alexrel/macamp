@@ -63,6 +63,7 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
         let trackTitle = NSMenuItem(title: "MacAmp \(AppConstants.App.version)", action: nil, keyEquivalent: "")
         trackTitle.isEnabled = false
         self.titleItem = trackTitle
+        trackTitle.view = titleView
         menu.addItem(trackTitle)
         
         menu.addItem(NSMenuItem.separator())
@@ -129,24 +130,50 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
         return cut.trimmingCharacters(in: .whitespaces) + "…"
     }
     
+    /// Mark in front of the track title in the menu bar and Dock menus
+    static func stateMark(playing: Bool) -> String { playing ? "▶ " : "❚❚ " }
+
+    private let titleView = MenuTitleView()
+    private var scrollTimer: Timer?
+    var isTitleScrolling: Bool { scrollTimer != nil }
+
     public func menuNeedsUpdate(_ menu: NSMenu) {
         updateStatus()
     }
-    
+
+    /// The title scrolls only while the menu is on screen, and only when it doesn't fit
+    public func menuWillOpen(_ menu: NSMenu) {
+        titleView.offset = 0
+        guard titleView.scrolls else { return }
+        let timer = Timer(timeInterval: AppConstants.Marquee.scrollInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.titleView.offset += MenuTitleView.step }
+        }
+        RunLoop.main.add(timer, forMode: .common) // menus track the mouse in their own run loop mode
+        scrollTimer = timer
+    }
+
+    public func menuDidClose(_ menu: NSMenu) {
+        scrollTimer?.invalidate()
+        scrollTimer = nil
+    }
+
     public func updateStatus() {
         let coord = PlayerCoordinator.shared
         let isPlaying = (coord.audioEngine.status == .playing)
         
         if let track = coord.playlist.currentTrack {
             let name = track.displayName
-            let prefix = isPlaying ? "▶ " : "❚❚ "
+            let prefix = StatusBarManager.stateMark(playing: isPlaying)
             let displayName = name.isEmpty ? track.url.lastPathComponent : name
-            // A long name would stretch the whole menu: cut it, the tooltip has it in full
-            titleItem?.title = StatusBarManager.truncated(prefix + displayName, toWidth: StatusBarManager.titleWidth)
-            titleItem?.toolTip = displayName
+            // A long name would stretch the whole menu: it scrolls instead, and the tooltip has it in full
+            titleItem?.title = prefix + displayName
+            titleView.show(prefix: prefix, name: displayName)
+            titleView.toolTip = displayName
             statusItem?.button?.toolTip = "MacAmp: " + displayName
         } else {
             titleItem?.title = "MacAmp \(AppConstants.App.version) [Stopped]"
+            titleView.show(prefix: "", name: "MacAmp \(AppConstants.App.version) [Stopped]")
+            titleView.toolTip = nil
             statusItem?.button?.toolTip = "MacAmp \(AppConstants.App.version)"
         }
         
@@ -187,5 +214,47 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
     
     @objc private func handleQuit() {
         NSApp.terminate(nil)
+    }
+}
+
+/// The menu's first line, drawn like a disabled menu item. A name wider than `StatusBarManager.titleWidth` scrolls
+/// right to left as in the main window ("name  ***  name"); the play / pause mark stays in place.
+final class MenuTitleView: NSView {
+    // shortcut: the text inset of a system menu item is not public, 14 pt matches macOS 14-15; measure again if a new macOS moves it
+    static let inset: CGFloat = 14
+    static let height: CGFloat = 22
+    /// Pixels per tick, as the main window's song title moves
+    static let step: CGFloat = 2
+    /// Between the end of the name and its next round
+    static let separator = "  ***  "
+    private static let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.menuFont(ofSize: 0), .foregroundColor: NSColor.disabledControlTextColor]
+    private var prefix = "", name = ""
+    private var prefixWidth: CGFloat = 0, nameWidth: CGFloat = 0
+    private(set) var scrolls = false
+    var offset: CGFloat = 0 { didSet { needsDisplay = true } }
+
+    func show(prefix: String, name: String) {
+        guard prefix != self.prefix || name != self.name else { return }
+        if name != self.name { offset = 0 }
+        self.prefix = prefix
+        self.name = name
+        prefixWidth = (prefix as NSString).size(withAttributes: Self.attributes).width
+        nameWidth = (name as NSString).size(withAttributes: Self.attributes).width
+        scrolls = prefixWidth + nameWidth > StatusBarManager.titleWidth
+        setFrameSize(NSSize(width: min(ceil(prefixWidth + nameWidth), StatusBarManager.titleWidth) + 2 * Self.inset, height: Self.height))
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let y = (bounds.height - NSFont.menuFont(ofSize: 0).boundingRectForFont.height) / 2
+        (prefix as NSString).draw(at: NSPoint(x: Self.inset, y: y), withAttributes: Self.attributes)
+        let left = Self.inset + prefixWidth
+        guard scrolls else { return (name as NSString).draw(at: NSPoint(x: left, y: y), withAttributes: Self.attributes) }
+        NSRect(x: left, y: 0, width: bounds.width - Self.inset - left, height: bounds.height).clip()
+        let loop = (name + Self.separator) as NSString
+        let loopWidth = loop.size(withAttributes: Self.attributes).width
+        let x = left - offset.truncatingRemainder(dividingBy: loopWidth)
+        loop.draw(at: NSPoint(x: x, y: y), withAttributes: Self.attributes)
+        loop.draw(at: NSPoint(x: x + loopWidth, y: y), withAttributes: Self.attributes)
     }
 }

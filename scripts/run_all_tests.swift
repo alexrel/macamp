@@ -2329,6 +2329,17 @@ testGroup("Status Bar Menu Title") {
     assertTrue(cut.hasSuffix("…") && cut.hasPrefix("▶ Шок видео!"), "Long title is cut at the end (\(cut))")
     assertTrue((cut as NSString).size(withAttributes: font).width <= 300, "Cut title fits the width")
     assertEqual(StatusBarManager.truncated("▶ Кино - Кукушка", toWidth: 300), "▶ Кино - Кукушка", "Short title unchanged")
+
+    // In the menu bar menu a long title scrolls instead; a short one stands still and keeps the menu narrow
+    let title = MenuTitleView()
+    title.show(prefix: "▶ ", name: "Шок видео! Гитара с одной наклейкой! Эксклюзив (нет) 2016 год [cdJzZETdxYY]")
+    assertTrue(title.scrolls, "Long title scrolls")
+    assertEqual(title.frame.width, 300 + 2 * MenuTitleView.inset, "And takes the fixed width")
+    title.offset = 40
+    title.show(prefix: "❚❚ ", name: "Шок видео! Гитара с одной наклейкой! Эксклюзив (нет) 2016 год [cdJzZETdxYY]")
+    assertEqual(title.offset, 40, "Pausing does not restart the scroll")
+    title.show(prefix: "▶ ", name: "Кино - Кукушка")
+    assertTrue(!title.scrolls && title.offset == 0 && title.frame.width < 200, "Short title stands still (\(title.frame.width))")
 }
 
 testGroup("Output Device: Back to System Default") {
@@ -2472,11 +2483,34 @@ testGroup("Track Info: Winamp 2.95 Single Screen") {
     let mp3Size = fitting(mp3), flacSize = fitting(flac)
     assertTrue(mp3Size.width >= 600 && mp3Size.height > 380 && mp3Size.height < 520, "MP3 box is compact like 2.95 (\(mp3Size))")
     assertTrue(flacSize.height <= mp3Size.height, "Non-MP3 box has no ID3v1 group (\(flacSize))")
+    var deep = AudioFileMetadata(url: URL(fileURLWithPath: "/Volumes/share/" + String(repeating: "long folder name/", count: 20) + "x.mp3"))
+    deep.techInfo.isMPEG = true
+    assertEqual(fitting(deep), mp3Size, "A long path does not widen the box")
+
+    // A genre picked from the list replaces the text even while the genre field has the keyboard focus
+    let genreModel = TrackInfoViewModel(metadata: mp3)
+    let genreHost = NSHostingView(rootView: TrackInfoView(viewModel: genreModel))
+    let genreWindow = NSWindow(contentRect: NSRect(origin: .zero, size: genreHost.fittingSize), styleMask: [.titled], backing: .buffered, defer: false)
+    genreWindow.contentView = genreHost
+    genreHost.layoutSubtreeIfNeeded()
+    func textFields(in view: NSView) -> [NSTextField] { view.subviews.flatMap { ($0 as? NSTextField).map { [$0] } ?? textFields(in: $0) } }
+    genreModel.metadata.id3v2.hasTag = true
+    genreModel.metadata.id3v2.genre = "Punk"
+    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    if let field = textFields(in: genreHost).first(where: { $0.stringValue == "Punk" }) {
+        genreWindow.makeFirstResponder(field)
+        assertTrue(field.currentEditor() != nil, "Genre field is being edited")
+        genreModel.metadata.id3v2.genre = "Rock"
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        assertEqual(field.stringValue, "Rock", "Picked genre shown in the focused field")
+    } else {
+        assertTrue(false, "Genre field found")
+    }
 
     // The ID3v2 genre arrow shows no text, but its list must still name every genre (was a list of blank rows)
     var genre = "Rock"
     let arrow = Win32ComboBox(selection: Binding(get: { genre }, set: { genre = $0 }),
-                              options: ID3Genre.allGenres.map { (value: $0, title: $0) }, width: 20, label: "")
+                              options: ID3Genre.allGenres.map { (value: $0, title: $0) }, label: "")
     let list = arrow.buildMenu()
     assertEqual(list.items.count, ID3Genre.allGenres.count, "Every genre listed")
     assertTrue(list.items.allSatisfy { !$0.title.isEmpty }, "No blank rows in the genre list")

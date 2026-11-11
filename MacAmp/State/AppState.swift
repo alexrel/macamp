@@ -452,7 +452,11 @@ public class PersistenceManager {
         baseDir.appendingPathComponent("playlist.json")
     }
     
+    /// No session yet: the first start after installing
+    public private(set) var isFirstRun = false
+
     private init() {
+        isFirstRun = !FileManager.default.fileExists(atPath: sessionURL.path)
         loadSession()
     }
     

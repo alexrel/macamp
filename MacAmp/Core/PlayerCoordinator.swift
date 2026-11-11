@@ -84,6 +84,14 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         if persistence.state.isBrowserVisible { browserController.show(); mainWindow.makeKeyAndOrderFront(nil) }
         if persistence.state.libraryRescanOnStart { Task { await MediaLibrary.shared.rescan() } }
         isStarted = true
+        // First start: Winamp's installer launched it with demo.mp3, the llama intro, which then stayed in the playlist
+        // as an ordinary entry. Copied out of the bundle, whose path changes when the app is moved or translocated.
+        if persistence.isFirstRun, playlist.tracks.isEmpty, pendingFinderOpens.isEmpty,
+           let bundled = Bundle.main.url(forResource: "demo", withExtension: "mp3") {
+            let demo = persistence.baseDir.appendingPathComponent("demo.mp3")
+            try? FileManager.default.copyItem(at: bundled, to: demo)
+            if FileManager.default.fileExists(atPath: demo.path) { handleDroppedFiles([demo.path]) }
+        }
         processPendingFinderOpens()
     }
     
