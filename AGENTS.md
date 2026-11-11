@@ -71,7 +71,7 @@ MacAmp/
 ├── Resources/             # Bundled base-2.91.wsz (canonical Winamp skin archive), DocumentIcons
 └── MacAmpApp.swift        # App entry point (AppDelegate + PlayerCoordinator lifecycle)
 docs/                      # VISION, WINAMP-2.95-PLAN, ROADMAP, UI-screens (Winamp 2.95 screenshots), winamp295-extracted
-scripts/                   # run_all_tests.swift (all tests: ./build.sh test), extract_builtin_cursors.py, build_document_icons.swift
+scripts/                   # tests/ (all tests by module, run with ./build.sh test), extract_builtin_cursors.py, build_document_icons.swift
 ```
 
 ## Key Entry Points

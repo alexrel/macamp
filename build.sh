@@ -186,7 +186,7 @@ run_tests() {
            -L "$PWD/$BUILD_DIR/goom" -lgoom \
            -Xlinker -rpath -Xlinker "$PWD/$BUILD_DIR/projectm/install/lib" \
            -Xlinker -rpath -Xlinker "$PWD/$BUILD_DIR/goom" \
-           $obj_files scripts/run_all_tests.swift -o "$BUILD_DIR/run_all_tests"
+           $obj_files scripts/tests/*.swift -o "$BUILD_DIR/run_all_tests"
     
     # Run against a throwaway home directory: tests save session/playlist/skins through
     # PersistenceManager and must never touch the user's real ~/Library/Application Support/MacAmp.
