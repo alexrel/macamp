@@ -103,6 +103,7 @@ final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
             let item = AVPlayerItem(asset: asset)
             item.add(legibleOutput)
             player.replaceCurrentItem(with: item)
+            surface.showsLogo = false
             frameView.info = "\(name) (\(Int(naturalSize!.width))x\(Int(naturalSize!.height)))"
             if !window.isVisible, state.videoAutoOpen {
                 openedAutomatically = true
@@ -213,6 +214,7 @@ final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
         syncTimer?.invalidate()
         syncTimer = nil
         player.replaceCurrentItem(with: nil)
+        surface.showsLogo = true
         currentURL = nil
         assetURL = nil
         naturalSize = nil
@@ -397,6 +399,7 @@ final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
         let full = FullscreenVideoWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
         let view = VideoSurfaceView()
         view.player = player
+        view.showsLogo = surface.showsLogo
         view.subtitle = subtitleText
         view.keepsAspect = state.videoKeepAspect
         view.onDoubleClick = { [weak self] in self?.exitFullscreen() }
@@ -427,6 +430,9 @@ final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
 final class VideoSurfaceView: NSView {
     private let playerLayer = AVPlayerLayer()
     private let subtitleLayer = CATextLayer()
+    /// Winamp's "Nullsoft Video" picture (winamp.exe bitmap 248), centred while no video is loaded
+    private let logoLayer = CALayer()
+    var showsLogo = true { didSet { logoLayer.isHidden = !showsLogo } }
     /// Subtitle text over the bottom of the picture (white with a black outline, as players draw them)
     var subtitle: String? { didSet { if subtitle != oldValue { needsLayout = true } } }
     var onDoubleClick: (() -> Void)?
@@ -437,6 +443,11 @@ final class VideoSurfaceView: NSView {
         super.init(frame: frame)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
+        logoLayer.contents = NSImage(named: "VIDEO_LOGO")?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        logoLayer.contentsGravity = .center // its own size, never stretched
+        logoLayer.contentsScale = 1
+        logoLayer.magnificationFilter = .nearest
+        layer?.addSublayer(logoLayer)
         playerLayer.videoGravity = .resizeAspect
         layer?.addSublayer(playerLayer)
         subtitleLayer.alignmentMode = .center
@@ -456,6 +467,7 @@ final class VideoSurfaceView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         playerLayer.frame = bounds
+        logoLayer.frame = bounds
         let size = max(13, (bounds.height * 0.065).rounded())
         let text = subtitle ?? ""
         subtitleLayer.isHidden = text.isEmpty

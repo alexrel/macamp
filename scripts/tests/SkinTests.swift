@@ -102,6 +102,11 @@ func skinTests() {
         assertEqual(main.seekSlider.skinCursorName, "POSBAR", "Seek bar cursor")
         assertEqual(main.marquee.skinCursorName, "SONGNAME", "Marquee cursor")
         assertEqual(main.skinCursorZones().map(\.name), ["TITLEBAR", "NORMAL"], "Main window zones")
+        // Library / Video / Minibrowser / Studio frame: the close button inside the title bar has the close cursor, not the title's
+        let gen = GenWindowFrameView(title: "", content: NSView())
+        let onClose = NSPoint(x: gen.closeRect.midX, y: gen.closeRect.midY)
+        assertEqual(gen.skinCursorZones().last { $0.rect.contains(onClose) }?.name, "CLOSE", "Close button zone wins over TITLEBAR")
+        assertEqual(gen.skinCursorZones().last { $0.rect.contains(NSPoint(x: 100, y: 10)) }?.name, "TITLEBAR", "The rest of the title bar")
         main.isShadeMode = true
         assertEqual(main.closeButton.skinCursorName, "WSCLOSE", "Windowshade close cursor")
         assertEqual(main.skinCursorZones().map(\.name), ["WSNORMAL"], "Windowshade zone")

@@ -182,7 +182,8 @@ public class GenWindowFrameView: WinampControlView {
 
     public override func skinCursorZones() -> [(rect: NSRect, name: String)] {
         guard !isFrameHidden else { return [] }
-        return [(NSRect(x: 0, y: 0, width: bounds.width, height: 20), "TITLEBAR"), (resizeGripRect, "PSIZE")]
+        // The close button last: it lies inside the title bar and showed the title's move cursor
+        return [(NSRect(x: 0, y: 0, width: bounds.width, height: 20), "TITLEBAR"), (resizeGripRect, "PSIZE"), (closeRect, "CLOSE")]
     }
 
     public override func mouseDown(with event: NSEvent) {

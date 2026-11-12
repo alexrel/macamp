@@ -32,7 +32,7 @@ public class AboutWindow: NSWindow {
 public class AboutWindowController: NSWindowController, NSWindowDelegate {
     public init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 410, height: 310),
+            contentRect: NSRect(origin: .zero, size: AboutView.size),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -51,7 +51,7 @@ public class AboutWindowController: NSWindowController, NSWindowDelegate {
         let content = AboutView(onClose: { [weak self] in
             self?.close()
         })
-        window.installScaledDialog(content, size: NSSize(width: 410, height: 310))
+        window.installScaledDialog(content, size: AboutView.size)
         window.center()
     }
     

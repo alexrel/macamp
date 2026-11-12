@@ -528,4 +528,74 @@ func interfaceTests() {
         // Show MacAmp in: Dock and menu bar by default (what MacAmp did before the option)
         assertTrue(state.showDockIcon && PersistenceManager.shared.state.showMenuBarIcon, "Dock and menu bar by default")
     }
+
+    testGroup("Scaled dialogs: text redrawn sharp, pictures left alone") {
+        // 0.9.2 asked every layer to redraw at the enlarged resolution: the About banner (an Image) and the Preferences
+        // tree's branches (a Canvas) cannot, and went blank
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
+        let picture = NSImage(size: NSSize(width: 40, height: 20), flipped: false) { rect in NSColor.red.setFill(); rect.fill(); return true }
+        window.installScaledDialog(VStack {
+            Image(nsImage: picture).resizable().frame(width: 80, height: 40)
+            Text("Scroll the song title").font(.system(size: 11))
+        }.frame(width: 300))
+        window.updateDialogScale(2)
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        window.display()
+        _ = spinRunLoop(until: { false }, timeout: 0.3)
+        window.contentView?.subviews.first?.needsLayout = true // a later layout pass: a tab switch, a resize
+        window.contentView?.layoutSubtreeIfNeeded()
+        var layers: [CALayer] = []
+        func collect(_ layer: CALayer) { layers.append(layer); layer.sublayers?.forEach(collect) }
+        window.contentView?.layer.map(collect)
+        let drawn = layers.filter { $0.contents != nil }
+        let text = drawn.filter { String(describing: type(of: $0)) == "CGDrawingLayer" }
+        assertTrue(!text.isEmpty, "SwiftUI still draws text in a CGDrawingLayer (the name the sharpening relies on)")
+        assertTrue(text.allSatisfy { $0.contentsScale == window.backingScaleFactor * 2 }, "Text is drawn for 200%: \(text.map(\.contentsScale))")
+        assertTrue(drawn.count > text.count, "The picture still has its contents after a layout pass (\(drawn.count) drawn layers, \(text.count) text)")
+    }
+
+    testGroup("About: the banner animation of Winamp 2.95") {
+        // The square-root table as it is in winamp.exe at 0x447678
+        let original = "0010161b2023272a2d30323537393b3d4041434547494b4c4e505153545657595a5b5d5e60616263656667686a6b6c6d6e707172737475767778797a7b7c7d7e80808182838485868788898a8b8c8d8e8f9090919293949596969798999a9b9b9c9d9e9fa0a0a1a2a3a3a4a5a6a7a7a8a9aaaaabacadadaeafb0b0b1b2b2b3b4b5b5b6b7b7b8b9b9babbbbbcbdbdbebfc0c0c1c1c2c3c3c4c5c5c6c7c7c8c9c9cacbcbcccccdcececfd0d0d1d1d2d3d3d4d4d5d6d6d7d7d8d9d9dadadbdbdcdddddededfe0e0e1e1e2e2e3e3e4e5e5e6e6e7e7e8e8e9eaeaebebececededeeeeeff0f0f1f1f2f2f3f3f4f4f5f5f6f6f7f7f8f8f9f9fafafbfbfcfcfdfdfefeff"
+        let bytes = stride(from: 0, to: original.count, by: 2).map { i -> Int in
+            let start = original.index(original.startIndex, offsetBy: i)
+            return Int(original[start..<original.index(start, offsetBy: 2)], radix: 16)!
+        }
+        assertEqual(AboutBannerWarp.rootTable, bytes, "The computed table is the original's, byte for byte")
+        assertEqual([AboutBannerWarp.root(0x100), AboutBannerWarp.root(10_000), AboutBannerWarp.root(40_000), AboutBannerWarp.root(70_000)], [16, 99, 199, 262],
+                    "Integer roots as Winamp takes them")
+        // The original's area is 452 x 289 px (dialog 120, 301 x 178 dialog units); MacAmp's is 392 x 218 points, at 2 px a point
+        assertEqual([AboutBannerWarp.width, AboutBannerWarp.height], [784, 436], "The banner area")
+        assertEqual([AboutBannerWarp.stepX, AboutBannerWarp.stepY], [90, 88], "Fixed-point steps for that area")
+        assertEqual([0, 16, 32, 48, 63].map { AboutBannerWarp.strength(phase: $0) }, [0, 384, 768, 384, 24], "Strength rises to the middle of the cycle and falls")
+
+        // Every pixel carries its own position, so a frame shows where each one was taken from
+        let width = AboutBannerWarp.width, height = AboutBannerWarp.height
+        let sourceWidth = AboutBannerWarp.sourceWidth, sourceHeight = AboutBannerWarp.sourceHeight
+        var warp = AboutBannerWarp(topDown: (0..<(sourceWidth * sourceHeight)).map { UInt32(($0 / sourceWidth) << 16 | ($0 % sourceWidth)) + 1 })
+        warp.step()
+        let firstFrame = warp.topDown
+        assertEqual((0..<height).filter { firstFrame[$0 * width] != 0 }.count, height / 2, "A frame draws every other line")
+        assertEqual((0..<4).map { firstFrame[$0 * width] != 0 }, [false, false, true, true], "...of two rows each, as thick as the original's")
+        warp.step()
+        let atRest = warp.topDown
+        assertEqual((0..<height).filter { atRest[$0 * width] == 0 }, [], "Two frames fill the picture")
+        func origin(_ picture: [UInt32], _ x: Int, _ y: Int) -> (x: Int, y: Int) { let v = Int(picture[y * width + x] - 1); return (v & 0xFFFF, v >> 16) }
+        let centre = origin(atRest, width / 2, height / 2)
+        assertTrue(abs(centre.x - sourceWidth / 2) <= 2 && abs(centre.y - sourceHeight / 2) <= 2, "At rest the logo's centre is in the centre (\(centre))")
+        // At rest the lens shrinks the logo a little: it all shows, with black left over above and below
+        assertEqual([origin(atRest, width / 2, 2).y, origin(atRest, width / 2, height - 3).y], [0, sourceHeight - 1], "At rest the whole height of the logo shows")
+        // ...and no row or column of it is dropped, which would show as stripes on a still picture
+        let columns = Set((0..<width).map { origin(atRest, $0, height / 2).x }), rows = Set((0..<height).map { origin(atRest, width / 2, $0).y })
+        assertEqual(columns, Set(0..<sourceWidth), "At rest every column of the logo is drawn")
+        assertEqual(rows, Set(0..<sourceHeight), "...and every row")
+
+        // 41 frames of rest, then the 63 moving frames of the cycle, back to rest
+        var phases: [Int] = []
+        for _ in 0..<(AboutBannerWarp.restFrames + AboutBannerWarp.cycleFrames + 2) { phases.append(warp.phase); warp.step() }
+        assertEqual(phases.firstIndex(of: 1), AboutBannerWarp.restFrames - 1, "The warp starts after the rest (two frames were spent above)")
+        assertEqual(phases.max(), AboutBannerWarp.cycleFrames - 1, "The cycle runs to its last frame")
+        assertEqual(phases.last, 0, "...and comes back to rest")
+    }
 }

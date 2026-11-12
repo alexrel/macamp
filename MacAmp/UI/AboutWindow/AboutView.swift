@@ -11,6 +11,9 @@ public enum AboutTab: String, CaseIterable, Identifiable {
 }
 
 public struct AboutView: View {
+    static let bannerSize = CGSize(width: AboutBannerWarp.pointWidth, height: AboutBannerWarp.pointHeight)
+    /// The banner plus the frame around the page, and the three lines under it
+    static let size = CGSize(width: bannerSize.width + 18, height: bannerSize.height + 92)
     @State private var selectedTab: AboutTab = .winamp
     public var onClose: (() -> Void)?
     
@@ -48,10 +51,10 @@ public struct AboutView: View {
                     }
                 }
                 .padding(.horizontal, 8)
-                .padding(.bottom, 6)
+                .padding(.vertical, 6)
             }
         }
-        .frame(width: 410, height: 310)
+        .frame(width: AboutView.size.width, height: AboutView.size.height)
         .background(Win32Colors.dialogBg)
         .onExitCommand {
             onClose?()
@@ -62,17 +65,11 @@ public struct AboutView: View {
     private var winampTabContent: some View {
         VStack(spacing: 0) {
             // Black Art Banner with extracted classic Nullsoft logo
-            ZStack {
-                Color.black
-                Image("ABOUT_LOGO")
-                    .resizable()
-                    .interpolation(.none)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 392, height: 192)
-            }
-            .frame(width: 392, height: 192)
+            AboutBannerView()
+                .frame(width: AboutView.bannerSize.width, height: AboutView.bannerSize.height)
             .clipped()
             .padding(.top, 4)
+            .frame(maxWidth: .infinity) // the tab's content sits top-left: centre the banner in the page
             
             Spacer(minLength: 4)
             
@@ -276,4 +273,183 @@ public enum AboutShortcuts {
             ("⌃⌥R", "Update Link List"), ("⌃F4", "Close (hide) Minibrowser"),
         ])),
     ]
+}
+
+// MARK: - The animated banner
+
+/// The banner of Winamp 2.95's About box: the logo is looked at through a lens whose strength and shape change for 64
+/// frames, then it rests for 40. Recovered from winamp.exe (the routine at 0x406fb1); every number below is the original's.
+struct AboutBannerWarp {
+    /// The banner in points: as wide as the logo and a little taller, so the resting lens leaves black above and below.
+    /// (The original's is 452 × 289, 301 × 178 dialog units; MacAmp keeps the dialog compact.)
+    static let pointWidth = 392, pointHeight = 218
+    /// Pixels a point: the resting lens shrinks the logo about 1.2 times, and at one pixel a point it would drop rows and
+    /// columns of it (stripes on a still picture)
+    static let density = 2
+    static let width = pointWidth * density, height = pointHeight * density
+    /// The logo bitmap (resource 109)
+    static let sourceWidth = 392, sourceHeight = 192
+    /// The original sleeps 50 ms between frames
+    static let frameInterval: TimeInterval = 0.05
+    /// Frames of one warp cycle, and of the rest before the next one
+    static let cycleFrames = 64, restFrames = 40
+    /// Fixed-point steps across the picture: 0x113a0 / width and 0x9600 / height, in 1/65536ths
+    static let stepX = 0x113a0 / width, stepY = 0x9600 / height
+    /// The lens: -435.2 scales the magnification table, 0x100 keeps the centre away from a zero distance
+    static let lensScale = -435.2, centreBias = 0x100
+    /// Strength grows by 24 a frame to the middle of the cycle and falls back
+    static let strengthPerFrame = 3 << 3
+    /// Winamp's 256-entry square-root table (0x447678): 16 · √n, rounded down
+    static let rootTable: [Int] = (0..<256).map { Int(16 * Double($0).squareRoot()) }
+
+    /// Pixels in the original's row order: bottom row first, as in a Windows bitmap
+    private let source: [UInt32]
+    private(set) var pixels: [UInt32]
+    /// Frame of the cycle (0 = at rest), frames rested, and which half of the rows the last frame drew
+    private(set) var phase = 0
+    private var rested = 0, field = 0
+    private var magnification: [Int] = []
+
+    /// `topDown`: the logo, sourceWidth × sourceHeight pixels, top row first
+    init(topDown: [UInt32]) {
+        source = AboutBannerWarp.flipped(topDown, width: AboutBannerWarp.sourceWidth)
+        pixels = [UInt32](repeating: 0, count: AboutBannerWarp.width * AboutBannerWarp.height)
+    }
+
+    /// The current picture, top row first
+    var topDown: [UInt32] { AboutBannerWarp.flipped(pixels, width: AboutBannerWarp.width) }
+
+    private static func flipped(_ rows: [UInt32], width: Int) -> [UInt32] {
+        stride(from: rows.count / width - 1, through: 0, by: -1).flatMap { rows[($0 * width)..<(($0 + 1) * width)] }
+    }
+
+    /// Winamp's integer square root for the distances met here (256 ... 0x3FFFF)
+    static func root(_ value: Int) -> Int {
+        switch value {
+        case 0x10000...: return rootTable[min(255, value >> 10)] << 1
+        case 0x4000...: return rootTable[min(255, value >> 8)]
+        case 0x1000...: return rootTable[value >> 6] >> 1
+        case 0x400...: return rootTable[value >> 4] >> 2
+        default: return rootTable[value >> 2] >> 3
+        }
+    }
+
+    /// Strength of the lens at a frame of the cycle
+    static func strength(phase: Int) -> Int { (phase < cycleFrames / 2 ? phase : cycleFrames - phase) * strengthPerFrame }
+
+    /// Draws the next frame: one half of the rows (odd or even), like the original
+    mutating func step() {
+        let width = AboutBannerWarp.width, height = AboutBannerWarp.height
+        let halfWidth = width / 2, halfHeight = height / 2
+        let radius = Double((width * width + height * height) / 4).squareRoot()
+
+        // Magnification by distance from the centre. The exponent swings with the phase; a strength above the lens
+        // value turns the sign over, and the absolute value shows the picture inside out.
+        var exponent = sin(Double(phase) * .pi / Double(AboutBannerWarp.cycleFrames / 2)) + 1
+        if exponent < 1 { exponent = (exponent + 1) * 0.5 }
+        let strength = AboutBannerWarp.strength(phase: phase)
+        magnification = (0..<Int(radius)).map { distance in
+            let lens = pow(sin(Double(distance) / (radius - 1)), exponent) * radius * AboutBannerWarp.lensScale / Double(distance + 1)
+            return abs(-strength - Int(lens))
+        }
+
+        if phase == 0 {
+            rested += 1
+            if rested > AboutBannerWarp.restFrames { phase = 1 }
+        } else {
+            rested = 0
+            phase = (phase + 1) % AboutBannerWarp.cycleFrames
+        }
+
+        // A line of the original is `density` rows here, so the interlace stripes keep the original's thickness
+        let line = AboutBannerWarp.density
+        var row = field * line
+        field = field == 0 ? 1 : 0
+        // Each row is drawn from its own place: taking it from the next line swaps line pairs, a comb on every edge at rest
+        while row < height {
+            for sub in 0..<line where row + sub < height { draw(row: row + sub, dy: row + sub - halfHeight) }
+            row += 2 * line
+        }
+    }
+
+    private mutating func draw(row: Int, dy: Int) {
+        let width = AboutBannerWarp.width, halfWidth = width / 2
+        var distanceSquared = dy * dy + halfWidth * (halfWidth + 1) + AboutBannerWarp.centreBias
+        var increment = -width
+        var fx = -halfWidth * AboutBannerWarp.stepX
+        let fy = dy * AboutBannerWarp.stepY
+        for x in 0..<width {
+            // The original reads a little past its table at the corners; the last entry stands in
+            let scale = magnification[min(magnification.count - 1, AboutBannerWarp.root(distanceSquared))]
+            distanceSquared += increment
+            increment += 2
+            let sx = min(AboutBannerWarp.sourceWidth - 1, max(0, scale * fx / 0x10000 + AboutBannerWarp.sourceWidth / 2))
+            let sy = min(AboutBannerWarp.sourceHeight - 1, max(0, fy * scale / 0x10000 + AboutBannerWarp.sourceHeight / 2))
+            fx += AboutBannerWarp.stepX
+            pixels[row * width + x] = source[sy * AboutBannerWarp.sourceWidth + sx]
+        }
+    }
+}
+
+/// Runs the banner only while it is on screen
+final class AboutBannerModel: ObservableObject {
+    /// Where the logo comes from (tests have no asset catalogue)
+    static var logo: () -> CGImage? = { NSImage(named: "ABOUT_LOGO")?.cgImage(forProposedRect: nil, context: nil, hints: nil) }
+    @Published var image: CGImage?
+    private var warp: AboutBannerWarp?
+    private var timer: Timer?
+
+    private static func context(_ data: UnsafeMutableRawPointer?, width: Int, height: Int) -> CGContext? {
+        CGContext(data: data, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                  space: Skin.colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    }
+
+    func start() {
+        guard timer == nil else { return }
+        if warp == nil, let logo = AboutBannerModel.logo() {
+            let width = AboutBannerWarp.sourceWidth, height = AboutBannerWarp.sourceHeight
+            var topDown = [UInt32](repeating: 0, count: width * height)
+            topDown.withUnsafeMutableBytes { bytes in
+                AboutBannerModel.context(bytes.baseAddress, width: width, height: height)?
+                    .draw(logo, in: CGRect(x: 0, y: 0, width: width, height: height))
+            }
+            warp = AboutBannerWarp(topDown: topDown)
+            // Both halves of the rows before the first picture is shown
+            warp?.step()
+        }
+        tick()
+        let timer = Timer(timeInterval: AboutBannerWarp.frameInterval, repeats: true) { [weak self] _ in self?.tick() }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func tick() {
+        guard warp != nil else { return }
+        warp?.step()
+        var topDown = warp?.topDown ?? []
+        image = topDown.withUnsafeMutableBytes {
+            AboutBannerModel.context($0.baseAddress, width: AboutBannerWarp.width, height: AboutBannerWarp.height)?.makeImage()
+        }
+    }
+}
+
+struct AboutBannerView: View {
+    @StateObject private var model = AboutBannerModel()
+
+    var body: some View {
+        // The black backdrop is always there: an empty Group has nothing for onAppear to fire on, and the banner never started
+        ZStack {
+            Color.black
+            if let image = model.image {
+                Image(decorative: image, scale: 1).resizable().interpolation(.none)
+            }
+        }
+        .onAppear { model.start() }
+        .onDisappear { model.stop() }
+    }
 }

@@ -80,15 +80,19 @@ final class ScaledHostingContent: NSView {
 /// content's own sizes and fonts instead of the picture if that shows
 private final class CrispHostingView<Content: View>: NSHostingView<Content> {
     var zoom: () -> CGFloat = { 1 }
+    /// SwiftUI's private layer for drawn text. shortcut: a private name, text simply stays soft if a macOS release renames it
+    private static var textLayerClass: String { "CGDrawingLayer" }
 
     override func layout() {
         super.layout()
         guard let layer, let backing = window?.backingScaleFactor else { return }
         let scale = backing * zoom()
         func sharpen(_ layer: CALayer) {
-            // Only layers a view draws into (text, AppKit controls). A Canvas keeps its picture in a surface nobody
-            // redraws on request: asked to, it went blank (the dotted branches of the Preferences tree).
-            if layer.contents != nil, layer.delegate is NSView, layer.contentsScale != scale {
+            // Only what redraws itself on request: SwiftUI's text layers and AppKit controls. An Image or a Canvas is
+            // handed its picture once and went blank when asked (the About banner, the Preferences tree's branches).
+            let redraws = String(describing: type(of: layer)) == CrispHostingView.textLayerClass
+                || layer.delegate is NSControl || layer.delegate is NSText
+            if redraws, layer.contents != nil, layer.contentsScale != scale {
                 layer.contentsScale = scale
                 layer.setNeedsDisplay()
             }
