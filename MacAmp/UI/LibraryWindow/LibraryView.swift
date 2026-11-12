@@ -22,6 +22,8 @@ enum LibraryNode: Hashable {
 /// Winamp 2.95 Media Library content (inside the GEN frame): tree on the left with the "Library" button,
 /// the selected node's page on the right.
 struct MediaLibraryView: View {
+    /// Redraws with the new skin's colours: GenexTheme.current is read in body and is not observable by itself
+    @ObservedObject private var skinManager = SkinManager.shared
     @ObservedObject var library = MediaLibrary.shared
     @ObservedObject private var navigation = LibraryNavigation.shared
     private var node: LibraryNode {
@@ -179,6 +181,8 @@ struct MediaColumn {
 // MARK: - Local Media / views / playlist pages
 
 struct MediaListPage: View {
+    /// Redraws with the new skin's colours: GenexTheme.current is read in body and is not observable by itself
+    @ObservedObject private var skinManager = SkinManager.shared
     let items: [MediaLibraryItem]
     var searchable = true
     /// Which list this is, for a remembered search ("LocalMedia", a view's id)
@@ -229,6 +233,8 @@ struct MediaListPage: View {
 }
 
 struct SearchBar: View {
+    /// Redraws with the new skin's colours: GenexTheme.current is read in body and is not observable by itself
+    @ObservedObject private var skinManager = SkinManager.shared
     @Binding var text: String
     var body: some View {
         let theme = GenexTheme.current
@@ -306,6 +312,8 @@ struct ArtistAlbumPage: View {
 }
 
 struct InfoPage: View {
+    /// Redraws with the new skin's colours: GenexTheme.current is read in body and is not observable by itself
+    @ObservedObject private var skinManager = SkinManager.shared
     let text: String
     let buttons: [(String, () -> Void)]
     var body: some View {
@@ -329,6 +337,8 @@ struct InfoPage: View {
 // MARK: - Devices ▸ CD
 
 struct CDPage: View {
+    /// Redraws with the new skin's colours: GenexTheme.current is read in body and is not observable by itself
+    @ObservedObject private var skinManager = SkinManager.shared
     let disc: URL
     @State private var cd: AudioCD?
     @State private var selection = Set<String>()
@@ -391,6 +401,8 @@ struct CDPage: View {
 // MARK: - Internet Radio
 
 struct RadioPage: View {
+    /// Redraws with the new skin's colours: GenexTheme.current is read in body and is not observable by itself
+    @ObservedObject private var skinManager = SkinManager.shared
     @State private var stations: [RadioStation] = []
     @State private var genres: [String] = []
     @State private var search = ""

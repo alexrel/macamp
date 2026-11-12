@@ -86,24 +86,17 @@ public final class RetroVisualizerWindow: NSWindow, NSWindowDelegate {
             windowedSize = preferred
         }
         updateContentScale(scale)
-        updateSkinMask()
     }
 
-    func updateSkinMask() {
-        let region = skinManager.currentSkin?.region
-        let path = frameView.isFrameHidden ? nil : region?.normalMask(fitting: frameView.bounds.size)
-        PlayerCoordinator.applyWindowMask(path: path, to: frameView)
-    }
-
+    // No REGION.TXT shape here: it describes the main window and the equalizer only, and stretched over this frame
+    // it cut holes in it (SFCommandSkin.wsz). The Library, Video and Minibrowser windows are plain rectangles too.
     private func showFrame(_ show: Bool) {
         frameView.isFrameHidden = !show
-        updateSkinMask()
     }
 
     public func windowDidResize(_ notification: Notification) {
         updateContentScale(interfaceScale)
         if !frameView.isFrameHidden { windowedSize = frameView.bounds.size }
-        updateSkinMask()
     }
     public func windowWillEnterFullScreen(_ notification: Notification) { showFrame(false) }
     public func windowDidExitFullScreen(_ notification: Notification) {

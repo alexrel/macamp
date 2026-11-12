@@ -188,7 +188,6 @@ extension PlayerCoordinator {
         
         Self.applyWindowMask(path: mainPath, to: mainView)
         Self.applyWindowMask(path: eqPath, to: eqView)
-        visualizerStudioWindow?.updateSkinMask()
     }
     
     static func applyWindowMask(path: CGPath?, to view: NSView) {

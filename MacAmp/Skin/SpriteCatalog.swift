@@ -136,6 +136,12 @@ public enum SpriteCatalog {
     }
     public static let minusSign = SpriteSlice("MINUS", "NUMBERS", 20, 6, 5, 1)
     public static let noMinusSign = SpriteSlice("NO_MINUS", "NUMBERS", 9, 6, 5, 1)
+    /// NUMS_EX.BMP has a blank cell (x 90) and a minus cell (x 99) after the ten digits; the dash is the same 5x1 strip of the cell.
+    /// shortcut: assumes the dash sits in the middle row as in the base skin, draw the whole 9x13 cell if a skin puts it elsewhere
+    public static let numsEx = [
+        minusSign.name: SpriteSlice("MINUS", "NUMS_EX", 101, 6, 5, 1),
+        noMinusSign.name: SpriteSlice("NO_MINUS", "NUMS_EX", 92, 6, 5, 1),
+    ]
     
     // MARK: - EQUALIZER (EQMAIN.BMP & EQ_EX.BMP)
     public static let eqWindowBg = SpriteSlice("EQ_BG", "EQMAIN", 0, 0, 275, 116)

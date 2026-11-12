@@ -199,7 +199,7 @@ public class SkinLoader {
     private func processChromaKey(_ image: CGImage) -> CGImage {
         let width = image.width
         let height = image.height
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let colorSpace = Skin.colorSpace
         let bytesPerPixel = 4
         let bytesPerRow = bytesPerPixel * width
         let bitsPerComponent = 8

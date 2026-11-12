@@ -20,13 +20,14 @@ func skinTests() {
 
         let sprite = tile.makeImage()!
         let gen = GenWindowFrameView(title: "", content: NSView())
-        for crop in [false, true] {
+        // 3.02: the joint at 25 lands on 75.5, inside a pixel
+        for (crop, scale) in [(false, 226.0 / 75), (true, 226.0 / 75), (false, 3.02), (true, 3.02)] {
             let frame = bitmap(width: 226, height: 88)
             frame.clear(CGRect(x: 0, y: 0, width: 226, height: 88))
             frame.setAllowsAntialiasing(true)
             frame.setShouldAntialias(true)
             frame.interpolationQuality = .none
-            frame.scaleBy(x: 226.0 / 75, y: 88.0 / 29)
+            frame.scaleBy(x: scale, y: 88.0 / 29)
             if crop {
                 gen.tile(frame, sprite, from: 0, to: 75, y: 0, tileWidth: 25, height: 29)
             } else {
@@ -36,7 +37,7 @@ func skinTests() {
             let pixels = frame.data!.assumingMemoryBound(to: UInt8.self)
             let scanline = pixels.advanced(by: 44 * frame.bytesPerRow)
             assertTrue((1..<225).allSatisfy { scanline[$0 * 4 + 3] == 255 },
-                       "Opaque skin slices meet without translucent seams (clipping: \(crop))")
+                       "Opaque skin slices meet without translucent seams (clipping: \(crop), scale \(scale))")
         }
     }
 
@@ -115,6 +116,49 @@ func skinTests() {
         }}
     }
 
+    testGroup("Skin sheets smaller than the standard") {
+        // SFCommandSkin.wsz: MAIN.BMP is 275x115, one row short; the main window showed the base skin instead
+        func solid(_ width: Int, _ height: Int) -> CGImage {
+            let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            ctx.setFillColor(CGColor(red: 1, green: 0.5, blue: 0, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            return ctx.makeImage()!
+        }
+        let skin = Skin(name: "short")
+        skin.images["MAIN"] = solid(275, 115)
+        guard let main = skin.image(for: SpriteCatalog.mainWindowBackground) else { throw NSError(domain: "test", code: 1) }
+        assertEqual([main.width, main.height], [275, 116], "The sprite keeps its standard size (no stretching)")
+        assertTrue(main.colorSpace?.name == CGColorSpace.sRGB, "...and the colour space of every other skin bitmap")
+        let rep = NSBitmapImageRep(cgImage: main)
+        func alpha(_ y: Int) -> Int { var p = [Int](repeating: 0, count: 4); rep.getPixel(&p, atX: 10, y: y); return p[3] }
+        assertEqual([alpha(0), alpha(114), alpha(115)], [255, 255, 0], "The skin's 115 rows are drawn from the top, the missing row is transparent")
+        skin.images["MAIN"] = solid(275, 116)
+        assertEqual(skin.image(for: SpriteCatalog.mainWindowBackground)?.height, 116, "A full-size sheet is cut as before")
+        assertTrue(skin.image(for: SpriteCatalog.mainShadeBg) == nil, "A sheet the skin lacks still comes from the base skin")
+
+        // The same skin has NUMS_EX.BMP (108x8): Winamp takes the time digits from it, not from NUMBERS.BMP
+        let old = Skin(name: "numbers only")
+        old.images["NUMBERS"] = solid(99, 13)
+        assertEqual(old.image(for: SpriteCatalog.digit(7))?.height, 13, "Without NUMS_EX the digits come from NUMBERS")
+        skin.images["NUMBERS"] = solid(99, 13)
+        let ex = CGContext(data: nil, width: 108, height: 8, bitsPerComponent: 8, bytesPerRow: 0,
+                           space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ex.setFillColor(CGColor(red: 0, green: 1, blue: 0, alpha: 1))
+        ex.fill(CGRect(x: 0, y: 0, width: 108, height: 8))
+        ex.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        ex.fill(CGRect(x: 99, y: 0, width: 9, height: 8)) // the minus cell
+        skin.images["NUMS_EX"] = ex.makeImage()!
+        func pixel(_ slice: SpriteSlice) -> [Int] {
+            guard let image = skin.image(for: slice) else { return [0, 0, 0, 0] }
+            var p = [Int](repeating: 0, count: 4); NSBitmapImageRep(cgImage: image).getPixel(&p, atX: 0, y: 0); return p
+        }
+        func isGreen(_ slice: SpriteSlice) -> Bool { let p = pixel(slice); return p.count == 4 && p[1] > 200 && p[0] < 50 } // colour-managed, not exact
+        assertTrue(isGreen(SpriteCatalog.digit(7)), "Digits come from NUMS_EX when the skin has it")
+        assertTrue(!isGreen(SpriteCatalog.minusSign) && pixel(SpriteCatalog.minusSign)[0] > 200, "The minus comes from NUMS_EX's own minus cell")
+        assertTrue(isGreen(SpriteCatalog.noMinusSign), "No minus: the blank cell")
+    }
+
     testGroup("RLE Skin Bitmaps (GEN.BMP rows)") {
         // ImageIO shifted rows after RLE skip codes; MacAmp decodes RLE8 / RLE4 itself
         let wsz = repositoryRoot.appendingPathComponent("MacAmp/Resources/base-2.91.wsz")
@@ -128,6 +172,33 @@ func skinTests() {
         let data = try Data(contentsOf: dir.appendingPathComponent("GEN.BMP"))
         guard let image = BMPDecoder.decodeRLE(data) else { throw NSError(domain: "test", code: 1) }
         assertEqual(image.width, 194, "GEN.BMP width")
+
+        // One colour space for every sheet, however it was decoded: RLE (above), ImageIO, ImageIO + transparent colour.
+        // SFCommandSkin.wsz: MAIN.BMP has a cyan patch and came out in device RGB, the digits and the title font in sRGB
+        func bmp24(_ pixels: [[UInt8]]) -> Data { // one row, BGR
+            var d = Data([0x42, 0x4D]); let row = (pixels.count * 3 + 3) & ~3
+            func le(_ v: Int, _ n: Int) { for i in 0..<n { d.append(UInt8((v >> (8 * i)) & 0xFF)) } }
+            le(54 + row, 4); le(0, 4); le(54, 4); le(40, 4); le(pixels.count, 4); le(1, 4); le(1, 2); le(24, 2)
+            le(0, 4); le(row, 4); le(2835, 4); le(2835, 4); le(0, 4); le(0, 4)
+            for p in pixels { d.append(contentsOf: p) }
+            d.append(contentsOf: [UInt8](repeating: 0, count: row - pixels.count * 3))
+            return d
+        }
+        let mixed = dir.appendingPathComponent("mixed", isDirectory: true)
+        try FileManager.default.createDirectory(at: mixed, withIntermediateDirectories: true)
+        let orange: [UInt8] = [0x00, 0x61, 0xC1], magenta: [UInt8] = [0xFF, 0x00, 0xFF]
+        try bmp24([orange, magenta, orange, orange]).write(to: mixed.appendingPathComponent("MAIN.BMP"))
+        try bmp24([orange, orange, orange, orange]).write(to: mixed.appendingPathComponent("TEXT.BMP"))
+        try data.write(to: mixed.appendingPathComponent("GEN.BMP"))
+        guard let loaded = SkinLoader.shared.loadSkin(from: mixed) else { throw NSError(domain: "test", code: 2) }
+        assertEqual(Set(loaded.images.keys), ["MAIN", "TEXT", "GEN"], "All three sheets load")
+        assertTrue(loaded.images.values.allSatisfy { $0.colorSpace?.name == CGColorSpace.sRGB }, "Every sheet is sRGB")
+        func first(_ key: String) -> [Int] {
+            var p = [Int](repeating: 0, count: 4); NSBitmapImageRep(cgImage: loaded.images[key]!).getPixel(&p, atX: 0, y: 0); return Array(p.prefix(3))
+        }
+        assertEqual(first("MAIN"), first("TEXT"), "The same orange from a sheet with a transparent colour and from one without")
+        var keyed = [Int](repeating: 0, count: 4); NSBitmapImageRep(cgImage: loaded.images["MAIN"]!).getPixel(&keyed, atX: 1, y: 0)
+        assertEqual(keyed[3], 0, "Magenta is still transparent")
         let rep = NSBitmapImageRep(cgImage: image)
         func rgb(_ x: Int, _ y: Int) -> [Int] { var p = [Int](repeating: 0, count: 4); rep.getPixel(&p, atX: x, y: y); return Array(p.prefix(3)) }
         let cyan = [0, 198, 255]

@@ -11,6 +11,7 @@ extension CGContext {
     /// This method applies a vertical flip around the target rect to draw pixel-perfect bitmaps right-side-up.
     @inlinable
     public func drawSkinImage(_ image: CGImage, in rect: CGRect) {
+        let rect = pixelAligned(rect)
         saveGState()
         // Antialiased edges leave translucent seams between tiles at fractional scales.
         setShouldAntialias(false)
@@ -20,6 +21,17 @@ extension CGContext {
         restoreGState()
     }
     
+    /// The rect moved onto whole device pixels. At 150% a joint between two sprites can fall inside a pixel (a 300-unit
+    /// window is 451 points wide): each neighbour then covers that pixel partly or not at all, and a see-through stroke
+    /// is left. Snapped, both neighbours agree on who owns it.
+    public func pixelAligned(_ rect: CGRect) -> CGRect {
+        let device = convertToDeviceSpace(rect)
+        // Just under a half is added, so an edge computed twice with a rounding error apart still lands on one pixel
+        func snap(_ value: CGFloat) -> CGFloat { (value + 0.499).rounded(.down) }
+        let minX = snap(device.minX), minY = snap(device.minY)
+        return convertToUserSpace(CGRect(x: minX, y: minY, width: snap(device.maxX) - minX, height: snap(device.maxY) - minY))
+    }
+
     /// Draws a skin slice tiled horizontally across a given range [startX ..< endX] with a fixed tile width.
     /// Used for top and bottom playlist filler sections, windowshade bars, etc.
     public func drawTiledHorizontal(image: CGImage, from startX: CGFloat, to endX: CGFloat, y: CGFloat, width tileWidth: CGFloat, height: CGFloat) {

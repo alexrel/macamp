@@ -66,18 +66,21 @@ public class Skin {
         self.name = name
     }
     
+    /// Every skin bitmap is kept in sRGB, whichever way it was decoded: sheets in different colour spaces show the same
+    /// RGB value as two different colours (the main window against the time digits and the title on a wide-gamut display)
+    static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+
     /// 14x11 transparent thumb placeholder used when a skin bakes slider knobs directly into its 28 frames
     private static let transparentThumb: CGImage? = {
         let width = 14
         let height = 11
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
         guard let ctx = CGContext(
             data: nil,
             width: width,
             height: height,
             bitsPerComponent: 8,
             bytesPerRow: width * 4,
-            space: colorSpace,
+            space: Skin.colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
         return ctx.makeImage()
@@ -85,6 +88,12 @@ public class Skin {
     
     /// Returns the cropped CGImage for a given sprite definition from the skin's sheets.
     public func image(for slice: SpriteSlice) -> CGImage? {
+        var slice = slice
+        // Like Winamp, a skin with NUMS_EX.BMP takes the time digits from it: same digit cells, a minus cell of its own
+        if slice.sheet == "NUMBERS", images["NUMS_EX"] != nil {
+            slice = SpriteCatalog.numsEx[slice.name]
+                ?? SpriteSlice(slice.name, "NUMS_EX", slice.rect.minX, slice.rect.minY, slice.rect.width, slice.rect.height)
+        }
         let sheetKey = slice.sheet.uppercased()
         
         // 1. Direct slice from sheet if present and within bounds
@@ -126,6 +135,20 @@ public class Skin {
                crop.maxX <= CGFloat(volSheet.width),
                crop.maxY <= CGFloat(volSheet.height) {
                 return volSheet.cropping(to: crop)
+            }
+        }
+        
+        // 4. A sheet smaller than the standard (MAIN.BMP 115 rows high, POSBAR.BMP 9): Winamp draws the part that is
+        // there. The missing part stays transparent rather than showing the base skin through a custom one.
+        if let sheet = images[sheetKey] {
+            let part = slice.rect.intersection(CGRect(x: 0, y: 0, width: sheet.width, height: sheet.height))
+            if !part.isEmpty, let piece = sheet.cropping(to: part),
+               let ctx = CGContext(data: nil, width: Int(slice.rect.width), height: Int(slice.rect.height), bitsPerComponent: 8,
+                                   bytesPerRow: 0, space: Skin.colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+                // CGContext counts rows from the bottom, the sheet from the top
+                ctx.draw(piece, in: CGRect(x: part.minX - slice.rect.minX, y: slice.rect.maxY - part.maxY,
+                                           width: part.width, height: part.height))
+                return ctx.makeImage()
             }
         }
         

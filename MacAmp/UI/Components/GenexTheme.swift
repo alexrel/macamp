@@ -90,6 +90,8 @@ public struct GenexTheme {
 
 /// Winamp general-window button (GENEX art): 4 px caps, stretched middle, skin's button text colour.
 public struct GenexButton: View {
+    /// Redraws with the new skin's colours: GenexTheme.current is read in body and is not observable by itself
+    @ObservedObject private var skinManager = SkinManager.shared
     let title: String
     let width: CGFloat?
     let action: () -> Void

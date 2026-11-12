@@ -155,7 +155,7 @@ public class GenWindowFrameView: WinampControlView {
         guard let image, w > 0, h > 0 else { return }
         ctx.saveGState()
         ctx.setShouldAntialias(false)
-        ctx.clip(to: CGRect(x: x, y: y, width: w, height: h))
+        ctx.clip(to: ctx.pixelAligned(CGRect(x: x, y: y, width: w, height: h)))
         let full = CGFloat(image.width)
         let originX = (cropFromLeft == false) ? x + w - full : x
         ctx.drawSkinImage(image, in: CGRect(x: originX, y: y, width: full, height: CGFloat(image.height)))
