@@ -50,6 +50,11 @@ macOS 14 Sonoma or later).
   focus; window title bars stay reachable when the windows don't fit the screen.
 - **0.9.1:** windows docked together stop together at the menu bar; the playlist no longer slides under the
   main window.
+- **0.9.2:** skins whose bitmaps are smaller than the standard keep their own look instead of borrowing the base
+  skin's; time digits come from NUMS_EX.BMP when the skin has it; every skin bitmap is shown in one colour space.
+  The visualizer no longer follows the volume, fills its background while playing, freezes on pause, and the
+  oscilloscope is drawn as in Winamp. No see-through strokes in window frames at 150%; dialogs stay sharp at 150%
+  and 200%; all windows repaint at once when the skin changes.
 
 ## Roadmap
 
