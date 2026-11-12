@@ -55,6 +55,9 @@ macOS 14 Sonoma or later).
   The visualizer no longer follows the volume, fills its background while playing, freezes on pause, and the
   oscilloscope is drawn as in Winamp. No see-through strokes in window frames at 150%; dialogs stay sharp at 150%
   and 200%; all windows repaint at once when the skin changes.
+- **0.9.3:** the About box banner is animated as in Winamp 2.95 (its lens warp recovered from winamp.exe) and
+  rests sharp; the empty Video window shows the Nullsoft Video picture. Pictures keep their contents in scaled
+  dialogs; the close cursor shows over the close button of the Library, Video, Minibrowser and Studio frames.
 
 ## Roadmap
 
