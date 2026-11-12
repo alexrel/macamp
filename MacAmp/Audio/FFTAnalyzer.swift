@@ -22,7 +22,8 @@ enum VisualizerPCMFeed {
         }
     }
 
-    static func add(_ audio: AVAudioPCMBuffer) {
+    /// `gain` undoes the volume control, as for the spectrum and the oscilloscope
+    static func add(_ audio: AVAudioPCMBuffer, gain: Float = 1) {
         guard let channels = audio.floatChannelData else { return }
         buffer.withLockIfAvailableUnchecked { buffer in
             guard buffer.isActive else { return }
@@ -32,8 +33,8 @@ enum VisualizerPCMFeed {
             let left = channels[0]
             let right = channels[audio.format.channelCount > 1 ? 1 : 0]
             for frame in 0..<count {
-                buffer.samples[frame * 2] = left[start + frame * stride]
-                buffer.samples[frame * 2 + 1] = right[start + frame * stride]
+                buffer.samples[frame * 2] = left[start + frame * stride] * gain
+                buffer.samples[frame * 2 + 1] = right[start + frame * stride] * gain
             }
             buffer.frameCount = count
         }
@@ -102,20 +103,21 @@ public final class FFTAnalyzer {
     /// Analyses `buffer` in place into `spectrum` (19 values, 0...1) and `waveform` (76 values, -1...1).
     /// Returns false (and zeroes both outputs) when the buffer is silent, so callers can skip redraws.
     @discardableResult
-    public func analyze(buffer: AVAudioPCMBuffer, spectrum: inout [Float], waveform: inout [Float]) -> Bool {
+    public func analyze(buffer: AVAudioPCMBuffer, gain: Float = 1, spectrum: inout [Float], waveform: inout [Float]) -> Bool {
         guard let channels = buffer.floatChannelData, buffer.frameLength > 0 else {
             zero(&spectrum); zero(&waveform)
             return false
         }
         return analyze(channels: channels, channelCount: Int(buffer.format.channelCount),
-                       startFrame: 0, frameCount: Int(buffer.frameLength),
+                       startFrame: 0, frameCount: Int(buffer.frameLength), gain: gain,
                        spectrum: &spectrum, waveform: &waveform)
     }
 
     /// Analyses the window `startFrame ..< startFrame + frameCount` of non-interleaved float channels.
+    /// `gain` multiplies the samples first (the tap sits after the volume control, the display must not follow it).
     @discardableResult
     public func analyze(channels: UnsafePointer<UnsafeMutablePointer<Float>>, channelCount: Int,
-                        startFrame: Int, frameCount: Int,
+                        startFrame: Int, frameCount: Int, gain: Float = 1,
                         spectrum: inout [Float], waveform: inout [Float]) -> Bool {
         guard frameCount > 0, channelCount > 0 else {
             zero(&spectrum); zero(&waveform)
@@ -134,7 +136,7 @@ public final class FFTAnalyzer {
             return false
         }
 
-        fillWaveform(channels: channels, channelCount: channelCount, startFrame: startFrame, frameCount: frameCount, into: &waveform)
+        fillWaveform(channels: channels, channelCount: channelCount, startFrame: startFrame, frameCount: frameCount, gain: gain, into: &waveform)
 
         guard frameCount >= fftSize else {
             zero(&spectrum)
@@ -146,7 +148,7 @@ public final class FFTAnalyzer {
         for ch in 0..<channelCount {
             vDSP_vadd(mono, 1, channels[ch] + startFrame, 1, &mono, 1, vDSP_Length(fftSize))
         }
-        var divisor = Float(channelCount)
+        var divisor = Float(channelCount) / gain
         vDSP_vsdiv(mono, 1, &divisor, &mono, 1, vDSP_Length(fftSize))
 
         // 2. Hann window
@@ -161,7 +163,9 @@ public final class FFTAnalyzer {
                     var complex = DSPSplitComplex(realp: realPtr.baseAddress!, imagp: imagPtr.baseAddress!)
                     vDSP_fft_zip(fftSetup, &complex, 1, log2n, FFTDirection(kFFTDirection_Forward))
                     vDSP_zvmags(&complex, 1, magPtr.baseAddress!, 1, vDSP_Length(half))
-                    var mult = Float(2.0 / Double(fftSize))
+                    // Squared magnitudes -> squared amplitude of the tone: through the normalised Hann window (vDSP_HANN_NORM)
+                    // a sine of amplitude A peaks at A² N² / 6, so a full-scale tone reads 0 dB, the top of the display
+                    var mult = Float(6.0 / Double(fftSize * fftSize))
                     vDSP_vsmul(magPtr.baseAddress!, 1, &mult, magPtr.baseAddress!, 1, vDSP_Length(half))
                     var n = Int32(half)
                     vvsqrtf(magPtr.baseAddress!, magPtr.baseAddress!, &n)
@@ -186,18 +190,18 @@ public final class FFTAnalyzer {
 
     public var windowSize: Int { fftSize }
 
-    private func fillWaveform(channels: UnsafePointer<UnsafeMutablePointer<Float>>, channelCount: Int, startFrame: Int, frameCount: Int, into waveform: inout [Float]) {
+    private func fillWaveform(channels: UnsafePointer<UnsafeMutablePointer<Float>>, channelCount: Int, startFrame: Int, frameCount: Int, gain: Float, into waveform: inout [Float]) {
         let numPoints = waveform.count
-        guard numPoints > 0, frameCount >= numPoints else {
+        guard numPoints > 0, frameCount >= numPoints * AppConstants.Visualizer.Scope.sampleStep else {
             zero(&waveform)
             return
         }
-        let step = frameCount / numPoints
+        let step = AppConstants.Visualizer.Scope.sampleStep
         let left = channels[0] + startFrame
         let right = (channelCount > 1 ? channels[1] : channels[0]) + startFrame
         for i in 0..<numPoints {
             let idx = i * step
-            waveform[i] = max(-1.0, min(1.0, (left[idx] + right[idx]) * 0.5))
+            waveform[i] = max(-1.0, min(1.0, (left[idx] + right[idx]) * 0.5 * gain))
         }
     }
 

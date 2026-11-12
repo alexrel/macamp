@@ -32,6 +32,8 @@ public class VisualizerView: WinampControlView {
     private var barLevels = [Float](repeating: 0, count: thinCount)
     private var peakHeights = [Float](repeating: 0, count: thinCount)
     private var waveformStorage = [Float](repeating: 0, count: AppConstants.Visualizer.numWaveformPoints)
+    /// Playing or paused: Winamp then paints its own background over MAIN.BMP
+    private var isRunning = false
 
     /// 19 thick-band levels (0.0 ... 1.0), e.g. for the Visualizer Studio window
     public var spectrumAmplitudes: [Float] {
@@ -64,6 +66,7 @@ public class VisualizerView: WinampControlView {
     /// (new amplitudes, bars or peaks still falling), so a steady or silent signal costs no drawing.
     public func update(from frame: VisualizerFrameBuffer) {
         let changed = frame.read(spectrum: &rawBands, waveform: &waveformStorage)
+        if mode != .off, !isRunning { isRunning = true; needsDisplay = true }
         switch mode {
         case .off:
             return
@@ -102,12 +105,13 @@ public class VisualizerView: WinampControlView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    /// Empties the display, including peak dots (used when playback pauses/stops and analysis is switched off).
+    /// Empties the display, including peak dots (used when playback stops; a paused one keeps its last picture).
     public func clear() {
         for i in rawBands.indices { rawBands[i] = 0 }
         for i in barLevels.indices { barLevels[i] = 0 }
         for i in peakHeights.indices { peakHeights[i] = 0 }
         for i in waveformStorage.indices { waveformStorage[i] = 0 }
+        isRunning = false
         needsDisplay = true
     }
 
@@ -122,6 +126,9 @@ public class VisualizerView: WinampControlView {
 
     // MARK: - Drawing
 
+    /// The windowshade mini visualizer
+    private var isCompact: Bool { bounds.height <= 8 }
+
     public override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
@@ -129,7 +136,7 @@ public class VisualizerView: WinampControlView {
         context.saveGState()
         context.clip(to: bounds)
 
-        // Clear bounds to transparent so MAIN.BMP's dotted LCD screen texture is visible underneath
+        // Stopped or off: transparent, so the skin's own picture of this area (MAIN.BMP) shows
         context.clear(bounds)
 
         guard mode != .off else {
@@ -138,6 +145,19 @@ public class VisualizerView: WinampControlView {
         }
 
         let colors = SkinManager.shared.currentSkin?.visualizerColors.colors ?? VisualizerColors.defaultColors()
+
+        // Playing or paused: VISCOLOR 0 fills the area and VISCOLOR 1 dots it (odd rows, every other column), as in Winamp.
+        // The windowshade strip has no dots.
+        if isRunning {
+            context.setFillColor(color(colors, 0, fallback: .black))
+            context.fill(bounds)
+            if !isCompact {
+                context.setFillColor(color(colors, 1, fallback: .black))
+                for y in stride(from: 1, to: Int(bounds.height), by: 2) {
+                    for x in stride(from: 0, to: Int(bounds.width), by: 2) { context.fill(CGRect(x: x, y: y, width: 1, height: 1)) }
+                }
+            }
+        }
 
         if mode == .spectrum {
             if barLevels.contains(where: { $0 > 0.001 }) || peakHeights.contains(where: { $0 > 0.001 }) {
@@ -157,18 +177,16 @@ public class VisualizerView: WinampControlView {
     }
 
     private func drawSpectrum(in context: CGContext, colors: [NSColor]) {
-        let isCompact = bounds.height <= 8 // windowshade mini visualizer
         let maxBarHeight: CGFloat = isCompact ? bounds.height : 16.0
 
-        // Column layout: thick = 19 bars of 3 px (+1 gap); thin = one bar per pixel column
+        // Column layout: thick = 19 bars of 3 px (+1 gap); thin = one bar per pixel column.
+        // The 38 px windowshade strip keeps the same bars and shows as many as fit, as Winamp does (9 and a part of the 10th).
         let barCount: Int
         let barW: CGFloat
         let stepX: CGFloat
-        switch (options.bands, isCompact) {
-        case (.thick, false): barCount = VisualizerView.thickCount; barW = 3; stepX = 4
-        case (.thick, true): barCount = VisualizerView.thickCount; barW = 1; stepX = 2
-        case (.thin, false): barCount = VisualizerView.thinCount; barW = 1; stepX = 1
-        case (.thin, true): barCount = VisualizerView.thinCount / 2; barW = 1; stepX = 1
+        switch options.bands {
+        case .thick: barCount = VisualizerView.thickCount; barW = 3; stepX = 4
+        case .thin: barCount = VisualizerView.thinCount; barW = 1; stepX = 1
         }
         let group = VisualizerView.thinCount / barCount
         let rows = max(1, Int(maxBarHeight))
@@ -179,7 +197,7 @@ public class VisualizerView: WinampControlView {
         }
         let peakColor = color(colors, 23, fallback: .lightGray)
 
-        for bar in 0..<barCount {
+        for bar in 0..<barCount where CGFloat(bar) * stepX < bounds.width {
             let level = maxLevel(in: barLevels, group: bar, size: group)
             let barH = Int((CGFloat(level) * maxBarHeight).rounded())
             let x = CGFloat(bar) * stepX
@@ -207,32 +225,42 @@ public class VisualizerView: WinampControlView {
     }
 
     private func drawOscilloscope(in context: CGContext, colors: [NSColor]) {
-        let midY = (bounds.height / 2).rounded(.down)
-        let halfH = max(1.0, bounds.height / 2.0 - 1.0)
-        let columns = Int(bounds.width)
-        var previousY: CGFloat?
+        typealias Scope = AppConstants.Visualizer.Scope
+        let rows = Int(bounds.height)
+        var last = 0
 
-        for x in 0..<columns {
-            let sampleIdx = min(waveformStorage.count - 1, Int(Float(x) / Float(max(1, columns)) * Float(waveformStorage.count)))
-            let sample = CGFloat(waveformStorage[max(0, sampleIdx)])
-            let y = max(0, min(bounds.height - 1, (midY + sample * halfH).rounded()))
+        // One point per column: the windowshade strip shows the first half of the wave, not a squeezed one
+        for x in 0..<min(Int(bounds.width), waveformStorage.count) {
+            let level = max(0, min(255, Scope.silenceLevel * (1 + waveformStorage[x])))
+            var y = Int((Double(level) / Scope.levelsPerRow).rounded()) - Scope.topRow
+            if isCompact {
+                y = Int((Double(y + Scope.compactShift) / Double(AppConstants.Visualizer.height) * Double(Scope.compactRows)).rounded()) - Scope.compactCentreRow
+            }
+            y = max(0, min(rows - 1, y))
+            // VISCOLOR 18 near the centre line ... 22 at the bottom edge, by the row; the windowshade strip is all 18
+            context.setFillColor(color(colors, 18 + (isCompact ? 0 : Scope.colorOffsetByRowPair[y / 2]), fallback: .green))
 
-            // VISCOLOR 18 (brightest) ... 22: louder samples are brighter
-            let colorIndex = 22 - min(4, Int(abs(sample) * 5))
-            context.setFillColor(color(colors, colorIndex, fallback: .green))
-
-            let (top, bottom): (CGFloat, CGFloat)
+            if x == 0 { last = y }
+            var (top, bottom) = (y, last)
+            last = y
             switch options.scopeStyle {
             case .dot:
-                (top, bottom) = (y, y)
-            case .line:
-                let prev = previousY ?? y
-                (top, bottom) = (min(prev, y), max(prev, y))
+                bottom = y
             case .solid:
-                (top, bottom) = (min(midY, y), max(midY, y))
+                let (upper, lower) = isCompact ? (Scope.compactCentreRow, Scope.compactCentreRow) : (Scope.solidUpperRow, Scope.solidLowerRow)
+                (top, bottom) = y >= lower ? (lower, y) : (y, upper)
+            case .line:
+                // Joined to the previous point; going down, the main display skips that point's own row
+                if bottom < top {
+                    swap(&top, &bottom)
+                    if !isCompact { top += 1 }
+                }
             }
-            context.fill(CGRect(x: CGFloat(x), y: top, width: 1, height: bottom - top + 1))
-            previousY = y
+            // Shifted down, the loudest samples would land below the display: they stop on its last row instead
+            let shift = isCompact ? 0 : Scope.pushDown
+            top = min(top + shift, rows - 1)
+            bottom = min(bottom + shift, rows - 1)
+            context.fill(CGRect(x: x, y: top, width: 1, height: bottom - top + 1))
         }
     }
 

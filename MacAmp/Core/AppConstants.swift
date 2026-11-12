@@ -255,6 +255,26 @@ public enum AppConstants {
         /// "Thin bands": one 1 px bar per visualizer column; 4 thin bands make one thick bar
         public static let numThinBands: Int = 76
         
+        /// Oscilloscope geometry, as Winamp draws it (numbers from Webamp's WavePaintHandler, which copies Winamp / WACUP)
+        public enum Scope {
+            /// Winamp hands its visualizer 576 samples a frame and takes every 7th for the 76 columns
+            public static let sampleStep = 576 / 75
+            /// Samples are 8-bit there: 0...255, silence at 128
+            public static let silenceLevel: Float = 128
+            /// 8 levels to a row: full scale spans 32 rows, twice the display, so loud passages run off its edges
+            public static let levelsPerRow: Double = 8
+            /// Row of the 32 that lands on the display's row 0
+            public static let topRow = 9
+            /// The main display draws the scope 2 rows lower, off-centre
+            public static let pushDown = 2
+            /// Solid scope fills from these rows: above the centre line down to 7, below it from 8
+            public static let solidUpperRow = 7, solidLowerRow = 8
+            /// VISCOLOR 18...22 by pairs of rows, top to bottom
+            public static let colorOffsetByRowPair = [3, 2, 1, 0, 1, 2, 3, 4]
+            /// Windowshade strip: the 16-row picture is shifted by 6 rows and squeezed into 5, centre on row 2
+            public static let compactShift = 6, compactRows = 5, compactCentreRow = 2
+        }
+
         /// Falloff speeds
         public static let peakFalloffRate: Float = 0.35
         public static let barFalloffRate: Float = 0.5
@@ -277,6 +297,8 @@ public enum AppConstants {
     public enum Audio {
         public static let bufferSize: UInt32 = 1024
         public static let defaultVolume: Double = 0.75
+        /// Below this volume the visualizer no longer scales the signal back up (at zero there is nothing to scale)
+        public static let visualizerVolumeFloor: Float = 0.001
         public static let defaultBalance: Double = 0.0 // -1.0 (Left) ... 0.0 (Center) ... +1.0 (Right)
         
         /// Everything MacAmp plays: its own formats plus those of installed plug-ins (in_ffmpeg: MKV, WMA, APE...)

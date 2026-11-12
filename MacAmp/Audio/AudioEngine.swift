@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import os
 
 public struct TrackMetadata: Equatable {
     public let url: URL
@@ -219,6 +220,9 @@ public class AudioEngine {
 
     // MARK: - Visualizer Tap
 
+    /// The volume as the tap thread sees it. Asking the mixer from that thread deadlocks with a node stopping on the main one.
+    private let tapVolume = OSAllocatedUnfairLock<Float>(initialState: 1)
+
     public func reinstallMixerTap() {
         if isTapInstalled {
             engine.mainMixerNode.removeTap(onBus: 0)
@@ -236,10 +240,16 @@ public class AudioEngine {
             let frame = visualizerFrame
             let analyzer = fftAnalyzer
             var silentWindows = 0 // tap thread only
+            let tapVolume = tapVolume
+            tapVolume.withLock { $0 = engine.mainMixerNode.outputVolume }
             engine.mainMixerNode.installTap(onBus: 0, bufferSize: AppConstants.Audio.bufferSize, format: tapFormat) { [weak self] buffer, _ in
                 guard let channels = buffer.floatChannelData else { return }
-                VisualizerPCMFeed.add(buffer)
                 let window = analyzer.windowSize
+                // The tap hears the signal after the volume control; Winamp's visualizer doesn't follow the volume.
+                // shortcut: at zero volume the tap gets silence and the display is empty, tap before the mixer to change that
+                let volume = tapVolume.withLock { $0 }
+                let gain = volume > AppConstants.Audio.visualizerVolumeFloor ? 1 / volume : 1
+                VisualizerPCMFeed.add(buffer, gain: gain)
                 let frameCount = Int(buffer.frameLength)
                 let windows = max(1, min(VisualizerFrameBuffer.slotCount / 2, frameCount / window))
                 let windowDuration = Double(window) / buffer.format.sampleRate
@@ -247,7 +257,7 @@ public class AudioEngine {
                     var hasSignal = false
                     let slot = frame.write { spectrum, waveform in
                         hasSignal = analyzer.analyze(channels: channels, channelCount: Int(buffer.format.channelCount),
-                                                     startFrame: w * window, frameCount: min(window, frameCount - w * window),
+                                                     startFrame: w * window, frameCount: min(window, frameCount - w * window), gain: gain,
                                                      spectrum: &spectrum, waveform: &waveform)
                     }
                     // Keep delivering ~2 s of silence so falling bars and peaks can finish,
@@ -1175,6 +1185,7 @@ public class AudioEngine {
     public func setVolume(_ volume: Double) {
         let v = Float(max(0.0, min(1.0, volume)))
         engine.mainMixerNode.outputVolume = v
+        tapVolume.withLock { $0 = v }
         streamPlayer?.volume = v
     }
 

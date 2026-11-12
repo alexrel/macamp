@@ -113,7 +113,7 @@ public enum VisualizerFalloff: Int, Codable, CaseIterable {
 public struct VisualizerOptions: Codable, Equatable {
     public var analyzerStyle: AnalyzerStyle = .normal
     public var bands: AnalyzerBands = .thick
-    public var scopeStyle: ScopeStyle = .dot
+    public var scopeStyle: ScopeStyle = .line // Winamp's default
     public var barFalloff: VisualizerFalloff = .moderate
     public var peakFalloff: VisualizerFalloff = .moderate
     public init() {}

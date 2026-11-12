@@ -63,26 +63,6 @@ func visualizerTests() {
         VisualizerPCMFeed.consume { _, _ in assertTrue(false, "An inactive visualizer must not receive PCM") }
     }
 
-    testGroup("Visualizer skin mask keeps the player's corner cutouts") {
-        let size = CGSize(width: 800, height: 500)
-        assertTrue(RegionParser.parse(text: "").normalMask(fitting: size) == nil, "Rectangular skins need no mask")
-        let region = RegionParser.parse(text: """
-            [Normal]
-            NumPoints=8
-            PointList=5,0 270,0 275,5 275,111 270,116 5,116 0,111 0,5
-            """)
-        guard let mask = region.normalMask(fitting: size) else {
-            assertTrue(false, "Expected the skin's outline")
-            return
-        }
-        assertEqual(mask.boundingBox.size, size)
-        for corner in [CGPoint(x: 1, y: 1), CGPoint(x: 799, y: 1), CGPoint(x: 1, y: 499), CGPoint(x: 799, y: 499)] {
-            assertTrue(!mask.contains(corner), "The 5 px cutout stays transparent")
-        }
-        assertTrue(mask.contains(CGPoint(x: 6, y: 1)), "The corner does not grow with the window")
-        assertTrue(mask.contains(CGPoint(x: 400, y: 499)), "The stretched edge stays opaque")
-    }
-
     testGroup("Visualizer list applies changes to the highlighted row") {
         _ = NSApplication.shared
         let titles = (0..<10_000).map { "Preset \($0)" }
@@ -190,9 +170,37 @@ func visualizerTests() {
         var thin = [Float](repeating: 0, count: 76), wave = [Float](repeating: 0, count: 76)
         assertTrue(analyzer.analyze(buffer: tone, spectrum: &thin, waveform: &wave), "Thin-band analysis")
         assertTrue(thin.filter { $0 > 0.3 }.count < 20, "A pure tone lights only a few of the 76 thin bands")
+        // 0 dB is a full-scale tone and the display spans 60 dB: this half-scale one (-6 dB) stops at 0.9, short of the top
+        assertTrue(abs((thin.max() ?? 0) - 0.9) < 0.04, "A -6 dB tone reaches 90% of the height (got \(thin.max() ?? 0))")
+
+        // The tap hears the signal after the volume control: at 10% volume, gain 10 gives the same picture as at full volume
+        let quiet = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 1024)!
+        quiet.frameLength = 1024
+        for c in 0..<2 { for i in 0..<1024 { quiet.floatChannelData![c][i] = 0.1 * tone.floatChannelData![c][i] } }
+        var quietBands = thin, quietWave = wave
+        analyzer.analyze(buffer: quiet, gain: 10, spectrum: &quietBands, waveform: &quietWave)
+        assertTrue(zip(wave, quietWave).allSatisfy { abs($0 - $1) < 0.001 }, "Oscilloscope doesn't follow the volume")
+        assertTrue(zip(thin, quietBands).allSatisfy { abs($0 - $1) < 0.01 }, "Spectrum doesn't follow the volume")
+        assertEqual(VisualizerOptions().scopeStyle, .line, "Oscilloscope draws lines by default, as in Winamp")
     }
 
     testGroup("Visualizer Studio works whatever the main visualizer shows") {
+        // MilkDrop and GOOM get the samples with the volume control undone, like the spectrum and the oscilloscope
+        let pcmFormat = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
+        let pcm = AVAudioPCMBuffer(pcmFormat: pcmFormat, frameCapacity: 16)!
+        pcm.frameLength = 16
+        for c in 0..<2 { for i in 0..<16 { pcm.floatChannelData![c][i] = 0.1 } }
+        VisualizerPCMFeed.setActive(true)
+        VisualizerPCMFeed.add(pcm, gain: 4)
+        var fed: [Float] = []
+        VisualizerPCMFeed.consume { samples, count in fed = Array(UnsafeBufferPointer(start: samples, count: count * 2)) }
+        VisualizerPCMFeed.setActive(false)
+        assertTrue(fed.count == 32 && fed.allSatisfy { abs($0 - 0.4) < 0.0001 }, "PCM for MilkDrop / GOOM is scaled back to full volume")
+        // Its window is a plain rectangle like the Library's: no main-window shape stretched over it
+        let studioWindow = RetroVisualizerWindow()
+        studioWindow.setFrame(NSRect(x: 0, y: 0, width: 400, height: 300), display: false)
+        assertTrue(studioWindow.frameView.layer?.mask == nil, "The Studio frame has no skin region mask")
+
         // One analysis frame: a loud low band and a sine-like waveform
         let frame = VisualizerFrameBuffer()
         let slot = frame.write { spectrum, waveform in
@@ -216,6 +224,64 @@ func visualizerTests() {
         let perFrame = (CACurrentMediaTime() - start) / 10_000
         print(String(format: "  studio feed: %.1f µs per frame, %.3f%% of one core at 35 fps", perFrame * 1e6, perFrame * 35 * 100))
         assertTrue(perFrame < 0.0002, "Studio feed costs under 0.2 ms a frame")
+    }
+
+    testGroup("Main visualizer background: skin colours while playing, MAIN.BMP when stopped") {
+        // SFCommandSkin.wsz draws a logo under the visualizer; Winamp covers it with VISCOLOR 0 and 1 during playback
+        let vis = VisualizerView(frame: NSRect(x: 0, y: 0, width: 76, height: 16)) // a plain init() gives an empty frame
+        func pixel(_ x: Int, _ y: Int) -> [Int] {
+            let rep = vis.bitmapImageRepForCachingDisplay(in: vis.bounds)!
+            vis.cacheDisplay(in: vis.bounds, to: rep)
+            var p = [Int](repeating: 0, count: 4); let scale = rep.pixelsWide / Int(vis.bounds.width) // a Retina display renders 2 pixels per point
+            rep.getPixel(&p, atX: x * scale, y: y * scale); return p
+        }
+        assertEqual(pixel(1, 0)[3], 0, "Stopped: transparent, the skin's picture shows")
+        vis.update(from: VisualizerFrameBuffer()) // a frame of silence, as at the start of a track
+        assertEqual(pixel(1, 0)[3], 255, "Playing: the background is filled even with no bars to draw")
+        assertTrue(pixel(0, 1) != pixel(1, 1) && pixel(0, 0) == pixel(1, 0), "Dots on odd rows, every other column")
+
+        // Oscilloscope as Winamp / Webamp draw it: silence on row 9 (off-centre) in VISCOLOR 18, full scale is 16 rows
+        // either way, so a half-scale sample already reaches the top; colours go by the row
+        // Five scope colours told apart by which channels are on: exact values don't survive the offscreen rendering
+        let skin = SkinManager.shared.currentSkin!, skinColors = skin.visualizerColors.colors
+        defer { skin.visualizerColors.colors = skinColors }
+        let channels = [[1, 1, 1], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0]] // VISCOLOR 18...22
+        for (i, c) in channels.enumerated() {
+            skin.visualizerColors.colors[18 + i] = NSColor(srgbRed: CGFloat(c[0]), green: CGFloat(c[1]), blue: CGFloat(c[2]), alpha: 1)
+        }
+        func scopeColor(_ x: Int, _ y: Int) -> Int { 18 + (channels.firstIndex(of: pixel(x, y).prefix(3).map { $0 > 128 ? 1 : 0 }) ?? -18) }
+        func lit(_ x: Int) -> [Int] { (0..<Int(vis.bounds.height)).filter { (pixel(x, $0).prefix(3).max() ?? 0) > 128 } } // brighter than the background and its dots
+        vis.mode = .oscilloscope
+        vis.waveformPoints = (0..<76).map { $0 < 38 ? 0 : -0.5 }
+        assertTrue(lit(5) == [9] && scopeColor(5, 9) == 18, "Silence: row 9, VISCOLOR 18 (\(lit(5)), \(scopeColor(5, 9)))")
+        assertTrue(lit(60) == [2] && scopeColor(60, 2) == 21, "A half-scale sample is at the top already, VISCOLOR 21 (\(lit(60)), \(scopeColor(60, 2)))")
+        vis.waveformPoints = (0..<76).map { Float($0) / 76 * 0.3 } // a gentle slope down
+        assertTrue((1..<76).allSatisfy { lit($0).count == 1 }, "One pixel per column on a gentle slope down")
+        vis.waveformPoints = Array(repeating: 1, count: 76)
+        assertEqual(lit(5), [15], "The loudest sample stays on the last row, not below the display")
+        vis.waveformPoints = (0..<76).map { $0 < 38 ? 0 : 0.25 } // a step of 4 rows down
+        assertEqual(lit(38), [10, 11, 12, 13], "A step down is joined without the previous point's row")
+
+        // Windowshade strip: one point per column (the first 38), the picture squeezed into 5 rows around row 2
+        vis.frame.size = NSSize(width: 38, height: 5)
+        vis.waveformPoints = (0..<76).map { $0 < 19 ? 0 : $0 < 38 ? 0.4 : -1 }
+        assertEqual([lit(5), lit(30), lit(37)], [[2], [4], [4]], "Silence on row 2, a 40% sample on the bottom row; point 38 and later are not shown")
+        vis.frame.size = NSSize(width: 76, height: 16)
+        vis.mode = .spectrum
+
+        // Windowshade strip (38x5): the same 3 px bars as the main display, as many as fit, not 19 one-pixel ones
+        vis.spectrumAmplitudes = Array(repeating: 1, count: 19)
+        vis.frame.size = NSSize(width: 38, height: 5)
+        let barColour = pixel(0, 4)
+        assertTrue(barColour == pixel(2, 4) && barColour != pixel(3, 4) && barColour == pixel(4, 4), "Bars are 3 px wide with a 1 px gap")
+        assertTrue(barColour == pixel(36, 4) && barColour == pixel(37, 4), "The 10th bar is cut by the edge")
+        vis.frame.size = NSSize(width: 76, height: 16)
+
+        vis.clear()
+        assertEqual(pixel(1, 0)[3], 0, "Stopped again: transparent")
+        vis.mode = .off
+        vis.update(from: VisualizerFrameBuffer())
+        assertEqual(pixel(1, 0)[3], 0, "Visualizer off: nothing is painted")
     }
 
     testGroup("Visualization refresh rate") {

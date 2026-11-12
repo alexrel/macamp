@@ -221,7 +221,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             if status == .stopped {
                 self.mainView.seekSlider.value = 0.0
             }
-            if status != .playing {
+            // Winamp: a paused visualizer freezes on its last picture, a stopped one goes back to the skin's
+            if status == .stopped {
                 self.mainView.visualizer.clear()
             }
             self.updateActivityState()
@@ -266,8 +267,12 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             guard let self else { return }
             let (draw, frames) = self.visualizerThrottle.shouldDraw(at: CACurrentMediaTime(), fps: self.persistence.state.visualizerFPS)
             guard draw else { return }
-            self.mainView.visualizer.falloffScale = frames
-            self.mainView.visualizer.update(from: frame)
+            // Only while playing: the emptied frame sent when analysis switches off would make a paused picture fall
+            // and repaint a stopped one
+            if self.audioEngine.status == .playing {
+                self.mainView.visualizer.falloffScale = frames
+                self.mainView.visualizer.update(from: frame)
+            }
             if let studio = self.visualizerStudioWindow, studio.isVisible {
                 self.studioFeed.falloffScale = frames
                 self.studioFeed.update(from: frame)
@@ -531,6 +536,10 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         eqView?.setNeedsDisplayRecursively()
         plView?.setNeedsDisplayRecursively()
         visualizerStudioWindow?.frameView.setNeedsDisplayRecursively()
+        // The Library, Video and Minibrowser frames are skinned too: without this they kept the old skin until clicked
+        libraryWindow?.contentView?.setNeedsDisplayRecursively()
+        video?.frameView.setNeedsDisplayRecursively()
+        browser?.frameView.setNeedsDisplayRecursively()
         updateWindowMasks()
     }
     
