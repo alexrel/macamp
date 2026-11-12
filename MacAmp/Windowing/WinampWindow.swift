@@ -50,7 +50,8 @@ final class ScaledHostingContent: NSView {
         self.insideScaledFrame = insideScaledFrame
         let zoom = HostingZoom()
         self.zoom = zoom
-        let hosting = NSHostingView(rootView: ScaledContent(content: content, zoom: zoom))
+        let hosting = CrispHostingView(rootView: ScaledContent(content: content, zoom: zoom))
+        hosting.zoom = { [unowned zoom] in zoom.value }
         self.hosting = hosting
         logicalSize = size ?? hosting.fittingSize
         super.init(frame: NSRect(origin: .zero, size: logicalSize))
@@ -71,6 +72,36 @@ final class ScaledHostingContent: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
+/// SwiftUI draws text and controls at the screen's own resolution and scaleEffect stretches the picture: blurred at 150%
+/// and 200%, worst on a non-Retina display. Every layer under the hosting view is redrawn at the enlarged resolution instead.
+/// shortcut: re-applied after each layout pass, a layer re-created without one stays soft until the next; scale the
+/// content's own sizes and fonts instead of the picture if that shows
+private final class CrispHostingView<Content: View>: NSHostingView<Content> {
+    var zoom: () -> CGFloat = { 1 }
+
+    override func layout() {
+        super.layout()
+        guard let layer, let backing = window?.backingScaleFactor else { return }
+        let scale = backing * zoom()
+        func sharpen(_ layer: CALayer) {
+            // Only layers a view draws into (text, AppKit controls). A Canvas keeps its picture in a surface nobody
+            // redraws on request: asked to, it went blank (the dotted branches of the Preferences tree).
+            if layer.contents != nil, layer.delegate is NSView, layer.contentsScale != scale {
+                layer.contentsScale = scale
+                layer.setNeedsDisplay()
+            }
+            layer.sublayers?.forEach(sharpen)
+        }
+        layer.sublayers?.forEach(sharpen)
+    }
+
+    /// Another screen: AppKit puts the layers back to that screen's resolution
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        needsLayout = true
+    }
 }
 
 fileprivate final class HostingZoom: ObservableObject {

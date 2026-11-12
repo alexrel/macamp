@@ -207,6 +207,8 @@ public struct Win32GroupBox<Content: View>: View {
 // MARK: - Win32 Checkbox
 public struct Win32Checkbox: View {
     public let label: String
+    /// Top row of the tick in each of its columns (x 3...9 of the 13 × 13 box)
+    static let tickTops = [5, 6, 7, 6, 5, 4, 3]
     @Binding public var isOn: Bool
     
     public init(_ label: String, isOn: Binding<Bool>) {
@@ -224,12 +226,14 @@ public struct Win32Checkbox: View {
                         .win32Sunken()
                     
                     if isOn {
+                        // The Win32 tick, pixel for pixel: seven columns 3 px tall inside the 9 × 9 white square,
+                        // a pixel clear of the border on every side
                         Path { path in
-                            path.move(to: CGPoint(x: 2.5, y: 6.5))
-                            path.addLine(to: CGPoint(x: 5.5, y: 10.0))
-                            path.addLine(to: CGPoint(x: 10.5, y: 3.0))
+                            for (column, top) in Win32Checkbox.tickTops.enumerated() {
+                                path.addRect(CGRect(x: 3 + column, y: top, width: 1, height: 3))
+                            }
                         }
-                        .stroke(Color.black, style: StrokeStyle(lineWidth: 1.8, lineCap: .square, lineJoin: .miter))
+                        .fill(Color.black)
                         .frame(width: 13, height: 13)
                     }
                 }
