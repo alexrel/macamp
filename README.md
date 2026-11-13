@@ -24,7 +24,7 @@ macOS 14 Sonoma or later).
 - **Internet radio:** SHOUTcast and Icecast streams with live titles.
 - **Audio CD:** play and rip to FLAC, ALAC, AAC, WAV or AIFF, with M3U/PLS playlists of the rip.
 - **Media Library** with local media, playlists and Internet Radio; **Minibrowser** and **Video** window.
-- **Visualizer:** spectrum and oscilloscope in the main window, full-screen Visualizer Studio, MilkDrop through projectM, and What A Goom! 1.99.4.
+- **Visualizer:** spectrum and oscilloscope in the main window, full-screen Visualizer Studio, MilkDrop through projectM, What A Goom! 1.99.4, and Advanced Visualization Studio 2.81d with its editor.
 - **Track Info** with ID3 tag editing, Winamp-style Preferences, About, context menus and the 2.95 hotkeys
   (on any keyboard layout), global hotkeys and media keys.
 - **Plug-ins:** the optional FFmpeg plug-in plays MKV/WebM/AVI/WMV and WMA/APE/WavPack (see the release assets).
@@ -58,6 +58,9 @@ macOS 14 Sonoma or later).
 - **0.9.3:** the About box banner is animated as in Winamp 2.95 (its lens warp recovered from winamp.exe) and
   rests sharp; the empty Video window shows the Nullsoft Video picture. Pictures keep their contents in scaled
   dialogs; the close cursor shows over the close button of the Library, Video, Minibrowser and Studio frames.
+- **0.10:** Advanced Visualization Studio 2.81d as a third visualization plug-in, native on Apple Silicon and
+  Intel: the AVS window's menu and hotkeys, random preset switching with a dissolve, the Winamp AVS Editor, and 35
+  presets. The Visualizer Studio window docks to the player windows like Winamp's AVS window.
 
 ## Roadmap
 
@@ -92,8 +95,9 @@ because the app isn't signed with a Developer ID, which a local re-sign would re
 
 ## Visualization
 
-MacAmp ships with GOOM and its effects, plus the projectM engine for MilkDrop. The app bundle includes
-both libraries' licenses and matching source archives.
+MacAmp ships with GOOM and its effects, the projectM engine for MilkDrop, and Advanced Visualization Studio
+(Nullsoft's AVS 2.81d source, BSD, through the libavs fork) with 35 presets from the same release. The app bundle
+includes the libraries' licenses; GOOM and projectM also ship their matching source archives.
 
 Download MilkDrop presets separately. In **Preferences ▸ Plug-ins ▸ Visualization**, choose
 **Open presets folder** and extract the pack there. The folder is
@@ -103,6 +107,11 @@ with its [texture pack](https://github.com/projectM-visualizer/presets-milkdrop-
 
 Press **Tab** to switch Studio modes. In MilkDrop and GOOM, **L** opens the list, and the highlighted
 preset or effect applies immediately. Close the list with **L**, **Return** or **Esc**.
+
+AVS works as in Winamp 2.95: right-click its window for presets and the AVS Editor (also **Configure plug-in**,
+⌥K). **Space** picks a random preset, **U** / **Y** step through them, **R** toggles random switching, and
+F1–F12 or 0–9 load a hotkey preset (⌃ saves it). Its presets live in `~/Library/Application Support/MacAmp/AVS`;
+**Import presets...** copies `.avs` files or a whole Winamp `Plugins\avs` folder there.
 
 ## Building
 
