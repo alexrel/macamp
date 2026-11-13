@@ -1,0 +1,5 @@
+module CAVS [system] {
+    header "avs/vis_avs/avs.h"
+    header "avs/vis_avs/avs_editor.h"
+    export *
+}

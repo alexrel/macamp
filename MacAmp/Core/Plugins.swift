@@ -42,15 +42,36 @@ enum PluginManager {
         lock.lock(); cache = nil; lock.unlock()
     }
 
-    static func read(_ bundle: URL) -> Converter? {
+    private static let kindKey = "MacAmpPluginKind", titleKey = "MacAmpPluginTitle"
+
+    /// The bundle's Info.plist when it is a MacAmp plug-in of this kind
+    private static func info(_ bundle: URL, kind: String) -> [String: Any]? {
         guard let info = NSDictionary(contentsOf: bundle.appendingPathComponent("Contents/Info.plist")) as? [String: Any],
-              info["MacAmpPluginKind"] as? String == "converter" else { return nil }
-        let converter = Converter(bundle: bundle, title: info["MacAmpPluginTitle"] as? String ?? bundle.deletingPathExtension().lastPathComponent,
+              info[kindKey] as? String == kind else { return nil }
+        return info
+    }
+
+    private static func title(_ info: [String: Any], _ bundle: URL) -> String {
+        info[titleKey] as? String ?? bundle.deletingPathExtension().lastPathComponent
+    }
+
+    static func read(_ bundle: URL) -> Converter? {
+        guard let info = info(bundle, kind: "converter") else { return nil }
+        let converter = Converter(bundle: bundle, title: title(info, bundle),
                                   audioExtensions: Set((info["MacAmpPluginAudioExtensions"] as? [String] ?? []).map { $0.lowercased() }),
                                   videoExtensions: Set((info["MacAmpPluginVideoExtensions"] as? [String] ?? []).map { $0.lowercased() }))
         guard FileManager.default.isExecutableFile(atPath: converter.ffmpeg.path),
               FileManager.default.isExecutableFile(atPath: converter.ffprobe.path) else { return nil }
         return converter
+    }
+
+    /// Kind "avs-presets": a pack of AVS presets (Contents/Resources/<folder>/*.avs), installed into AVS's preset folder.
+    /// Returns its title and the folders it brings.
+    static func presetPack(_ bundle: URL) -> (title: String, folders: [URL])? {
+        guard let info = info(bundle, kind: "avs-presets") else { return nil }
+        let resources = bundle.appendingPathComponent("Contents/Resources", isDirectory: true)
+        let folders = (try? FileManager.default.contentsOfDirectory(at: resources, includingPropertiesForKeys: nil)) ?? []
+        return (title(info, bundle), folders)
     }
 
     static var extensions: Set<String> { converters.reduce(into: Set<String>()) { $0.formUnion($1.extensions) } }

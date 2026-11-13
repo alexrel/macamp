@@ -68,15 +68,14 @@ public struct Win32RaisedBorder: ViewModifier {
                             Spacer()
                         }
                     } else {
-                        // Top and Left highlights
+                        // Top and Left highlights (the face-coloured inner line would paint a notch into the white
+                        // corner, and the face is that colour anyway)
                         VStack(spacing: 0) {
                             Rectangle().fill(Win32Colors.borderLight).frame(height: 1)
-                            Rectangle().fill(Win32Colors.dialogBg).frame(height: 1)
                             Spacer()
                         }
                         HStack(spacing: 0) {
                             Rectangle().fill(Win32Colors.borderLight).frame(width: 1)
-                            Rectangle().fill(Win32Colors.dialogBg).frame(width: 1)
                             Spacer()
                         }
                         // Bottom and Right shadows
@@ -134,7 +133,8 @@ public struct Win32Button: View {
                 .multilineTextAlignment(.center)
                 .foregroundColor(isEnabled ? Win32Colors.text : Win32Colors.textDisabled)
                 .shadow(color: isEnabled ? .clear : Win32Colors.borderLight, radius: 0, x: 1, y: 1) // etched disabled text
-                .padding(.horizontal, 8)
+                // A fixed width is the whole button: padding inside it pushed short labels ("+", "-") off centre
+                .padding(.horizontal, width == nil ? 8 : 2)
                 .frame(width: width, height: height)
                 .background(Win32Colors.dialogBg)
                 .win32Raised(isPressed: isPressed)

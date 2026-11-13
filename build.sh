@@ -180,12 +180,15 @@ run_tests() {
            -target arm64-apple-macos14.0 \
            -I "$DERIVED_DATA/Build/Products/Debug/" \
            -I MacAmp/Vendor/GOOM \
+           -I MacAmp/Vendor/AVS \
            -framework Cocoa -framework AVFoundation -framework AppKit -framework WebKit -framework Carbon \
            -framework OpenGL -framework SceneKit \
            -L "$PWD/$BUILD_DIR/projectm/install/lib" -lprojectM-4 \
            -L "$PWD/$BUILD_DIR/goom" -lgoom \
+           -L "$PWD/$BUILD_DIR/avs" -lavs \
            -Xlinker -rpath -Xlinker "$PWD/$BUILD_DIR/projectm/install/lib" \
            -Xlinker -rpath -Xlinker "$PWD/$BUILD_DIR/goom" \
+           -Xlinker -rpath -Xlinker "$PWD/$BUILD_DIR/avs" \
            $obj_files scripts/tests/*.swift -o "$BUILD_DIR/run_all_tests"
     
     # Run against a throwaway home directory: tests save session/playlist/skins through

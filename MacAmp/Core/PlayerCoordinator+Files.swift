@@ -176,6 +176,15 @@ extension PlayerCoordinator {
     /// Installing a plug-in runs its programs on this Mac, so it asks first (as Winamp's installers did)
     func confirmAndInstallPlugin(_ path: String) {
         let url = URL(fileURLWithPath: path)
+        // A preset pack only copies presets: nothing of it runs
+        if let pack = PluginManager.presetPack(url) {
+            guard Win32Dialog.confirm(title: "Install plug-in",
+                                      message: "Install \(pack.title)?\n\nThe presets go into the AVS preset folder and show up in the AVS window's right-click menu.",
+                                      confirmTitle: "Install", cancelTitle: "Cancel") else { return }
+            let count = AVSPresets.importPresets(from: pack.folders)
+            mainView?.marquee.showTemporaryMessage("AVS presets installed: \(count)", duration: 4)
+            return
+        }
         guard let plugin = PluginManager.read(url) else {
             _ = Win32Dialog.confirm(title: "Install plug-in", message: "\(url.lastPathComponent) isn't a MacAmp plug-in.", confirmTitle: "OK", cancelTitle: "Cancel")
             return

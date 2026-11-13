@@ -33,9 +33,11 @@ extension PlayerCoordinator {
             visualizerStudioWindow = RetroVisualizerWindow()
         }
         guard let win = visualizerStudioWindow else { return }
-        if persistence.state.goomPluginSelected {
-            if win.studioView.currentPreset != .goom { win.studioView.currentPreset = .goom }
-        } else if win.studioView.currentPreset == .goom {
+        let plugin: StudioVisualizerPreset? = persistence.state.avsPluginSelected ? .avs
+            : persistence.state.goomPluginSelected ? .goom : nil
+        if let plugin {
+            if win.studioView.currentPreset != plugin { win.studioView.currentPreset = plugin }
+        } else if win.studioView.currentPreset == .goom || win.studioView.currentPreset == .avs {
             win.studioView.currentPreset = .fireSpectrum
         }
         win.makeKeyAndOrderFront(nil)

@@ -11,6 +11,7 @@ public enum StudioVisualizerPreset: Int, CaseIterable {
     case solarOrb = 4
     case milkdrop = 5
     case goom = 6
+    case avs = 7
     
     public var title: String {
         switch self {
@@ -21,6 +22,7 @@ public enum StudioVisualizerPreset: Int, CaseIterable {
         case .solarOrb: return "Solar Radial Orb"
         case .milkdrop: return "Milkdrop (projectM)"
         case .goom: return "What A Goom!"
+        case .avs: return "Advanced Visualization Studio"
         }
     }
 }
@@ -36,6 +38,7 @@ public final class RetroVisualizerView: NSView {
             triggerHUD()
             syncMilkdrop()
             syncGoom()
+            syncAVS()
             updateAnimation()
             onPresetChanged?(currentPreset)
             needsDisplay = true
@@ -49,9 +52,10 @@ public final class RetroVisualizerView: NSView {
     private var milkdropListedPresets: [URL] = []
     private var milkdropTick = 0
     private var showMilkdropInfo = true // F5 toggles preset name and FPS
-    private var isOnScreen = false
-    private var isPlaying = false
+    private(set) var isOnScreen = false
+    private(set) var isPlaying = false
     private var goomView: GoomView?
+    var avsView: AVSView?
     // GOOM's filter IDs are zero-based, while its force-effect commands start at 1.
     private static let goomEffects = [
         (key: kVK_F1, title: "Normal"), (key: kVK_F2, title: "Wave"),
@@ -283,6 +287,7 @@ public final class RetroVisualizerView: NSView {
         isPlaying = playing
         syncMilkdrop()
         syncGoom()
+        syncAVS()
         milkdropView?.isOnScreen = visible
         if !visible || !playing { milkdropView?.stopPresetClock() }
         updateAnimation()
@@ -291,9 +296,10 @@ public final class RetroVisualizerView: NSView {
     func updateAnimation() {
         let milkdrop = currentPreset == .milkdrop
         let canRenderMilkdrop = milkdropView.map { !$0.initializationFailed } ?? false
-        VisualizerPCMFeed.setActive(isOnScreen && isPlaying && (goomView != nil || (milkdrop && canRenderMilkdrop)))
+        VisualizerPCMFeed.setActive(isOnScreen && isPlaying && (goomView != nil || avsView != nil || (milkdrop && canRenderMilkdrop)))
         let previewing = milkdropView.map { Date() < $0.renderUntil } ?? false
-        guard isOnScreen && (!milkdrop || (canRenderMilkdrop && (isPlaying || previewing))) else {
+        // AVS freezes on pause, as the other visualizers: no frames, no CPU
+        guard isOnScreen && (!milkdrop || (canRenderMilkdrop && (isPlaying || previewing))) && (avsView == nil || isPlaying) else {
             displayTimer?.invalidate()
             displayTimer = nil
             updateMilkdropLabel()
@@ -318,6 +324,7 @@ public final class RetroVisualizerView: NSView {
         isOnScreen = false
         syncMilkdrop(closing: true)
         syncGoom(closing: true)
+        syncAVS(closing: true)
         updateAnimation()
     }
     
@@ -356,13 +363,14 @@ public final class RetroVisualizerView: NSView {
         guard mouseDownEvent != nil else { return }
         mouseDownEvent = nil
         // Milkdrop has its own , / . keys; a stray click must not throw the user out of it
-        if currentPreset != .milkdrop && currentPreset != .goom { cyclePreset() }
+        if currentPreset != .milkdrop && currentPreset != .goom && currentPreset != .avs { cyclePreset() }
     }
     
     public override func keyDown(with event: NSEvent) {
         triggerHUD()
         if (currentPreset == .milkdrop || currentPreset == .goom) && handleSelectionListKey(event) { return }
         if currentPreset == .goom && handleGoomKey(event) { return }
+        if currentPreset == .avs && handleAVSKey(event) { return }
         
         switch event.keyCode {
         case 53: // Esc -> Exit
@@ -442,6 +450,7 @@ public final class RetroVisualizerView: NSView {
     }
 
     public override func menu(for event: NSEvent) -> NSMenu? {
+        if currentPreset == .avs, avsView != nil { return avsMenu() }
         guard currentPreset == .milkdrop || currentPreset == .goom else { return super.menu(for: event) }
         let menu = NSMenu()
         let selectionTitle = currentPreset == .milkdrop ? "Load Preset…" : "Choose Effect…"
@@ -487,6 +496,11 @@ public final class RetroVisualizerView: NSView {
     
     // MARK: - Update Tick
     private func renderTick() {
+        if let avsView {
+            avsView.renderFrame(playing: isPlaying)
+            if isPlaying { switchAVSPresetIfDue() }
+            return
+        }
         if let goomView {
             let trackTitle = isPlaying ? PlayerCoordinator.shared.playlist.currentTrack?.displayName : nil
             goomView.renderFrame(playing: isPlaying, trackTitle: trackTitle)
@@ -577,7 +591,7 @@ public final class RetroVisualizerView: NSView {
             drawMatrixRain(in: context, width: w, height: h)
         case .solarOrb:
             drawSolarOrb(in: context, width: w, height: h)
-        case .milkdrop, .goom:
+        case .milkdrop, .goom, .avs:
             return
         }
         

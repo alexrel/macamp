@@ -110,6 +110,13 @@
 		AA0D5C1E00000000000000B9 /* libgoom.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B3 /* libgoom.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		AA0D5C1E00000000000000BA /* GOOM-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B4 /* GOOM-LICENSE.txt */; };
 		AA0D5C1E00000000000000BB /* GOOM-source.zip in Resources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B5 /* GOOM-source.zip */; };
+		AA0D5C1E00000000000000C6 /* AVSView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000C1 /* AVSView.swift */; };
+		AA0D5C1E00000000000000C7 /* RetroVisualizerView+AVS.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000C2 /* RetroVisualizerView+AVS.swift */; };
+		AA0D5C1E00000000000000C8 /* libavs.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000C3 /* libavs.dylib */; };
+		AA0D5C1E00000000000000C9 /* libavs.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000C3 /* libavs.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		AA0D5C1E00000000000000CA /* AVS-LICENSES.txt in Resources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000C4 /* AVS-LICENSES.txt */; };
+		AA0D5C1E00000000000000CB /* AVS in Resources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000C5 /* AVS */; };
+		AA0D5C1E00000000000000CE /* AVSEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000CD /* AVSEditor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -216,6 +223,12 @@
 		AA0D5C1E00000000000000B3 /* libgoom.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = "libgoom.dylib"; path = "build/goom/libgoom.dylib"; sourceTree = SOURCE_ROOT; };
 		AA0D5C1E00000000000000B4 /* GOOM-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "GOOM-LICENSE.txt"; path = "build/goom/GOOM-LICENSE.txt"; sourceTree = SOURCE_ROOT; };
 		AA0D5C1E00000000000000B5 /* GOOM-source.zip */ = {isa = PBXFileReference; lastKnownFileType = archive.zip; name = "GOOM-source.zip"; path = "build/goom/GOOM-source.zip"; sourceTree = SOURCE_ROOT; };
+		AA0D5C1E00000000000000C1 /* AVSView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AVSView.swift"; path = "AVSView.swift"; sourceTree = "<group>"; };
+		AA0D5C1E00000000000000C2 /* RetroVisualizerView+AVS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RetroVisualizerView+AVS.swift"; path = "RetroVisualizerView+AVS.swift"; sourceTree = "<group>"; };
+		AA0D5C1E00000000000000C3 /* libavs.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = "libavs.dylib"; path = "build/avs/libavs.dylib"; sourceTree = SOURCE_ROOT; };
+		AA0D5C1E00000000000000C4 /* AVS-LICENSES.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "AVS-LICENSES.txt"; path = "build/avs/AVS-LICENSES.txt"; sourceTree = SOURCE_ROOT; };
+		AA0D5C1E00000000000000C5 /* AVS */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AVS; path = Resources/AVS; sourceTree = "<group>"; };
+		AA0D5C1E00000000000000CD /* AVSEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AVSEditor.swift"; path = "AVSEditor.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -227,6 +240,7 @@
 			files = (
 				AA0D5C1E00000000000000A5 /* libprojectM-4.4.dylib in Embed Frameworks */,
 				AA0D5C1E00000000000000B9 /* libgoom.dylib in Embed Frameworks */,
+				AA0D5C1E00000000000000C9 /* libavs.dylib in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -240,6 +254,7 @@
 			files = (
 				AA0D5C1E00000000000000A4 /* libprojectM-4.4.dylib in Frameworks */,
 				AA0D5C1E00000000000000B8 /* libgoom.dylib in Frameworks */,
+				AA0D5C1E00000000000000C8 /* libavs.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -304,6 +319,8 @@
 				AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */,
 				AAD8DBF0CFBC66555CB1BA74 /* demo.mp3 */,
 				AA7724DF12051809CF150D4D /* DocumentIconChoices */,
+				AA0D5C1E00000000000000C5 /* AVS */,
+				AA0D5C1E00000000000000C4 /* AVS-LICENSES.txt */,
 				AA04AC56F1DC09A5377AC512 /* WinampAudioFile.icns */,
 				AA82159D5E1FC971DD090475 /* WinampPlaylist.icns */,
 				AADC824D32AEE8B01AAC3A5C /* WinampSkin.icns */,
@@ -538,6 +555,10 @@
 				AA0D5C1E00000000000000B1 /* GoomView.swift */,
 				AA0D5C1E00000000000000B2 /* VisualizerSelectionList.swift */,
 				AA0D5C1E00000000000000B3 /* libgoom.dylib */,
+				AA0D5C1E00000000000000C1 /* AVSView.swift */,
+				AA0D5C1E00000000000000C2 /* RetroVisualizerView+AVS.swift */,
+				AA0D5C1E00000000000000CD /* AVSEditor.swift */,
+				AA0D5C1E00000000000000C3 /* libavs.dylib */,
 				AA0D5C1E00000000000000A3 /* libprojectM-4.4.dylib */,
 			);
 			path = "VisualizerStudio";
@@ -552,6 +573,7 @@
 			buildPhases = (
 				AA0D5C1E00000000000000A7 /* Build projectM */,
 				AA0D5C1E00000000000000BC /* Build GOOM */,
+				AA0D5C1E00000000000000CC /* Build AVS */,
 				BDC0693C2B887D8B0009C001 /* Sources */,
 				BDC0693D2B887D8B0009C001 /* Frameworks */,
 				BDC0693E2B887D8B0009C001 /* Resources */,
@@ -610,6 +632,8 @@
 				AA0D5C1E00000000000000AB /* projectM-source.tar.gz in Resources */,
 				AA0D5C1E00000000000000BA /* GOOM-LICENSE.txt in Resources */,
 				AA0D5C1E00000000000000BB /* GOOM-source.zip in Resources */,
+				AA0D5C1E00000000000000CA /* AVS-LICENSES.txt in Resources */,
+				AA0D5C1E00000000000000CB /* AVS in Resources */,
 				AADC170587A89F4091446E8E /* DocumentIconChoices in Resources */,
 				AAB30301AFC2DAF68138D1B9 /* WinampAudioFile.icns in Resources */,
 				AA1439011306C7704675E1C9 /* WinampPlaylist.icns in Resources */,
@@ -671,6 +695,20 @@
 			shellPath = /bin/bash;
 			shellScript = "/bin/bash \"$SRCROOT/scripts/build_goom.sh\"\n";
 		};
+		AA0D5C1E00000000000000CC /* Build AVS */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			name = "Build AVS";
+			outputPaths = (
+				"$(SRCROOT)/build/avs/libavs.dylib",
+				"$(SRCROOT)/build/avs/AVS-LICENSES.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$SRCROOT/scripts/build_avs.sh\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -698,6 +736,9 @@
 				AA0D5C1E00000000000000A2 /* MilkdropView.swift in Sources */,
 				AA0D5C1E00000000000000B6 /* GoomView.swift in Sources */,
 				AA0D5C1E00000000000000B7 /* VisualizerSelectionList.swift in Sources */,
+				AA0D5C1E00000000000000C6 /* AVSView.swift in Sources */,
+				AA0D5C1E00000000000000C7 /* RetroVisualizerView+AVS.swift in Sources */,
+				AA0D5C1E00000000000000CE /* AVSEditor.swift in Sources */,
 				AAF0E2D4D2A02A51FE841B73 /* CubicSpline.swift in Sources */,
 				AA9E25734126AF5A37B18D2E /* EqualizerWindowView.swift in Sources */,
 				AA49E4E81FD4135DED9F929D /* PlaylistWindowView.swift in Sources */,
@@ -913,12 +954,13 @@
 					"$(inherited)",
 					"$(SRCROOT)/build/projectm/install/lib",
 					"$(SRCROOT)/build/goom",
+					"$(SRCROOT)/build/avs",
 				);
 				MARKETING_VERSION = 0.9.3;
 				PRODUCT_BUNDLE_IDENTIFIER = alexrel.MacAmp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = ("$(SRCROOT)/MacAmp/Vendor/projectM", "$(SRCROOT)/MacAmp/Vendor/GOOM");
+				SWIFT_INCLUDE_PATHS = ("$(SRCROOT)/MacAmp/Vendor/projectM", "$(SRCROOT)/MacAmp/Vendor/GOOM", "$(SRCROOT)/MacAmp/Vendor/AVS");
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -948,12 +990,13 @@
 					"$(inherited)",
 					"$(SRCROOT)/build/projectm/install/lib",
 					"$(SRCROOT)/build/goom",
+					"$(SRCROOT)/build/avs",
 				);
 				MARKETING_VERSION = 0.9.3;
 				PRODUCT_BUNDLE_IDENTIFIER = alexrel.MacAmp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = ("$(SRCROOT)/MacAmp/Vendor/projectM", "$(SRCROOT)/MacAmp/Vendor/GOOM");
+				SWIFT_INCLUDE_PATHS = ("$(SRCROOT)/MacAmp/Vendor/projectM", "$(SRCROOT)/MacAmp/Vendor/GOOM", "$(SRCROOT)/MacAmp/Vendor/AVS");
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;

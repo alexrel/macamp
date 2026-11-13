@@ -449,7 +449,13 @@ extension PlayerCoordinator {
     
     /// Configure plug-in: its settings live on Preferences ▸ Plug-ins ▸ Visualization (it used to only open the Studio, which did nothing when it was already open).
     @objc public func handleConfigureVisPlugin() {
-        PreferencesWindow.show(treeItem: .visPlugin)
+        // AVS: the Winamp AVS Editor, on a running AVS window as in 2.95
+        guard persistence.state.avsPluginSelected else {
+            PreferencesWindow.show(treeItem: .visPlugin)
+            return
+        }
+        if visualizerStudioWindow?.isVisible != true { startVisualizerStudio() }
+        AVSEditorWindowController.show()
     }
     
     /// Select plug-in: Preferences ▸ Plug-ins ▸ Visualization.

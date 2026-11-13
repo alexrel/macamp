@@ -31,6 +31,7 @@ public final class RetroVisualizerWindow: WinampWindow, NSWindowDelegate {
             switch preset {
             case .milkdrop: self?.frameView.title = "MilkDrop"
             case .goom: self?.frameView.title = "What A Goom"
+            case .avs: self?.frameView.title = "AVS"
             default: self?.frameView.title = "Visualizer Studio"
             }
             if let title = self?.frameView.title { self?.title = title }

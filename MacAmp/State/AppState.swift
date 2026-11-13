@@ -143,6 +143,26 @@ public struct AppState: Codable {
     }
     var goomOptionsStorage: GoomOptions?
 
+    /// Advanced Visualization Studio is the selected vis plug-in (the list's third row)
+    var avsPluginSelected: Bool {
+        get { avsPluginStorage ?? false }
+        set { avsPluginStorage = newValue }
+    }
+    var avsPluginStorage: Bool?
+    /// AVS: the preset last shown (Winamp kept it as vis_avs.dat)
+    var avsPresetPath: String?
+    /// AVS Presets/Hotkeys: "Randomly switch presets every N seconds" (on, 10 in 2.6.1; R toggles it)
+    var avsRandomSwitchStorage: Bool?
+    var avsRandomSwitch: Bool {
+        get { avsRandomSwitchStorage ?? true }
+        set { avsRandomSwitchStorage = newValue }
+    }
+    var avsRandomSecondsStorage: Int?
+    var avsRandomSeconds: Int {
+        get { avsRandomSecondsStorage ?? 10 }
+        set { avsRandomSecondsStorage = newValue }
+    }
+
     /// Display: "Dim titlebars when inactive" and "Display tooltips in Winamp's main window" (both on in 2.95)
     public var dimTitlebarsStorage: Bool? = nil
     public var dimTitlebars: Bool {

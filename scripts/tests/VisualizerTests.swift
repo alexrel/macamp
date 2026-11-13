@@ -6,13 +6,14 @@ import Network
 import UniformTypeIdentifiers
 import SwiftUI
 import CGoom
+import CAVS
 @testable import MacAmp
 
 func visualizerTests() {
     // 6. Retro Visualizer Studio Mode & Presets Tests
     testGroup("Retro Visualizer Studio & Presets") {
         let presets = StudioVisualizerPreset.allCases
-        assertEqual(presets.count, 7, "Studio has 5 retro presets plus MilkDrop and GOOM")
+        assertEqual(presets.count, 8, "Studio has 5 retro presets plus MilkDrop, GOOM and AVS")
         assertEqual(presets[0].title, "Fire Spectrum & Peak Glow", "Preset 0 title matches")
         assertEqual(presets[1].title, "Retro Phosphor CRT Oscilloscope", "Preset 1 title matches")
         assertEqual(presets[2].title, "Neon Cyber City Spectrum", "Preset 2 title matches")
@@ -20,6 +21,7 @@ func visualizerTests() {
         assertEqual(presets[4].title, "Solar Radial Orb", "Preset 4 title matches")
         assertEqual(presets[5].title, "Milkdrop (projectM)", "Preset 5 title matches")
         assertEqual(presets[6].title, "What A Goom!", "Preset 6 title matches")
+        assertEqual(presets[7].title, "Advanced Visualization Studio", "Preset 7 title matches")
 
         // Dockable windows: Winamp's, and the Visualizer Studio, docked like Winamp's AVS window
         let windowIDs = WindowID.allCases
@@ -108,6 +110,195 @@ func visualizerTests() {
         }
         assertTrue(macamp_goom_resize(256, 256, true), "Cube texture dimensions and CinemaScope are supported")
         assertTrue(macamp_goom_render(nil, 0, 0, -1, nil, macamp_goom_credits()) != nil, "Credits render with silent input")
+    }
+
+    testGroup("AVS engine and bundled presets") {
+        var state = AppState()
+        assertTrue(!state.avsPluginSelected, "Older sessions keep their plug-in")
+        assertTrue(state.avsRandomSwitch && state.avsRandomSeconds == 10, "2.6.1 defaults: a random preset every 10 seconds")
+        state.avsPluginSelected = true
+        state.avsPresetPath = "/tmp/x.avs"
+        let decoded = try JSONDecoder().decode(AppState.self, from: JSONEncoder().encode(state))
+        assertTrue(decoded.avsPluginSelected && decoded.avsPresetPath == "/tmp/x.avs", "AVS settings are saved")
+
+        let presets = AVSPresets.scan(URL(fileURLWithPath: "MacAmp/Resources/AVS")).allPresets
+        assertEqual(presets.count, 35, "The 35 presets of the 2005 source release are bundled")
+        let handle = avs_init(NSTemporaryDirectory(), AVS_AUDIO_EXTERNAL, AVS_BEAT_EXTERNAL)
+        assertTrue(handle != 0, "libavs starts")
+        defer { avs_free(handle) }
+        let vis = AVSVisData()
+        let tone = (0..<2048).flatMap { i -> [Float] in
+            let v = sin(Float(i) * 2 * .pi * 110 / 44_100) * 0.8
+            return [v, v]
+        }
+        tone.withUnsafeBufferPointer { vis.append($0.baseAddress!, frames: 1024) }
+        _ = vis.analyze()
+        var pixels = [UInt32](repeating: 0, count: 288 * 320)
+        var lit = 0
+        for preset in presets {
+            let data = try Data(contentsOf: preset)
+            let loaded = data.withUnsafeBytes { avs_preset_set_legacy(handle, $0.bindMemory(to: UInt8.self).baseAddress, data.count) }
+            assertTrue(loaded, "\(preset.lastPathComponent) loads")
+            var rendered = true
+            for frame in 0..<20 {
+                _ = vis.bytes.withUnsafeBufferPointer { avs_audio_set_legacy(handle, $0.baseAddress) }
+                rendered = rendered && pixels.withUnsafeMutableBytes {
+                    avs_render_frame(handle, $0.baseAddress, 288, 320, -1, frame % 8 == 0, AVS_PIXEL_RGB0_8)
+                }
+            }
+            assertTrue(rendered, "\(preset.lastPathComponent) renders")
+            if pixels.contains(where: { $0 & 0xFF_FFFF != 0 }) { lit += 1 }
+        }
+        assertTrue(lit >= presets.count - 3, "Nearly every preset draws something (\(lit) of \(presets.count))")
+    }
+
+    testGroup("AVS vis data and beat detection") {
+        let vis = AVSVisData()
+        let silence = [Float](repeating: 0, count: 2048)
+        silence.withUnsafeBufferPointer { vis.append($0.baseAddress!, frames: 1024) }
+        assertTrue(!vis.analyze(), "Silence is no beat")
+        assertTrue(vis.bytes.allSatisfy { $0 == 0 }, "Silence: empty spectrum and a flat waveform")
+        // 440 Hz: FFT bin 440 / (44100 / 1024) = 10, spectrum index 10 * 576 / 512 = 11
+        let tone = (0..<2048).flatMap { i -> [Float] in
+            let v = sin(Float(i) * 2 * .pi * 440 / 44_100) * 0.8
+            return [v, -v]
+        }
+        tone.withUnsafeBufferPointer { vis.append($0.baseAddress!, frames: 1024) }
+        assertTrue(vis.analyze(), "A loud start after silence is a beat")
+        let spectrum = vis.bytes.prefix(576).map { UInt8(bitPattern: $0) }
+        assertTrue(spectrum[11] > 200 && spectrum[400] < 60, "The tone peaks in its own band (\(spectrum[11]), \(spectrum[400]))")
+        let left = vis.bytes[1152..<1728], right = vis.bytes[1728..<2304]
+        assertTrue(left.max()! > 90 && zip(left, right).allSatisfy { $0 == -$1 }, "Waveform: signed 8-bit per channel")
+        var later: [Bool] = []
+        for _ in 0..<10 {
+            tone.withUnsafeBufferPointer { vis.append($0.baseAddress!, frames: 735) }
+            later.append(vis.analyze())
+        }
+        assertTrue(!later.suffix(5).contains(true), "A steady tone stops beating: the peak follows the level")
+    }
+
+    testGroup("AVS view, transitions, slots and import") {
+        _ = NSApplication.shared
+        assertTrue(AVSView.renderSize(for: NSSize(width: 284, height: 314)) == (284, 314), "Winamp's AVS window renders 1:1")
+        assertTrue(AVSView.renderSize(for: NSSize(width: 283, height: 313)) == (280, 312), "Rounded to libavs' steps")
+        assertTrue(AVSView.renderSize(for: NSSize(width: 1512, height: 982)) == (504, 326), "Full screen renders at a third")
+
+        assertEqual(AVSPresets.importPresets(from: [URL(fileURLWithPath: "MacAmp/Resources/AVS")]), 35, "Import copies a folder")
+        assertEqual(AVSPresets.importPresets(from: [URL(fileURLWithPath: "MacAmp/Resources/AVS")]), 0, "Existing presets are kept")
+        let imported = AVSPresets.scan()
+        assertEqual(imported.subfolders.first?.url.lastPathComponent, "AVS", "A folder becomes a submenu")
+
+        // The Winamp 2.95 pack: a .macampplugin of kind avs-presets, installed into newpicks
+        let pack = FileManager.default.temporaryDirectory.appendingPathComponent("Test AVS Presets.macampplugin")
+        let packFolder = pack.appendingPathComponent("Contents/Resources/newpicks")
+        try? FileManager.default.removeItem(at: pack)
+        try FileManager.default.createDirectory(at: packFolder, withIntermediateDirectories: true)
+        for preset in imported.allPresets.prefix(3) {
+            try FileManager.default.copyItem(at: preset, to: packFolder.appendingPathComponent(preset.lastPathComponent))
+        }
+        try (["MacAmpPluginKind": "avs-presets", "MacAmpPluginTitle": "Test presets"] as NSDictionary)
+            .write(to: pack.appendingPathComponent("Contents/Info.plist"))
+        let read = PluginManager.presetPack(pack)
+        assertEqual(read?.title, "Test presets", "A preset pack is recognised")
+        assertTrue(PluginManager.read(pack) == nil, "It is not a converter")
+        assertEqual(AVSPresets.importPresets(from: read?.folders ?? []), 3, "Installing it copies its presets")
+        assertEqual(AVSPresets.importPresets(from: read?.folders ?? []), 0, "Installing it again adds nothing")
+        assertTrue(AVSPresets.scan().subfolders.contains { $0.url.lastPathComponent == "newpicks" && $0.presets.count == 3 },
+                   "The pack's folder becomes the newpicks submenu, as in Winamp")
+        guard let view = AVSView(studioFrame: NSRect(x: 0, y: 0, width: 284, height: 314)) else {
+            assertTrue(false, "AVSView starts")
+            return
+        }
+        let presets = imported.allPresets
+        assertTrue(view.load(presets[0]), "A preset loads")
+        assertEqual(view.presetName, presets[0].deletingPathExtension().lastPathComponent)
+        for _ in 0..<5 { view.renderFrame(playing: true) }
+        assertTrue(view.layer?.contents != nil, "Frames reach the layer")
+        let first = view.handle
+        assertTrue(view.load(presets[1], transition: true), "A random switch dissolves into the next preset")
+        assertTrue(view.handle != first, "The new preset gets its own engine while the old one fades")
+        view.renderFrame(playing: true)
+        assertTrue(view.save(to: AVSView.slotURL(0)) && view.load(AVSView.slotURL(0)), "F1 slot: save with ⌃, load again")
+        assertEqual(view.presetName, presets[1].deletingPathExtension().lastPathComponent, "A slot file is not a preset name")
+        assertTrue(!view.load(URL(fileURLWithPath: "/nonexistent.avs")), "A missing preset is refused")
+
+        let studio = RetroVisualizerView(frame: NSRect(x: 0, y: 0, width: 284, height: 314))
+        studio.currentPreset = .avs
+        studio.setActivity(visible: true, playing: true)
+        assertTrue(studio.avsView?.presetURL != nil, "The AVS window shows a preset at once")
+        let menu = studio.avsMenu()
+        assertEqual(Array(menu.items.prefix(2).map(\.title)), ["Fullscreen", "AVS Editor"], "Right-click menu as in 2.6.1")
+        assertTrue(menu.items.contains { $0.submenu?.items.count == 35 }, "Preset folders are submenus")
+        let shown = studio.avsView?.presetURL
+        studio.stepAVSPreset(by: 1)
+        assertTrue(studio.avsView?.presetURL != shown, "U shows the next preset")
+        assertEqual(PersistenceManager.shared.state.avsPresetPath, studio.avsView?.presetURL?.path, "The shown preset is remembered")
+        studio.closeVisualization()
+        assertTrue(studio.avsView == nil, "Closing frees the engine")
+    }
+
+    testGroup("AVS Editor: tree, commands and every effect's panel") {
+        _ = NSApplication.shared
+        let studio = RetroVisualizerView(frame: NSRect(x: 0, y: 0, width: 284, height: 314))
+        studio.currentPreset = .avs
+        studio.setActivity(visible: true, playing: false)
+        defer { studio.closeVisualization() }
+        let pulsar = URL(fileURLWithPath: "docs/winamp295-extracted/raw/029_bin.dat")
+        let model = AVSEditorModel()
+        model.studioProvider = { studio }
+        if FileManager.default.fileExists(atPath: pulsar.path) { // docs/ is local only
+            studio.avsView?.load(pulsar)
+            model.refresh()
+            assertEqual(model.nodes.map(\.title), ["Main", "Misc / Set render mode", "Trans / Blitter Feedback", "Trans / Fadeout",
+                                                   "Render / SuperScope", "Trans / Blur"], "The tree of Screenshot_9")
+            model.selected = model.nodes[4].id
+            let code = model.selectedParameters.first { $0.name == "Point" }
+            assertTrue(code.map { model.string($0.id).hasPrefix("vt=if(above(v,0),v*vd,v*vdi)") } == true, "SuperScope's Per Point code")
+        }
+        model.newPreset()
+        assertEqual(model.nodes.map(\.title), ["Main"], "Preset ▸ New leaves Main")
+        assertEqual(model.selectedParameters.map(\.name), ["Clear"], "Main shows only Clear every frame")
+        let classic = model.effects.filter { AVSEffectNames.classicEffects.contains($0.name) }
+        assertEqual(classic.count, 44, "The 2.6.1 effects libavs has (Text is not in it yet)")
+        for effect in model.effects {
+            model.selected = model.nodes[0].id
+            model.add(effect)
+            assertTrue(model.selectedNode?.depth == 1, "\(effect.name) is added to Main and selected")
+            let panel = NSHostingView(rootView: AVSParameterPanel(model: model))
+            panel.frame = NSRect(x: 0, y: 0, width: 360, height: 600)
+            panel.layoutSubtreeIfNeeded()
+        }
+        assertEqual(model.nodes.count, model.effects.count + 1, "Every effect was added")
+        var pixels = [UInt32](repeating: 0, count: 288 * 320)
+        let rendered = pixels.withUnsafeMutableBytes { avs_render_frame(model.avs, $0.baseAddress, 288, 320, -1, true, AVS_PIXEL_RGB0_8) }
+        assertTrue(rendered, "A preset with every effect renders")
+
+        model.selected = model.nodes[1].id
+        let first = model.nodes[1]
+        model.duplicateSelected()
+        assertEqual(model.nodes[2].title, first.title, "x2 clones after the original")
+        model.removeSelected()
+        assertEqual(model.nodes.count, model.effects.count + 1, "- removes the clone")
+        model.selected = first.id
+        model.setEnabled(false)
+        assertTrue(model.nodes[1].enabled == false, "The Enabled box turns an effect off")
+        let last = model.nodes.last!.id
+        model.move(last, onto: first.id)
+        assertEqual(model.nodes[1].id, last, "Dropping on a row puts the effect before it")
+
+        let superScope = model.effects.first { $0.name == "SuperScope" }!
+        model.newPreset()
+        model.add(superScope)
+        let colors = model.selectedParameters.first { $0.name == "Colors" }!
+        assertEqual(model.listLength(colors.id), 1, "One colour to start with")
+        model.addListElement(colors.id)
+        assertEqual(model.listLength(colors.id), 2, "Cycle through 2 colours")
+        let color = model.parameters(colors.info.children, count: Int(colors.info.children_length))[0]
+        model.set(color.id, color: 0xFF8000, [1])
+        assertEqual(model.color(color.id, [1]), 0xFF8000, "Colours are 0xRRGGBB")
+        let point = model.selectedParameters.first { $0.name == "Point" }!
+        model.set(point.id, string: "x=i*2-1; y=v")
+        assertEqual(model.string(point.id), "x=i*2-1; y=v", "Expressions are set as typed")
     }
 
     testGroup("GOOM titles and manual credits") {

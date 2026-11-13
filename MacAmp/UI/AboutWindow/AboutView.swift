@@ -144,6 +144,12 @@ public struct AboutView: View {
                     .font(.system(size: 10))
                     .foregroundColor(Win32Colors.text)
                     .textSelection(.enabled)
+
+                // BSD-3: the notice travels with the binary; the Nullsoft name is attribution here, not endorsement
+                Text("Advanced Visualization Studio: based on the AVS 2.81d source released by Nullsoft in 2005 (copyright © 2005 Nullsoft, Inc., BSD license) through the libavs fork by grandchild and contributors, modified for macOS; EEL2 by Cockos (zlib); sse2neon, JSON for Modern C++, pevents, stb_image (MIT). Presets from the same source release. The licenses are in MacAmp.app/Contents/Resources/AVS-LICENSES.txt.")
+                    .font(.system(size: 10))
+                    .foregroundColor(Win32Colors.text)
+                    .textSelection(.enabled)
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -386,10 +386,12 @@ public class PreferencesViewModel: ObservableObject {
 // MARK: - TreeView Dotted Branch Connector
 public struct TreeConnector: View {
     public let isLast: Bool
-    public var color = Color(white: 0.65)
+    /// The dotted branches' grey (also the AVS editor's tree)
+    public static let lineColor = Color(white: 0.65)
+    public var color = lineColor
     public var height: CGFloat = 18
     
-    public init(isLast: Bool, color: Color = Color(white: 0.65), height: CGFloat = 18) {
+    public init(isLast: Bool, color: Color = lineColor, height: CGFloat = 18) {
         self.isLast = isLast
         self.color = color
         self.height = height
@@ -476,7 +478,13 @@ public struct PreferencesView: View {
                         case .visPlugin:
                             VStack(alignment: .leading, spacing: 10) {
                                 visPluginSection
-                                if PersistenceManager.shared.state.goomPluginSelected { goomSection } else { milkdropSection }
+                                if PersistenceManager.shared.state.avsPluginSelected {
+                                    avsSection
+                                } else if PersistenceManager.shared.state.goomPluginSelected {
+                                    goomSection
+                                } else {
+                                    milkdropSection
+                                }
                             }
                         case .dsp: dspPluginSection
                         case .general: generalSection
@@ -1109,8 +1117,11 @@ public struct PreferencesView: View {
         Win32GroupBox("Visualization plug-ins") {
             VStack(alignment: .leading, spacing: 8) {
                 let goom = setting(\.goomPluginSelected)
-                PluginListBox(rows: ["MacAmp Retro Visualizer Studio \(AppConstants.App.version) [vis_studio]", "What A Goom! v1.99.4"],
-                              selection: Binding(get: { goom.wrappedValue ? 1 : 0 }, set: { goom.wrappedValue = $0 == 1 }))
+                let avs = setting(\.avsPluginSelected)
+                PluginListBox(rows: ["MacAmp Retro Visualizer Studio \(AppConstants.App.version) [vis_studio]", "What A Goom! v1.99.4",
+                                     "\(AVSView.productName) [vis_avs]"],
+                              selection: Binding(get: { avs.wrappedValue ? 2 : goom.wrappedValue ? 1 : 0 },
+                                                 set: { goom.wrappedValue = $0 == 1; avs.wrappedValue = $0 == 2 }))
                 HStack(spacing: 6) {
                     Win32Button("Start", width: 70) {
                         PlayerCoordinator.shared.startVisualizerStudio()
@@ -1149,6 +1160,31 @@ public struct PreferencesView: View {
                                   options: [15, 30, 60, 120, 300].map { (value: $0, title: "\($0) seconds") }, width: 120)
                     Spacer()
                 }
+            }
+        }
+    }
+
+    /// AVS 2.6.1 Settings ▸ Presets/Hotkeys, and the presets folder (Winamp's Plugins\avs)
+    private var avsSection: some View {
+        Win32GroupBox("Advanced Visualization Studio") {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Win32Checkbox("Randomly switch presets every", isOn: setting(\.avsRandomSwitch))
+                    Win32NumberField(value: setting(\.avsRandomSeconds))
+                    Text("seconds").font(.system(size: 11)).foregroundColor(Win32Colors.text)
+                    Spacer()
+                }
+                HStack(spacing: 6) {
+                    Win32Button("Presets folder", width: 100) {
+                        AVSPresets.prepareFolder()
+                        NSWorkspace.shared.open(AVSPresets.folder)
+                    }
+                    Win32Button("Import presets...", width: 110) { AVSPresets.importWithPanel() }
+                    // The Winamp 2.95 pack (112 presets, newpicks) is a separate download, as the FFmpeg plug-in
+                    Win32Button("Get presets", width: 90) { NSWorkspace.shared.open(AppConstants.App.pluginsPage) }
+                    Spacer()
+                }
+                note("Right-click the AVS window for presets. Space: random preset, U / Y: next / previous, R: random switching, T: preset name, F: frame rate, F1-F12 and 0-9: load a hotkey preset (with ⌃ save it), ⌥Return: full screen. Get presets: the Winamp 2.95 pack (112 presets); open it with MacAmp to install. Import copies .avs files or folders, e.g. Winamp's Plugins\\avs.")
             }
         }
     }
