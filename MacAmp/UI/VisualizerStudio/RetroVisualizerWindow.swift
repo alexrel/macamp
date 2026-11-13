@@ -1,7 +1,7 @@
 import Cocoa
 
 /// A dedicated fullscreen/standalone window for the Retro Visualizer Studio (AVS style).
-public final class RetroVisualizerWindow: NSWindow, NSWindowDelegate {
+public final class RetroVisualizerWindow: WinampWindow, NSWindowDelegate {
     static let studioMinimumSize = NSSize(width: 480, height: 320)
     private static let initialSize = NSSize(width: 800, height: 500)
     
@@ -18,19 +18,10 @@ public final class RetroVisualizerWindow: NSWindow, NSWindowDelegate {
         studioView = studio
         frameView = GenWindowFrameView(title: "Visualizer Studio", content: studio)
         
-        super.init(
-            contentRect: initialRect,
-            styleMask: [.borderless, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        
-        // The coordinator retains the window between uses.
-        self.isReleasedWhenClosed = false
+        // A WinampWindow: magnetic docking with the player windows and the screen edges
+        super.init(windowID: .studio, contentRect: initialRect)
+        styleMask.insert(.resizable) // native full screen
         self.title = "Winamp Retro Visualizer Studio"
-        self.backgroundColor = .clear
-        self.isOpaque = false
-        self.hasShadow = false
         self.collectionBehavior = [.fullScreenPrimary, .canJoinAllSpaces]
         self.contentView = frameView
         self.delegate = self
@@ -60,9 +51,6 @@ public final class RetroVisualizerWindow: NSWindow, NSWindowDelegate {
         
         center()
     }
-
-    public override var canBecomeKey: Bool { true }
-    public override var canBecomeMain: Bool { true }
 
     func updateInterfaceScale() {
         let scale = PersistenceManager.shared.state.interfaceScale.multiplier
@@ -98,12 +86,20 @@ public final class RetroVisualizerWindow: NSWindow, NSWindowDelegate {
         updateContentScale(interfaceScale)
         if !frameView.isFrameHidden { windowedSize = frameView.bounds.size }
     }
-    public func windowWillEnterFullScreen(_ notification: Notification) { showFrame(false) }
+    // In full screen it is no window to dock to: the others would snap to the screen's edges through it
+    public func windowWillEnterFullScreen(_ notification: Notification) {
+        WindowLayoutManager.shared.unregister(id: .studio)
+        showFrame(false)
+    }
     public func windowDidExitFullScreen(_ notification: Notification) {
+        WindowLayoutManager.shared.register(window: self, for: .studio)
         showFrame(true)
         updateInterfaceScale()
     }
-    public func windowDidFailToEnterFullScreen(_ window: NSWindow) { showFrame(true) }
+    public func windowDidFailToEnterFullScreen(_ window: NSWindow) {
+        WindowLayoutManager.shared.register(window: self, for: .studio)
+        showFrame(true)
+    }
     
     public func updateSpectrum(_ spectrum: [Float]) {
         // Expand 19 or 32 bands to 64 interpolated bands for smooth rendering

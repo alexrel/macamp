@@ -47,6 +47,7 @@ small, near-zero CPU when idle, does one thing well; free for everyone) and the 
 Winamp 2.95 (screenshots in `docs/UI-screens/`); modern features go under the hood or into a separate group at
 the bottom of the matching Preferences page; no anachronisms. Work items: the plan's stages; checklist: docs/ROADMAP.md.
 `docs/` is internal and gitignored (plans, screenshots, reverse-engineering material): read it, never commit it.
+**Releases:** follow [docs/RELEASE.md](docs/RELEASE.md) (version bump commit and tag, DMG, app zip, release notes, GitHub assets).
 
 ## Tech Stack
 - **Language:** Swift

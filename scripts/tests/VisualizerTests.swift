@@ -21,9 +21,10 @@ func visualizerTests() {
         assertEqual(presets[5].title, "Milkdrop (projectM)", "Preset 5 title matches")
         assertEqual(presets[6].title, "What A Goom!", "Preset 6 title matches")
 
-        // Dockable Winamp windows: main, equalizer, playlist and the Media Library
+        // Dockable windows: Winamp's, and the Visualizer Studio, docked like Winamp's AVS window
         let windowIDs = WindowID.allCases
-        assertEqual(windowIDs, [.main, .equalizer, .playlist, .library, .video, .browser], "Dockable windows")
+        assertEqual(windowIDs, [.main, .equalizer, .playlist, .library, .video, .browser, .studio], "Dockable windows")
+        assertTrue(WindowID.studio.keepsOwnSize, "The Studio keeps its size in Double Size mode")
         assertTrue(WindowID.library.keepsOwnSize && WindowID.playlist.keepsOwnSize && !WindowID.main.keepsOwnSize,
                    "Playlist and Library keep their size in Double Size mode, like Winamp")
         assertTrue(windowIDs.contains(.main), "WindowID contains .main")

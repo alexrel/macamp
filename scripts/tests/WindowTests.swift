@@ -66,6 +66,16 @@ func windowTests() {
         winC.setFrameOrigin(NSPoint(x: 100, y: 268))
         wlm.updateAdjacencies()
 
+        // The Visualizer Studio docks like the player windows: dragged 5 px from the main window, it snaps to its edge
+        let studio = RetroVisualizerWindow()
+        assertTrue(wlm.windows[.studio] === studio, "The Studio takes part in docking")
+        studio.setFrame(NSRect(x: winA.frame.maxX + 6, y: winA.frame.maxY - 300, width: 480, height: 300), display: false)
+        studio.orderFront(nil)
+        wlm.applyDrag(id: .studio, totalDelta: CGPoint(x: -1, y: 0), startOrigins: wlm.startDrag(for: .studio))
+        assertEqual(studio.frame.minX, winA.frame.maxX, "The Studio snaps to the main window's right edge")
+        studio.orderOut(nil)
+        wlm.unregister(id: .studio)
+
         // Test findWindowsBelow
         let below = wlm.findWindowsBelow(id: .main)
         assertTrue(below.contains(.equalizer), "Equalizer should be found below Main window")

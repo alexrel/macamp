@@ -328,6 +328,8 @@ public final class RetroVisualizerView: NSView {
     
     // A click switches the preset, a drag moves the window (the window has no title bar to grab)
     private var mouseDownEvent: NSEvent?
+    /// The window being moved by this drag, with the same magnetic docking as its frame's title bar
+    private var draggedWindow: WinampWindow?
 
     public override func mouseDown(with event: NSEvent) {
         triggerHUD()
@@ -335,12 +337,22 @@ public final class RetroVisualizerView: NSView {
     }
 
     public override func mouseDragged(with event: NSEvent) {
-        guard let down = mouseDownEvent else { return }
-        mouseDownEvent = nil
-        window?.performDrag(with: down)
+        if let down = mouseDownEvent {
+            mouseDownEvent = nil
+            if let win = window as? WinampWindow, !win.styleMask.contains(.fullScreen) {
+                draggedWindow = win
+                win.startWindowDrag(with: down)
+            }
+        }
+        draggedWindow?.continueWindowDrag(with: event)
     }
 
     public override func mouseUp(with event: NSEvent) {
+        if let win = draggedWindow {
+            draggedWindow = nil
+            win.endWindowDrag(with: event)
+            return
+        }
         guard mouseDownEvent != nil else { return }
         mouseDownEvent = nil
         // Milkdrop has its own , / . keys; a stray click must not throw the user out of it
