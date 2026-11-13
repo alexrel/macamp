@@ -23,6 +23,22 @@ DEBUG_APP="$DERIVED_DATA/Build/Products/Debug/$APP_NAME.app"
 RELEASE_APP="$DERIVED_DATA/Build/Products/Release/$APP_NAME.app"
 # Named after the app's own version (CFBundleShortVersionString), set once the Release build exists
 DMG_PATH=""
+# DMG window (Finder points, from the top left): the app on the left, an arrow, the Applications link on the right
+DMG_WINDOW_LEFT=200
+DMG_WINDOW_TOP=120
+DMG_WINDOW_WIDTH=600
+DMG_WINDOW_HEIGHT=380
+# Finder's bounds include the title bar; without it the background would not fit and the window would scroll
+DMG_TITLE_BAR_HEIGHT=28
+DMG_ICON_SIZE=128
+DMG_ICON_Y=150
+DMG_APP_X=150
+DMG_APPLICATIONS_X=450
+DMG_HINT_Y=290
+DMG_HINT="Drag $APP_NAME to Applications"
+DMG_BACKGROUND=".background/background.tiff"
+# How long to wait for Finder to write the window layout into .DS_Store
+DMG_DS_STORE_TIMEOUT=20
 
 # Colors
 RED='\033[0;31m'
@@ -143,6 +159,9 @@ build_dmg() {
     
     cp -R "$RELEASE_APP" "$staging/"
     ln -s /Applications "$staging/Applications"
+    mkdir -p "$staging/$(dirname "$DMG_BACKGROUND")"
+    swift scripts/build_dmg_background.swift "$staging/$DMG_BACKGROUND" "$DMG_WINDOW_WIDTH" "$DMG_WINDOW_HEIGHT" \
+          $(( (DMG_APP_X + DMG_APPLICATIONS_X) / 2 )) "$DMG_ICON_Y" "$DMG_HINT_Y" "$DMG_HINT"
     
     dmg_temp="$temp_dir/${APP_NAME}-temp.dmg"
     rm -f "$DMG_PATH" "$dmg_temp"
@@ -155,8 +174,38 @@ build_dmg() {
     mount_dir="/Volumes/${APP_NAME}-dmg-$$"
     [ -d "$mount_dir" ] && hdiutil detach -force "$mount_dir" 2>/dev/null || true
     
-    hdiutil attach "$dmg_temp" -mountpoint "$mount_dir" -nobrowse >/dev/null
-    
+    # Visible to Finder (no -nobrowse) so it can lay out the window; the layout is kept in the volume's .DS_Store.
+    # Finder resolves the volume by its name, which is why other mounted MacAmp images are detached above.
+    hdiutil attach "$dmg_temp" -mountpoint "$mount_dir" -noautoopen >/dev/null
+    osascript - "$mount_dir" >/dev/null <<EOF
+on run argv
+    tell application "Finder"
+        set dmgVolume to (POSIX file (item 1 of argv) as alias)
+        open dmgVolume
+        set dmgWindow to container window of dmgVolume
+        set current view of dmgWindow to icon view
+        set toolbar visible of dmgWindow to false
+        set statusbar visible of dmgWindow to false
+        set pathbar visible of dmgWindow to false
+        set sidebar width of dmgWindow to 0
+        set bounds of dmgWindow to {$DMG_WINDOW_LEFT, $DMG_WINDOW_TOP, $((DMG_WINDOW_LEFT + DMG_WINDOW_WIDTH)), $((DMG_WINDOW_TOP + DMG_TITLE_BAR_HEIGHT + DMG_WINDOW_HEIGHT))}
+        set viewOptions to icon view options of dmgWindow
+        set arrangement of viewOptions to not arranged
+        set icon size of viewOptions to $DMG_ICON_SIZE
+        set background picture of viewOptions to (POSIX file ((item 1 of argv) & "/$DMG_BACKGROUND") as alias)
+        set position of item "$APP_NAME.app" of dmgVolume to {$DMG_APP_X, $DMG_ICON_Y}
+        set position of item "Applications" of dmgVolume to {$DMG_APPLICATIONS_X, $DMG_ICON_Y}
+        update dmgVolume without registering applications
+        delay 1
+        close dmgWindow
+    end tell
+end run
+EOF
+    local waited=0
+    until [ -f "$mount_dir/.DS_Store" ] || [ "$waited" -ge "$DMG_DS_STORE_TIMEOUT" ]; do sleep 1; waited=$((waited + 1)); done
+    [ -f "$mount_dir/.DS_Store" ] || { log_err "Finder did not save the DMG window layout"; exit 1; }
+    rm -rf "$mount_dir/.fseventsd"
+
     # Detach and convert to compressed UDZO
     sync
     hdiutil detach "$mount_dir" >/dev/null 2>&1 || diskutil unmount force "$mount_dir" >/dev/null 2>&1 || true

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Builds the Winamp 2.95 AVS preset pack: build/plugins/Winamp 2.95 AVS Presets.macampplugin (+ .zip for the site).
+"""Builds the Winamp 2.95 AVS preset pack: build/plugins/MacAmp AVS Presets.macampplugin and, for the site and
+the release, build/MacAmp-AVS-Presets-Winamp295.zip (named as MacAmp-FFmpeg-<version>.zip).
 
 The 112 presets Winamp 2.95 installs into Plugins\\avs\\newpicks, taken from the installer as extracted by
 scripts/extract_nsis1.py into docs/winamp295-extracted/raw (local only, docs/ is not in git). The script header
@@ -13,7 +14,8 @@ import os, plistlib, re, shutil, subprocess, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW = os.path.join(ROOT, 'docs', 'winamp295-extracted', 'raw')
 OUT = os.path.join(ROOT, 'build', 'plugins')
-PACK = os.path.join(OUT, 'Winamp 2.95 AVS Presets.macampplugin')
+PACK = os.path.join(OUT, 'MacAmp AVS Presets.macampplugin')
+ARCHIVE = os.path.join(ROOT, 'build', 'MacAmp-AVS-Presets-Winamp295.zip')
 FOLDER = 'newpicks'
 FIRST_BLOCK = 29
 SHARED = {'mig-new4.avs': 27}  # deduplicated by the installer, see above
@@ -46,11 +48,10 @@ for name in names:
 
 with open(os.path.join(PACK, 'Contents', 'Info.plist'), 'wb') as f:
     plistlib.dump({'CFBundleIdentifier': 'alexrel.MacAmp.avs-presets.winamp295',
-                   'CFBundleName': 'Winamp 2.95 AVS Presets',
+                   'CFBundleName': 'MacAmp AVS Presets',
                    'MacAmpPluginKind': 'avs-presets',
                    'MacAmpPluginTitle': 'Winamp 2.95 AVS presets (newpicks)'}, f)
-archive = PACK + '.zip'
-if os.path.exists(archive):
-    os.remove(archive)
-subprocess.run(['ditto', '-c', '-k', '--keepParent', PACK, archive], check=True)
-print(f'{len(names)} presets -> {PACK}\n{archive}')
+if os.path.exists(ARCHIVE):
+    os.remove(ARCHIVE)
+subprocess.run(['ditto', '-c', '-k', '--norsrc', '--noextattr', '--noacl', '--keepParent', PACK, ARCHIVE], check=True)
+print(f'{len(names)} presets -> {PACK}\n{ARCHIVE}')
