@@ -29,7 +29,43 @@ macOS 14 Sonoma or later).
   (on any keyboard layout), global hotkeys and media keys.
 - **Plug-ins:** the optional FFmpeg plug-in plays MKV/WebM/AVI/WMV and WMA/APE/WavPack (see the release assets).
 
-## What's new in 0.9
+## What's new
+
+### 0.11
+
+- **Visualizer Studio:** Space moves through its four groups: MacAmp's own visualizations (now with a scrolling
+  Spectrogram and Waveform), MilkDrop, GOOM and AVS, with the same keys in each. One right-click menu laid out like
+  AVS's picks the presets (MilkDrop's by folder, with Find Preset), and the Studio opens again where it was left.
+- **MilkDrop presets:** projectM's 9,795 Cream of the Crop presets install as a plug-in (see the release assets).
+- **Playlist:** Play, Pause, Stop, Next and Previous bring the playing track back into view, centered.
+- **Shortcuts** as in Winamp 2.95: Page Up/Down, ⌃W, ⇧L Open Directory, ⌃L Open location with its history, ⌃⌥A.
+
+### 0.10
+
+- Advanced Visualization Studio 2.81d as a third visualization plug-in, native on Apple Silicon and
+  Intel: the AVS window's menu and hotkeys, random preset switching with a dissolve, the Winamp AVS Editor, and 35
+  presets. The Visualizer Studio window docks to the player windows like Winamp's AVS window.
+
+### 0.9.3
+
+- The About box banner is animated as in Winamp 2.95 (its lens warp recovered from winamp.exe) and
+  rests sharp; the empty Video window shows the Nullsoft Video picture. Pictures keep their contents in scaled
+  dialogs; the close cursor shows over the close button of the Library, Video, Minibrowser and Studio frames.
+
+### 0.9.2
+
+- Skins whose bitmaps are smaller than the standard keep their own look instead of borrowing the base
+  skin's; time digits come from NUMS_EX.BMP when the skin has it; every skin bitmap is shown in one colour space.
+  The visualizer no longer follows the volume, fills its background while playing, freezes on pause, and the
+  oscilloscope is drawn as in Winamp. No see-through strokes in window frames at 150%; dialogs stay sharp at 150%
+  and 200%; all windows repaint at once when the skin changes.
+
+### 0.9.1
+
+- Windows docked together stop together at the menu bar; the playlist no longer slides under the
+  main window.
+
+### 0.9
 
 - **Interface scale:** Preferences ▸ Display ▸ Interface scale makes every window and dialog 100%, 150% or 200%;
   Double Size still works on top of it.
@@ -48,19 +84,6 @@ macOS 14 Sonoma or later).
   (Preferences ▸ Setup; "Check now" asks at once). It opens the disk image and never replaces itself.
 - **Fixed:** the playlist keeps its height after leaving shade mode; title bar buttons follow the window's
   focus; window title bars stay reachable when the windows don't fit the screen.
-- **0.9.1:** windows docked together stop together at the menu bar; the playlist no longer slides under the
-  main window.
-- **0.9.2:** skins whose bitmaps are smaller than the standard keep their own look instead of borrowing the base
-  skin's; time digits come from NUMS_EX.BMP when the skin has it; every skin bitmap is shown in one colour space.
-  The visualizer no longer follows the volume, fills its background while playing, freezes on pause, and the
-  oscilloscope is drawn as in Winamp. No see-through strokes in window frames at 150%; dialogs stay sharp at 150%
-  and 200%; all windows repaint at once when the skin changes.
-- **0.9.3:** the About box banner is animated as in Winamp 2.95 (its lens warp recovered from winamp.exe) and
-  rests sharp; the empty Video window shows the Nullsoft Video picture. Pictures keep their contents in scaled
-  dialogs; the close cursor shows over the close button of the Library, Video, Minibrowser and Studio frames.
-- **0.10:** Advanced Visualization Studio 2.81d as a third visualization plug-in, native on Apple Silicon and
-  Intel: the AVS window's menu and hotkeys, random preset switching with a dissolve, the Winamp AVS Editor, and 35
-  presets. The Visualizer Studio window docks to the player windows like Winamp's AVS window.
 
 ## Roadmap
 
