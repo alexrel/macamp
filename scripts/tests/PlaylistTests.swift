@@ -315,6 +315,13 @@ func playlistTests() {
         assertTrue(view.isTrackVisible(99), "Last track: scroll is clamped but the track is visible")
         view.scrollToTrack(0, centered: false)
         assertEqual(view.firstVisibleTrackIndex, 0, "Minimal scroll back to the first track")
+        // Page Down / Page Up: a fifth of a page, as in Winamp 2.95
+        let rows = (0..<100).filter { view.isTrackVisible($0) }.count
+        pl.selectedIndices = [10]
+        view.handlePlaylistKey(keyCode: AppConstants.KeyCodes.pageDown, characters: "", flags: [])
+        assertEqual(pl.selectedIndices, [10 + max(1, rows / 5)], "Page Down moves a fifth of the \(rows) visible rows")
+        view.handlePlaylistKey(keyCode: AppConstants.KeyCodes.pageUp, characters: "", flags: [])
+        assertEqual(pl.selectedIndices, [10], "Page Up moves back as far")
     }
 
     testGroup("Playlist MISC: Path Sort, PLS Save, HTML Export") {
@@ -618,6 +625,9 @@ func playlistTests() {
         _ = awaitValue { await PlayerCoordinator.scanPaths([dir.path]) { batch in batches.append(batch.map { $0.url.pathComponents.suffix(from: $0.url.pathComponents.firstIndex(of: dir.lastPathComponent)! + 1).joined(separator: "/") }) } }
         assertEqual(batches, [["Album 2/1.mp3"], ["Album 10/1.mp3"], ["Album 10/Disc/9.mp3"], ["b.mp3", "z.mp3"]],
                     "A folder arrives one directory at a time, in name order, audio files only")
+        var flat: [TrackItem] = []
+        _ = awaitValue { await PlayerCoordinator.scanPaths([dir.path], recursive: false) { flat += $0 } }
+        assertEqual(flat.map(\.url.lastPathComponent), ["b.mp3", "z.mp3"], "Open Directory without Recurse subdirectories: the folder's own files")
         // Shape of a dropped music share: 19 000 tracks in folders of 13, then every tag arriving
         let share = PlaylistModel()
         share.isShuffle = true

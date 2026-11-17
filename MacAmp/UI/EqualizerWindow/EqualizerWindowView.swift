@@ -257,7 +257,7 @@ public class EqualizerWindowView: WinampControlView {
     public func handleEqualizerKey(characters: String, keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
         let mods = flags.intersection([.command, .control, .option, .shift])
         let key = characters.lowercased()
-        if mods == [.control] && key == "s" { showPresetsMenu(); return true }
+        if mods == [.control] && key == "s" { showPresetsMenu(loadOnly: true); return true }
         guard mods.isEmpty, !isShadeMode else { return false }
         if let i = "1234567890".firstIndex(where: { String($0) == key }).map({ "1234567890".distance(from: "1234567890".startIndex, to: $0) }) {
             nudge(bandSliders[i], by: 1)
@@ -290,7 +290,8 @@ public class EqualizerWindowView: WinampControlView {
         needsDisplay = true
     }
     
-    private func showPresetsMenu() {
+    /// The Presets menu; `loadOnly` (⌃S, Winamp's "Load Preset") shows just its Load list
+    private func showPresetsMenu(loadOnly: Bool = false) {
         let menu = NSMenu(title: "Presets")
         menu.autoenablesItems = false
         
@@ -326,6 +327,10 @@ public class EqualizerWindowView: WinampControlView {
         let fromEqfItem = NSMenuItem(title: "From Eqf...", action: #selector(handleLoadEqf), keyEquivalent: "")
         fromEqfItem.target = self
         loadMenu.addItem(fromEqfItem)
+        if loadOnly {
+            loadMenu.popUp(positioning: nil, at: NSPoint(x: 0, y: presetsButton.bounds.height), in: presetsButton)
+            return
+        }
         
         let loadItem = NSMenuItem(title: "Load", action: nil, keyEquivalent: "")
         loadItem.submenu = loadMenu

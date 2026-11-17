@@ -715,19 +715,17 @@ public class PlaylistWindowView: WinampControlView {
     }
     
     public func promptAddURL() {
-        if let entered = Win32Dialog.prompt(
-            title: "Open URL",
-            message: "Enter an Internet location to open:\n(e.g.: http://www.server.com:8000/stream.mp3)",
-            defaultValue: "http://",
-            okTitle: "Open",
-            width: 380
-        ) {
+        let persistence = PersistenceManager.shared
+        if let entered = Win32Dialog.promptLocation(history: persistence.state.recentLocations) {
             var urlString = entered.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !urlString.isEmpty && urlString != "http://" && urlString != "https://" else { return }
             if !urlString.lowercased().hasPrefix("http://") && !urlString.lowercased().hasPrefix("https://") && !urlString.lowercased().hasPrefix("ftp://") {
                 urlString = "http://" + urlString
             }
             if let url = URL(string: urlString) {
+                persistence.state.recentLocations = Array(([urlString] + persistence.state.recentLocations.filter { $0 != urlString })
+                    .prefix(AppConstants.Playlist.recentLocationsLimit))
+                persistence.scheduleSave()
                 let wasEmpty = playlist.tracks.isEmpty
                 let ext = url.pathExtension.lowercased()
                 Task { @MainActor [weak self] in
@@ -813,16 +811,7 @@ public class PlaylistWindowView: WinampControlView {
     }
     
     @objc private func handleScrollToCurrentTrack() {
-        if let idx = playlist.currentIndex {
-            let rowH = AppConstants.Playlist.trackRowHeight
-            let topH = AppConstants.Playlist.Layout.topBarHeight
-            let botH = AppConstants.Playlist.Layout.bottomBarHeight
-            let visibleRows = Int((bounds.height - topH - botH) / rowH)
-            if idx < scrollOffset || idx >= scrollOffset + visibleRows {
-                scrollOffset = max(0, idx - visibleRows / 2)
-                needsDisplay = true
-            }
-        }
+        PlayerCoordinator.shared.showCurrentTrackInPlaylist()
     }
     
     // MARK: - Menu Actions
@@ -835,12 +824,11 @@ public class PlaylistWindowView: WinampControlView {
     }
     
     @objc private func handleAddDirectory() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        if panel.runModal() == .OK, let dirURL = panel.url {
+        let coordinator = PlayerCoordinator.shared
+        if let folders = coordinator.chooseDirectories() {
             Task { @MainActor in
-                playlist.add(tracks: await PlayerCoordinator.shared.collectTracks(fromPaths: [dirURL.path]))
+                playlist.add(tracks: await coordinator.collectTracks(fromPaths: folders.map(\.path),
+                                                                     recursive: coordinator.persistence.state.recurseSubdirectories))
                 needsDisplay = true
             }
         }
@@ -1280,11 +1268,11 @@ public class PlaylistWindowView: WinampControlView {
             return true
         case AppConstants.KeyCodes.pageUp:
             guard count > 0 else { return true }
-            moveCursor(to: max(0, currentCursor() - visibleRowCount()), extendSelection: extend)
+            moveCursor(to: max(0, currentCursor() - pageStep), extendSelection: extend)
             return true
         case AppConstants.KeyCodes.pageDown:
             guard count > 0 else { return true }
-            moveCursor(to: min(count - 1, max(0, currentCursor()) + visibleRowCount()), extendSelection: extend)
+            moveCursor(to: min(count - 1, max(0, currentCursor()) + pageStep), extendSelection: extend)
             return true
         case AppConstants.KeyCodes.home:
             guard count > 0 else { return true }
@@ -1294,9 +1282,6 @@ public class PlaylistWindowView: WinampControlView {
             guard count > 0 else { return true }
             moveCursor(to: count - 1, extendSelection: extend)
             return true
-        case AppConstants.KeyCodes.space:
-            PlayerCoordinator.shared.handlePlayPause()
-            return true
         default:
             break
         }
@@ -1305,7 +1290,7 @@ public class PlaylistWindowView: WinampControlView {
             contextEditPlaylistEntry()
             return true
         }
-        if chars == "a" && (flags.contains(.command) || flags.contains(.control)) {
+        if chars == "a" && (flags.contains(.command) || flags.contains(.control)) && !flags.contains(.option) { // ⌃⌥A: playlist on top
             playlist.selectAll()
             needsDisplay = true
             return true
@@ -1351,6 +1336,9 @@ public class PlaylistWindowView: WinampControlView {
         needsDisplay = true
     }
     
+    /// Page Up / Page Down move by a fifth of a page, as in Winamp 2.95
+    private var pageStep: Int { max(1, visibleRowCount() / 5) }
+
     private func visibleRowCount() -> Int {
         max(1, Int(scrollableRect.height / AppConstants.Playlist.trackRowHeight))
     }

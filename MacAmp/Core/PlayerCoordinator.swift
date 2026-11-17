@@ -37,8 +37,6 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     // State used by the extensions (PlayerCoordinator+*.swift)
     var blinkTimer: Timer?
     var isBlinkVisible: Bool = true
-    /// Track whose audio was last loaded (playing/paused); used to decide whether the playlist follows track changes.
-    var lastLoadedTrackID: UUID?
     public internal(set) var stopAfterCurrent = false
     /// Finder opens that arrive before the windows exist (launch by double-clicking a file)
     var isStarted = false
@@ -391,7 +389,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             guard let self else { return }
             self.persistence.state.isPlaylistVisible = isVisible
             if isVisible {
-                self.plWindow.level = self.persistence.state.isAlwaysOnTop ? .floating : .normal
+                self.plWindow.level = self.persistence.state.playlistAlwaysOnTop ? .floating : .normal
                 self.bringAllWindowsToFront()
             } else {
                 self.plWindow.orderOut(nil)

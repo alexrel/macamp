@@ -34,17 +34,10 @@ extension PlayerCoordinator {
         case AppConstants.KeyCodes.downArrow: // Volume down 5%
             decreaseVolume(by: 0.05)
             return true
-        case AppConstants.KeyCodes.space: // Toggle Pause/Resume
-            audioEngine.togglePause()
-            return true
         case AppConstants.KeyCodes.returnKey: // Play selected or current track
             if let cur = playlist.currentTrack ?? playlist.tracks.first {
                 loadAndPlay(track: cur)
             }
-            return true
-        case AppConstants.KeyCodes.deleteKey: // Remove selected in playlist
-            playlist.removeSelected()
-            plView.needsDisplay = true
             return true
         case AppConstants.KeyCodes.f3: // Jump to file
             showJumpToFileWindow()
@@ -69,9 +62,12 @@ extension PlayerCoordinator {
         case ([.control], "d"): toggleDoubleSize(); return true
         case ([.control], "j"): showJumpToTimeWindow(); return true
         case ([.control], "a"): handleToggleAlwaysOnTop(); return true
+        case ([.control, .option], "a"): handleTogglePlaylistAlwaysOnTop(); return true
         case ([.control], "e"): handleToggleEasyMove(); return true
         case ([.control], "t"): toggleTimeDisplayMode(); return true
-        case ([.control], "w"): toggleMainShade(); return true
+        case ([.control], "w"): // windowshade of the window in focus
+            if NSApp.keyWindow === eqWindow { toggleEqShade() } else if NSApp.keyWindow === plWindow { togglePlShade() } else { toggleMainShade() }
+            return true
         case ([.control], "z"): handleStartOfList(); return true
         case ([.control], "v"): handleToggleStopAfterCurrent(); return true
         case ([.control], "k"): handleSelectVisPlugin(); return true

@@ -69,6 +69,7 @@ extension PlayerCoordinator {
         if s.isAlwaysOnTop {
             setAlwaysOnTop(true)
         }
+        plWindow.level = s.playlistAlwaysOnTop ? .floating : .normal
         
         // Load saved playlist
         let savedTracks = persistence.loadPlaylist()
@@ -86,7 +87,6 @@ extension PlayerCoordinator {
             playlist.currentIndex = targetIndex
             playlist.selectedIndices = [targetIndex]
             plView.scrollToTrack(targetIndex, centered: true)
-            lastLoadedTrackID = playlist.tracks[targetIndex].id
             
             // Playlists saved by older versions guessed artists from file names; re-read them once in the background
             playlist.migrateLegacyFileNameMetadata { [weak self] in

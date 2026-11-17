@@ -497,6 +497,7 @@ extension PlayerCoordinator {
     
     @objc public func handlePlay() {
         applyRandomSkinIfNeeded()
+        showCurrentTrackInPlaylist()
         if audioEngine.status == .paused {
             audioEngine.play()
             MediaKeyController.shared.updateNowPlayingInfo()
@@ -511,6 +512,7 @@ extension PlayerCoordinator {
     
     @objc public func handlePause() {
         audioEngine.togglePause()
+        showCurrentTrackInPlaylist()
         MediaKeyController.shared.updateNowPlayingInfo()
         StatusBarManager.shared.updateStatus()
     }
@@ -518,6 +520,7 @@ extension PlayerCoordinator {
     @objc public func handlePlayPause() {
         if audioEngine.status == .playing {
             audioEngine.togglePause()
+            showCurrentTrackInPlaylist()
         } else {
             handlePlay()
         }
@@ -544,6 +547,7 @@ extension PlayerCoordinator {
         mainView.seekSlider.value = 0.0
         mainView.visualizer.clear()
         mainView.needsDisplay = true
+        showCurrentTrackInPlaylist()
         MediaKeyController.shared.updateNowPlayingInfo()
         StatusBarManager.shared.updateStatus()
     }

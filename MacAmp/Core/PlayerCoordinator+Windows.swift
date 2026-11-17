@@ -8,12 +8,20 @@ extension PlayerCoordinator {
         let level: NSWindow.Level = enabled ? .floating : .normal
         mainWindow?.level = level
         eqWindow?.level = level
-        plWindow?.level = level
+        plWindow?.level = persistence.state.playlistAlwaysOnTop ? .floating : .normal
         for window in [libraryWindow, video?.window, browser?.window] { window?.level = level }
         bringAllWindowsToFront()
         mainView?.alwaysOnTopButton?.isSelected = enabled
     }
     
+    /// ⌃⌥A: Always On Top for the playlist editor alone (⌃A covers every other window)
+    @objc public func handleTogglePlaylistAlwaysOnTop() {
+        persistence.state.playlistAlwaysOnTop.toggle()
+        persistence.scheduleSave()
+        plWindow?.level = persistence.state.playlistAlwaysOnTop ? .floating : .normal
+        bringAllWindowsToFront()
+    }
+
     @objc public func handleToggleVisualizerStudio() {
         toggleVisualizerStudio()
     }

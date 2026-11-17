@@ -207,6 +207,12 @@ public struct AppState: Codable {
     /// Options ▸ Sort files on load (off in 2.95)
     public var sortFilesOnLoadStorage: Bool? = nil
     public var sortFilesOnLoad: Bool { get { sortFilesOnLoadStorage ?? false } set { sortFilesOnLoadStorage = newValue } }
+    /// Open Directory ▸ "Recurse subdirectories"
+    public var recurseSubdirectoriesStorage: Bool? = nil
+    public var recurseSubdirectories: Bool { get { recurseSubdirectoriesStorage ?? true } set { recurseSubdirectoriesStorage = newValue } }
+    /// Open location: the addresses entered last, newest first (its drop-down list)
+    public var recentLocationsStorage: [String]? = nil
+    public var recentLocations: [String] { get { recentLocationsStorage ?? [] } set { recentLocationsStorage = newValue } }
     /// Display ▸ Always show Clutterbar (on in 2.95)
     public var alwaysShowClutterbarStorage: Bool? = nil
     public var alwaysShowClutterbar: Bool { get { alwaysShowClutterbarStorage ?? true } set { alwaysShowClutterbarStorage = newValue } }
@@ -441,6 +447,12 @@ public struct AppState: Codable {
     }
     public var isPlaylistShade: Bool = false
     public var isAlwaysOnTop: Bool = false
+    /// The playlist editor's own Always On Top (⌃⌥A); until it is set it follows ⌃A's, as before it existed
+    public var playlistAlwaysOnTopStorage: Bool? = nil
+    public var playlistAlwaysOnTop: Bool {
+        get { playlistAlwaysOnTopStorage ?? isAlwaysOnTop }
+        set { playlistAlwaysOnTopStorage = newValue }
+    }
     
     public var windowPositions: [String: [Double]] = [:]
     /// Winamp's default playlist: minimum height plus 4 resize steps of 29 px (275 × 232)

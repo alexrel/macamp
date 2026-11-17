@@ -18,14 +18,29 @@ extension PlayerCoordinator {
     }
     
     public func openDirectoryDialog() {
+        guard let folders = chooseDirectories() else { return }
+        handleDroppedFiles(folders.map(\.path), recursive: persistence.state.recurseSubdirectories)
+    }
+
+    /// Winamp's "Open Directory": folders, with its "Recurse subdirectories" box (remembered) under the Mac panel
+    func chooseDirectories() -> [URL]? {
         let panel = NSOpenPanel()
+        panel.title = "Open Directory"
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = true
-        if panel.runModal() == .OK {
-            let paths = panel.urls.map { $0.path }
-            handleDroppedFiles(paths)
-        }
+        let recurse = NSButton(checkboxWithTitle: "Recurse subdirectories", target: nil, action: nil)
+        recurse.state = persistence.state.recurseSubdirectories ? .on : .off
+        recurse.sizeToFit()
+        let accessory = NSView(frame: recurse.frame.insetBy(dx: -12, dy: -8))
+        recurse.setFrameOrigin(NSPoint(x: 12, y: 8))
+        accessory.addSubview(recurse)
+        panel.accessoryView = accessory
+        panel.isAccessoryViewDisclosed = true
+        guard panel.runModal() == .OK else { return nil }
+        persistence.state.recurseSubdirectories = recurse.state == .on
+        persistence.scheduleSave()
+        return panel.urls
     }
     
     public func openURLDialog() {
@@ -87,10 +102,10 @@ extension PlayerCoordinator {
     // MARK: - Drag & Drop Handling
     /// Files dropped on the main or equalizer window: appended to the playlist; if nothing is playing,
     /// the first dropped track starts.
-    public func handleDroppedFiles(_ paths: [String]) {
+    public func handleDroppedFiles(_ paths: [String], recursive: Bool = true) {
         Task { @MainActor in
             var first = true
-            await collectTracks(fromPaths: paths) { batch in
+            await collectTracks(fromPaths: paths, recursive: recursive) { batch in
                 let wasStopped = (audioEngine.status == .stopped)
                 playlist.add(tracks: batch)
                 plView.needsDisplay = true
@@ -136,15 +151,15 @@ extension PlayerCoordinator {
     /// Turns dropped / opened paths into playlist entries: audio files, folders (recursively), M3U/PLS.
     /// Skins (.wsz/.zip or an unpacked skin folder) are installed and applied instead.
     /// Files are read off the main thread, so a big folder doesn't freeze the windows.
-    func collectTracks(fromPaths allPaths: [String]) async -> [TrackItem] {
+    func collectTracks(fromPaths allPaths: [String], recursive: Bool = true) async -> [TrackItem] {
         var tracks: [TrackItem] = []
-        await collectTracks(fromPaths: allPaths) { tracks += $0 }
+        await collectTracks(fromPaths: allPaths, recursive: recursive) { tracks += $0 }
         return tracks
     }
 
     /// The same, handing the tracks over as they are found: a folder arrives one directory at a time, as in Winamp,
     /// instead of after its whole tree is read (minutes on a network share).
-    func collectTracks(fromPaths allPaths: [String], each: ([TrackItem]) -> Void) async {
+    func collectTracks(fromPaths allPaths: [String], recursive: Bool = true, each: ([TrackItem]) -> Void) async {
         // Plug-ins (.macampplugin) are installed, after the user says yes
         let plugins = allPaths.filter { $0.lowercased().hasSuffix(".macampplugin") }
         plugins.forEach(confirmAndInstallPlugin)
@@ -159,7 +174,7 @@ extension PlayerCoordinator {
         }
         let (batches, continuation) = AsyncStream.makeStream(of: [TrackItem].self)
         let scan = Task.detached(priority: .userInitiated) {
-            let skins = await PlayerCoordinator.scanPaths(paths) { continuation.yield($0) }
+            let skins = await PlayerCoordinator.scanPaths(paths, recursive: recursive) { continuation.yield($0) }
             continuation.finish()
             return skins
         }
@@ -221,7 +236,7 @@ extension PlayerCoordinator {
 
     /// Hands the entries of `paths` to `found` in order, non-empty batches as they turn up; returns the skins among them.
     /// Files and playlists come with their tags read; a folder comes by file name (see scanFolder).
-    nonisolated static func scanPaths(_ paths: [String], found: ([TrackItem]) -> Void) async -> [URL] {
+    nonisolated static func scanPaths(_ paths: [String], recursive: Bool = true, found: ([TrackItem]) -> Void) async -> [URL] {
         var skins: [URL] = []
         var loose: [TrackItem] = [] // files and playlist entries: their tags are read at once, in parallel
         func flush() async {
@@ -252,7 +267,7 @@ extension PlayerCoordinator {
                         continue
                     }
                     await flush()
-                    await scanFolder(url, found: found)
+                    await scanFolder(url, recursive: recursive, found: found)
                 } else if audioExtensions.contains(ext) {
                     loose.append(TrackItem.entry(url: url))
                 }
@@ -264,7 +279,7 @@ extension PlayerCoordinator {
 
     /// A folder's audio files, recursively and in name order like Winamp's "Add directory", one directory per batch.
     /// They go in by file name: PlaylistModel.prefetchMetadata reads tags and lengths once they are in the list.
-    private nonisolated static func scanFolder(_ folder: URL, found: ([TrackItem]) -> Void) async {
+    private nonisolated static func scanFolder(_ folder: URL, recursive: Bool, found: ([TrackItem]) -> Void) async {
         let audioExtensions = AppConstants.Audio.supportedExtensions
         let items = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isDirectoryKey])) ?? [])
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
@@ -276,9 +291,10 @@ extension PlayerCoordinator {
         var entries: [TrackItem] = []
         for item in items where !Task.isCancelled {
             if (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                guard recursive else { continue }
                 if !entries.isEmpty { found(entries) }
                 entries = []
-                await scanFolder(item, found: found)
+                await scanFolder(item, recursive: true, found: found)
             } else if let sheet = sheets.first(where: { $0.0 == item }) {
                 // CUE tracks are read now: prefetch would give them the album file's tags and length
                 entries += await TrackItem.resolveAll(CueSheet.parse(content: sheet.1, baseURL: folder))

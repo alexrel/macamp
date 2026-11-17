@@ -157,6 +157,21 @@ func interfaceTests() {
         assertTrue(key("w", [.option]) && c.mainWindow.isVisible == false, "⌥W hides the main window")
         assertTrue(key("w", [.option]) && c.mainWindow.isVisible, "⌥W shows it again")
 
+        // ⌃A: every window but the playlist editor; ⌃⌥A: the playlist editor alone
+        let onTop = (c.persistence.state.isAlwaysOnTop, c.persistence.state.playlistAlwaysOnTopStorage)
+        defer {
+            c.persistence.state.playlistAlwaysOnTopStorage = onTop.1
+            c.setAlwaysOnTop(onTop.0)
+        }
+        c.setAlwaysOnTop(false)
+        c.persistence.state.playlistAlwaysOnTopStorage = false
+        assertTrue(key("a", [.control, .option]) && c.plWindow.level == .floating && c.mainWindow.level == .normal,
+                   "⌃⌥A puts only the playlist editor on top")
+        assertTrue(key("a", [.control]) && c.mainWindow.level == .floating && c.eqWindow.level == .floating,
+                   "⌃A puts the other windows on top")
+        assertTrue(key("a", [.control]) && c.mainWindow.level == .normal && c.plWindow.level == .floating,
+                   "and leaves the playlist editor's own setting alone")
+
         // Start of list, 10 tracks back / fwd (clamped at the ends)
         let wav = try makeTestWAV(named: "menu-jump.wav", seconds: 3.0)
         let saved = c.playlist.tracks
@@ -172,6 +187,34 @@ func interfaceTests() {
         assertTrue(spinRunLoop(until: { c.playlist.currentIndex == 4 }, timeout: 3), "10 tracks back: 14 -> 4")
         assertTrue(key("z", [.control]), "⌃Z handled")
         assertTrue(spinRunLoop(until: { c.playlist.currentIndex == 0 }, timeout: 3), "⌃Z: start of list")
+
+        // Winamp: every transport action scrolls the playlist back to the playing track, wherever the user scrolled
+        c.playlist.add(tracks: (15..<300).map { TrackItem(url: wav, title: "t\($0)", duration: 3) })
+        let list = c.plView!
+        c.handleNext()
+        assertTrue(spinRunLoop(until: { c.playlist.currentIndex == 1 && c.audioEngine.status == .playing }, timeout: 3), "Next plays track 1")
+        for (name, action) in [("Next", c.handleNext), ("Pause", c.handlePause), ("Stop", c.handleStop), ("Play", c.handlePlay)] {
+            list.scrollToTrack(299, centered: false)
+            assertTrue(!list.isTrackVisible(c.playlist.currentIndex ?? 0), "\(name): scrolled away from the playing track")
+            action()
+            assertTrue(spinRunLoop(until: { list.isTrackVisible(c.playlist.currentIndex ?? -1) }, timeout: 3),
+                       "\(name) brings the playing track back into view")
+        }
+        // On screen the list stays put; past its edge it jumps a screen, the track centered (rows as the window is tall)
+        assertTrue(spinRunLoop(until: { c.audioEngine.status == .playing }, timeout: 3), "Play has loaded its track")
+        list.scrollToTrack(150, centered: true)
+        let firstRow = list.firstVisibleTrackIndex
+        c.playlist.currentIndex = firstRow + 1
+        c.handleNext()
+        assertTrue(spinRunLoop(until: { PersistenceManager.shared.state.lastPlayedTrackIndex == firstRow + 2 }, timeout: 3),
+                   "Next steps one track and loads it")
+        assertEqual(list.firstVisibleTrackIndex, firstRow, "A track still on screen does not scroll the list")
+        let rows = (0..<300).filter { list.isTrackVisible($0) }.count
+        c.playlist.currentIndex = firstRow + rows - 1
+        c.handleNext()
+        let centered = firstRow + rows - rows / 2
+        assertTrue(spinRunLoop(until: { list.firstVisibleTrackIndex == centered }, timeout: 3),
+                   "Past the last row the next screen shows it in the middle (first row \(list.firstVisibleTrackIndex), expected \(centered))")
 
         // Playlist item menu (docs/UI-screens/playlist item menu.png)
         let pl = c.plView!

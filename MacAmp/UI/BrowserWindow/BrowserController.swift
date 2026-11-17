@@ -111,6 +111,7 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKScriptMessageHa
         case ([.control], _, "r"): webView.reload()
         case ([.control, .option], _, "r"): loadStartPage()
         case ([.control], _, "o"): promptLocation()
+        case ([.control], _, "l"): frameView.popUp(menu(), button: 4) // Winamp: Ctrl+L opens the 'Go' menu
         default: return false
         }
         return true

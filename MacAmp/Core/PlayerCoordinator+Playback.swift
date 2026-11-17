@@ -68,16 +68,8 @@ extension PlayerCoordinator {
                 self.videoTrackLoaded(track.url)
                 await MainActor.run {
                     if let idx = self.playlist.tracks.firstIndex(where: { $0.id == track.id }) {
-                        // Follow the playing track, unless the user has scrolled away from the previous one
-                        // (playlist.next() already moved currentIndex, so use the track that was actually playing)
-                        let wasFollowing = self.lastLoadedTrackID
-                            .flatMap { id in self.playlist.tracks.firstIndex(where: { $0.id == id }) }
-                            .map { self.plView.isTrackVisible($0) } ?? true
                         self.playlist.currentIndex = idx
-                        self.lastLoadedTrackID = track.id
-                        if wasFollowing {
-                            self.plView.scrollToTrack(idx, centered: false)
-                        }
+                        self.showCurrentTrackInPlaylist()
                         self.persistence.state.lastPlayedTrackIndex = idx
                         self.persistence.state.lastPlayedTrackURL = track.url.absoluteString
                         self.persistence.state.lastPlayedTrackTime = 0.0
@@ -258,8 +250,16 @@ extension PlayerCoordinator {
         MainMenuManager.shared.updateStates()
     }
     
+    /// Winamp brings the playing track back into view on every transport action: the list stays put while the
+    /// track is on screen and jumps a screen, track centered, once it is not
+    func showCurrentTrackInPlaylist() {
+        guard let index = playlist.currentIndex, !plView.isTrackVisible(index) else { return }
+        plView.scrollToTrack(index, centered: true)
+    }
+
     public func playNext() {
         if let next = playlist.next() {
+            showCurrentTrackInPlaylist() // at once, not after the load
             loadAndPlay(track: next)
         } else {
             audioEngine.stop()
@@ -270,6 +270,7 @@ extension PlayerCoordinator {
     
     public func playPrevious() {
         if let prev = playlist.previous() {
+            showCurrentTrackInPlaylist()
             loadAndPlay(track: prev)
         }
     }

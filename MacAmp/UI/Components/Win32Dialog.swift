@@ -13,6 +13,15 @@ public enum Win32Dialog {
         return accepted ? model.text : nil
     }
 
+    /// Winamp's "Open location": an address typed or picked from the ones entered before. Nil on Cancel / Esc.
+    static func promptLocation(history: [String]) -> String? {
+        let model = PromptModel(text: "")
+        let accepted = runModal(title: "Open location", width: 296) { finish in
+            LocationView(history: history, model: model, finish: finish)
+        }
+        return accepted ? model.text : nil
+    }
+
     /// Several labeled text fields (e.g. Edit bookmark: Title, File). Returns the values, or nil on Cancel / Esc.
     public static func promptFields(title: String, fields: [(label: String, value: String)], width: CGFloat = 400) -> [String]? {
         let model = FieldsModel(values: fields.map(\.value))
@@ -232,6 +241,33 @@ public enum Win32Dialog {
                 HStack(spacing: 6) {
                     Spacer()
                     DialogButton(okTitle, isDefault: true) { finish(true) }
+                    DialogButton("Cancel") { finish(false) }
+                }
+                .padding(.top, 4)
+            }
+            .padding(12)
+            .background(Win32Colors.dialogBg)
+        }
+    }
+
+    /// As Winamp 2.95's dialog: two lines of text, an editable drop-down of earlier addresses, Open / Cancel on the left
+    private struct LocationView: View {
+        let history: [String]
+        @ObservedObject var model: PromptModel
+        let finish: (Bool) -> Void
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(verbatim: "Enter an Internet location to open here:\nFor example: http://www.server.com/file.mp3") // verbatim: no link
+                    .font(.system(size: 11))
+                    .foregroundColor(Win32Colors.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                Win32TextField(text: $model.text, autoFocus: .selectAll)
+                    .overlay(alignment: .trailing) {
+                        Win32ComboBox(selection: $model.text, options: history.map { (value: $0, title: $0) }, label: "")
+                    }
+                HStack(spacing: 6) {
+                    DialogButton("Open", isDefault: true) { finish(true) }
                     DialogButton("Cancel") { finish(false) }
                 }
                 .padding(.top, 4)
