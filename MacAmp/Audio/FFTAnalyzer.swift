@@ -6,11 +6,21 @@ import os
 /// The mixer publishes a bounded stereo snapshot. Only the visualizer's render thread calls its engine.
 enum VisualizerPCMFeed {
     private static let capacity = Int(AppConstants.Audio.bufferSize)
+    /// Frames per envelope point: ~6 ms at 44.1 kHz, the scrolling waveform's column
+    static let envelopeBlock = 256
+    /// Envelope points kept for the reader, about 1.5 s at 44.1 kHz
+    private static let envelopeCapacity = 256
 
     private struct Buffer: Sendable {
         var isActive = false
         var frameCount = 0
+        var sampleRate = 44_100.0
         var samples = [Float](repeating: 0, count: capacity * 2)
+        /// Every buffer's mono min, max pairs, one pair a block, until the reader takes them
+        var envelope: [Float] = []
+        var blockLow: Float = 0
+        var blockHigh: Float = 0
+        var blockFrames = 0
     }
 
     private static let buffer = OSAllocatedUnfairLock(initialState: Buffer())
@@ -18,7 +28,11 @@ enum VisualizerPCMFeed {
     static func setActive(_ active: Bool) {
         buffer.withLock {
             $0.isActive = active
-            if !active { $0.frameCount = 0 }
+            if !active {
+                $0.frameCount = 0
+                $0.envelope.removeAll(keepingCapacity: true)
+                $0.blockFrames = 0
+            }
         }
     }
 
@@ -37,8 +51,39 @@ enum VisualizerPCMFeed {
                 buffer.samples[frame * 2 + 1] = right[start + frame * stride] * gain
             }
             buffer.frameCount = count
+            buffer.sampleRate = audio.format.sampleRate
+            // The envelope covers all of the audio, not only the snapshot's last frames
+            for frame in 0..<Int(audio.frameLength) {
+                let sample = (left[frame * stride] + right[frame * stride]) * 0.5 * gain
+                if buffer.blockFrames == 0 {
+                    buffer.blockLow = sample
+                    buffer.blockHigh = sample
+                } else {
+                    buffer.blockLow = min(buffer.blockLow, sample)
+                    buffer.blockHigh = max(buffer.blockHigh, sample)
+                }
+                buffer.blockFrames += 1
+                guard buffer.blockFrames == envelopeBlock else { continue }
+                buffer.blockFrames = 0
+                if buffer.envelope.count < envelopeCapacity * 2 {
+                    buffer.envelope.append(buffer.blockLow)
+                    buffer.envelope.append(buffer.blockHigh)
+                }
+            }
         }
     }
+
+    /// Takes the envelope gathered since the last call: min, max pairs, oldest first
+    static func consumeEnvelope(_ read: ([Float]) -> Void) {
+        buffer.withLockUnchecked { buffer in
+            guard !buffer.envelope.isEmpty else { return }
+            read(buffer.envelope)
+            buffer.envelope.removeAll(keepingCapacity: true)
+        }
+    }
+
+    /// Rate of the last buffer (the mixer's output), for visualizers that map FFT bins to frequencies
+    static var sampleRate: Double { buffer.withLock { $0.sampleRate } }
 
     static func consume(_ read: (UnsafePointer<Float>, Int) -> Void) {
         buffer.withLockUnchecked { buffer in

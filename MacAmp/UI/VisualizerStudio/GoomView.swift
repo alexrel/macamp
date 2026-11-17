@@ -7,8 +7,6 @@ final class GoomView: NSView {
     private static let log = Logger(subsystem: "alexrel.MacAmp", category: "GOOM")
     private static let pcmFrames = 512
     static let cubeTextureSize = 256
-    private static let encoreLength = 32 * 60
-    private static let titleDuration = 200
     private static let colorSpace = CGColorSpaceCreateDeviceRGB()
 
     private var samples = [Float](repeating: 0, count: pcmFrames * 2)
@@ -16,14 +14,8 @@ final class GoomView: NSView {
     private var dimensions: (width: Int, height: Int, cinemascope: Bool)?
     private var effect: Int32 = 0
     private(set) var lastForcedEffect: Int?
-    private var lastTitle: String?
-    private let unicodeTitle = NSTextField(labelWithString: "")
-    private var unicodeTitleFrames = 0
-    private var messageIndex = 0
-    private var encore = 0
-    private var dismissCredits = false
     private var frameCount = 0
-    private var fps: Float = 0
+    private(set) var fps: Float = 0
     private var measurementStart = CACurrentMediaTime()
 
     private var sceneView: SCNView?
@@ -31,12 +23,9 @@ final class GoomView: NSView {
     private let camera = SCNNode()
     private let texture = SCNMaterial()
     private var cameraDistance: CGFloat = 5
-    private var creditsRotationFrames = 0
-    private var creditsRotationStart: CGFloat = 0
     private var displayActivity: NSObjectProtocol?
 
     var isCube: Bool { sceneView != nil }
-    var isShowingCredits: Bool { encore > 0 }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -45,10 +34,6 @@ final class GoomView: NSView {
         layer?.backgroundColor = NSColor.black.cgColor
         layer?.contentsGravity = .resize
         layer?.magnificationFilter = .nearest
-        unicodeTitle.alignment = .center
-        unicodeTitle.lineBreakMode = .byTruncatingTail
-        unicodeTitle.isHidden = true
-        addSubview(unicodeTitle)
         setAccessibilityLabel("What A Goom!")
     }
 
@@ -59,12 +44,6 @@ final class GoomView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func layout() {
-        super.layout()
-        let title = bounds.insetBy(dx: 12, dy: 0)
-        unicodeTitle.frame = NSRect(x: title.minX, y: title.midY - 10, width: title.width, height: 20)
-    }
 
     func setVisible(_ visible: Bool) {
         if visible && displayActivity == nil {
@@ -83,13 +62,6 @@ final class GoomView: NSView {
         effect = Int32(number)
         lastForcedEffect = number
     }
-    func showCredits() { encore = Self.encoreLength }
-
-    func hideCredits() {
-        encore = 0
-        dismissCredits = true
-    }
-
     func moveCamera(by step: CGFloat) {
         cameraDistance = min(100, max(2, cameraDistance + step))
     }
@@ -119,12 +91,12 @@ final class GoomView: NSView {
         view.scene = scene
         view.pointOfView = camera
         view.antialiasingMode = .none
-        addSubview(view, positioned: .below, relativeTo: unicodeTitle)
+        addSubview(view)
         sceneView = view
-        creditsRotationFrames = 0
     }
 
-    func renderFrame(playing: Bool, trackTitle: String?) {
+    /// The title and the frame rate are the Studio's hints now, shown the same way over every visualizer
+    func renderFrame(playing: Bool) {
         let options = PersistenceManager.shared.state.goomOptions
         let width = isCube ? Self.cubeTextureSize : options.renderWidth
         let height = isCube ? Self.cubeTextureSize : options.renderHeight
@@ -147,24 +119,8 @@ final class GoomView: NSView {
         } else {
             sampleCount = 0
         }
-        var message: String?
-        if dismissCredits {
-            message = ""
-            dismissCredits = false
-        } else if encore == Self.encoreLength {
-            let messages = [
-                "What a GOOM! version 1.99.4\n\n\n\n\n\n\n\nan iOS software production.\n\n\n\nhttp://ios.free.fr",
-                macamp_goom_credits().map { String(cString: $0) } ?? "",
-                "copyright (c)2000-2003, by jeko"
-            ]
-            message = messages[messageIndex]
-            messageIndex = (messageIndex + 1) % messages.count
-        }
-
-        let titleUpdate = updateTitle(options.showTitle ? trackTitle : nil)
         let pixels = samples.withUnsafeBufferPointer {
-            macamp_goom_render($0.baseAddress, UInt32(sampleCount), effect, options.showFPS ? fps : -1,
-                               titleUpdate, message)
+            macamp_goom_render($0.baseAddress, UInt32(sampleCount), effect, -1, nil, nil)
         }
         effect = 0
         if let pixels {
@@ -183,7 +139,6 @@ final class GoomView: NSView {
                 }
             }
         }
-        encore = max(0, encore - 1)
         frameCount += 1
         let now = CACurrentMediaTime()
         if now - measurementStart >= 1 {
@@ -193,43 +148,11 @@ final class GoomView: NSView {
         }
     }
 
-    private func updateTitle(_ title: String?) -> String? {
-        defer {
-            unicodeTitle.isHidden = unicodeTitleFrames == 0
-            if unicodeTitleFrames > 0 { unicodeTitleFrames -= 1 }
-        }
-        guard title != lastTitle else { return nil }
-        lastTitle = title
-        // The original bitmap font only handles ASCII. Use AppKit's font fallback for other titles.
-        if let title, title.utf8.contains(where: { $0 >= 0x80 }) {
-            unicodeTitle.attributedStringValue = NSAttributedString(string: title, attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 15, weight: .bold),
-                .foregroundColor: NSColor.white,
-                .strokeColor: NSColor.black,
-                .strokeWidth: -3
-            ])
-            unicodeTitleFrames = Self.titleDuration
-            return ""
-        }
-        unicodeTitleFrames = 0
-        return title ?? ""
-    }
-
     private func updateCube() {
         let radians = CGFloat.pi / 180
-        let creditFrames = [32 * 15, 32 * 20, 32 * 35]
-        if isShowingCredits && encore > Self.encoreLength - creditFrames[messageIndex] {
-            if creditsRotationFrames == 0 { creditsRotationStart = cube.eulerAngles.z }
-            creditsRotationFrames = min(60, creditsRotationFrames + 1)
-            let progress = CGFloat(creditsRotationFrames) / 60
-            cube.eulerAngles = SCNVector3(0, 0, creditsRotationStart + (-90 * radians - creditsRotationStart) * progress)
-            camera.position.z = cameraDistance + (4 - cameraDistance) * progress
-        } else {
-            creditsRotationFrames = 0
-            cube.eulerAngles.x += 0.3 * radians
-            cube.eulerAngles.y += 0.2 * radians
-            cube.eulerAngles.z += 0.4 * radians
-            camera.position.z = cameraDistance
-        }
+        cube.eulerAngles.x += 0.3 * radians
+        cube.eulerAngles.y += 0.2 * radians
+        cube.eulerAngles.z += 0.4 * radians
+        camera.position.z = cameraDistance
     }
 }

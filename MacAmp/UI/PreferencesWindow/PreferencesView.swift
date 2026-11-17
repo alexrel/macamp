@@ -1139,17 +1139,15 @@ public struct PreferencesView: View {
     private var milkdropSection: some View {
         Win32GroupBox("Milkdrop (modern)") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Use Tab to switch Studio modes. In MilkDrop, L opens presets. Use ↑ / ↓, scroll or click to load the highlighted preset immediately. , / . switch presets directly and F5 shows FPS.")
+                Text("In every Studio mode: right-click for presets, , / . previous / next preset, Space the next mode, F or ⌥Return full screen, Esc close. MilkDrop lists its presets by folder, with Find Preset. Get presets: projectM's Cream of the Crop (9,795 presets); open it with MacAmp to install.")
                     .font(.system(size: 11)).foregroundColor(Win32Colors.text)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
                     Win32Button("Open presets folder", width: 140) {
                         MilkdropView.openPresetsFolder()
                     }
-                    // Not bundled: 131 MB and no clear license; projectM's default pack, unzip into the folder
-                    Win32Button("Get presets", width: 90) {
-                        NSWorkspace.shared.open(URL(string: "https://github.com/projectM-visualizer/presets-cream-of-the-crop")!)
-                    }
+                    // Not bundled (131 MB): projectM's default pack as a plug-in, opened with MacAmp to install
+                    Win32Button("Get presets", width: 90) { NSWorkspace.shared.open(AppConstants.App.pluginsPage) }
                     Spacer()
                 }
                 Win32Checkbox("Random order", isOn: setting(\.milkdropShuffle))
@@ -1184,7 +1182,7 @@ public struct PreferencesView: View {
                     Win32Button("Get presets", width: 90) { NSWorkspace.shared.open(AppConstants.App.pluginsPage) }
                     Spacer()
                 }
-                note("Right-click the AVS window for presets. Space: random preset, U / Y: next / previous, R: random switching, T: preset name, F: frame rate, F1-F12 and 0-9: load a hotkey preset (with ⌃ save it), ⌥Return: full screen. Get presets: the Winamp 2.95 pack (112 presets); open it with MacAmp to install. Import copies .avs files or folders, e.g. Winamp's Plugins\\avs.")
+                note("Right-click the AVS window for presets. U / Y or . / ,: next / previous, R: random switching, T: preset name, F1-F12 and 0-9: load a hotkey preset (with ⌃ save it). Get presets: the Winamp 2.95 pack (112 presets); open it with MacAmp to install. Import copies .avs files or folders, e.g. Winamp's Plugins\\avs.")
             }
         }
     }
@@ -1195,8 +1193,6 @@ public struct PreferencesView: View {
                 goomResolution("Width", setting(\.goomOptions.width), range: GoomOptions.widths)
                 goomResolution("Height", setting(\.goomOptions.height), range: GoomOptions.heights)
                 Win32Checkbox("CinemaScope", isOn: setting(\.goomOptions.cinemascope))
-                Win32Checkbox("Show frame rate", isOn: setting(\.goomOptions.showFPS))
-                Win32Checkbox("Show song title", isOn: setting(\.goomOptions.showTitle))
                 HStack {
                     Text("Frame rate limit").font(.system(size: 11)).foregroundColor(Win32Colors.text)
                     Win32ComboBox(selection: setting(\.goomOptions.frameRate) { _ in
@@ -1209,7 +1205,7 @@ public struct PreferencesView: View {
                         }
                     }
                 }
-                note("L opens effects. Highlight an effect to apply it, then close with L, Return or Esc. M toggles the cube, keypad + / − moves the camera, and Space shows credits.")
+                note("Right-click ▸ Presets or F1–F8 picks an effect. M toggles the cube, keypad + / − moves the camera.")
             }
         }
     }

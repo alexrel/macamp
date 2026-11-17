@@ -136,24 +136,7 @@ enum AVSPresets {
     /// Copies chosen `.avs` files, or folders of them (keeping their subfolders), into the presets folder.
     static func importPresets(from urls: [URL]) -> Int {
         prepareFolder()
-        let fm = FileManager.default
-        var copied = 0
-        func copy(_ url: URL, into destination: URL) {
-            if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                let target = destination.appendingPathComponent(url.lastPathComponent, isDirectory: true)
-                try? fm.createDirectory(at: target, withIntermediateDirectories: true)
-                for item in (try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey],
-                                                         options: [.skipsHiddenFiles])) ?? [] {
-                    copy(item, into: target)
-                }
-            } else if url.pathExtension.lowercased() == fileExtension {
-                let target = destination.appendingPathComponent(url.lastPathComponent)
-                guard !fm.fileExists(atPath: target.path) else { return }
-                if (try? fm.copyItem(at: url, to: target)) != nil { copied += 1 }
-            }
-        }
-        for url in urls { copy(url, into: folder) }
-        return copied
+        return PluginManager.copyPresets(urls, extension: fileExtension, into: folder)
     }
 
     static func importWithPanel() {
@@ -216,8 +199,6 @@ final class AVSView: NSView {
     private var outgoing: (handle: AVS_Handle, pixels: [UInt32], start: CFTimeInterval)?
     private let statusLabel = NSTextField(labelWithString: "")
     private var statusUntil: CFTimeInterval = 0
-    /// F: the frame rate in the status line
-    var showsFPS = false
     private(set) var renderSize = (width: 0, height: 0)
     private(set) var presetURL: URL?
     /// When the shown preset was loaded: random switching counts from here
@@ -350,10 +331,7 @@ final class AVSView: NSView {
         }
         guard ok else { return }
         let shown = dissolveOutgoing(beat: beat, size: size) ? blended : pixels
-        if showsFPS {
-            statusLabel.stringValue = Self.fpsText(fps, size)
-            statusLabel.isHidden = false
-        } else if !statusLabel.isHidden && CACurrentMediaTime() > statusUntil {
+        if !statusLabel.isHidden && CACurrentMediaTime() > statusUntil {
             statusLabel.isHidden = true
         }
         // RGB0 little-endian = BGRx in memory: 32-bit little-endian, alpha byte skipped

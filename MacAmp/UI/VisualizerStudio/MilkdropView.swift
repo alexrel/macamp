@@ -11,6 +11,8 @@ public final class MilkdropView: NSOpenGLView {
             .appendingPathComponent("MacAmp/Milkdrop", isDirectory: true)
     }
 
+    nonisolated static let fileExtension = "milk"
+
     static func openPresetsFolder() {
         do {
             try FileManager.default.createDirectory(at: presetsFolder, withIntermediateDirectories: true)
@@ -138,7 +140,11 @@ public final class MilkdropView: NSOpenGLView {
             self.scanTask = nil
             self.presets = scanned
             self.index = self.currentPresetURL.flatMap { scanned.firstIndex(of: $0) } ?? -1
-            if self.currentPresetURL == nil && !scanned.isEmpty { self.nextPreset(smooth: false) }
+            if self.currentPresetURL == nil && !scanned.isEmpty {
+                // Back on the preset shown last time, else a new one
+                let saved = PersistenceManager.shared.state.milkdropPresetPath.flatMap { path in scanned.firstIndex { $0.path == path } }
+                if let saved { self.selectPreset(at: saved, smooth: false) } else { self.nextPreset(smooth: false) }
+            }
             self.onPresetsChanged?()
         }
     }
@@ -147,7 +153,7 @@ public final class MilkdropView: NSOpenGLView {
         let files = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey],
                                                    options: [.skipsHiddenFiles])
         return (files?.compactMap { $0 as? URL } ?? []).filter {
-            $0.pathExtension.lowercased() == "milk" && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+            $0.pathExtension.lowercased() == fileExtension && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
         }.sorted {
             let order = $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent)
             return order == .orderedSame ? $0.path < $1.path : order == .orderedAscending
@@ -184,6 +190,8 @@ public final class MilkdropView: NSOpenGLView {
             failedPresetName = nil
             presetName = name
             currentPresetURL = preset
+            PersistenceManager.shared.state.milkdropPresetPath = preset.path
+            PersistenceManager.shared.scheduleSave()
         }
     }
 

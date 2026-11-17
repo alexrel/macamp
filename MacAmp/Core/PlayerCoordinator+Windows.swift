@@ -18,9 +18,9 @@ extension PlayerCoordinator {
         toggleVisualizerStudio()
     }
     
-    /// Opens or closes the Fullscreen Retro Visualizer Studio window (Ctrl+Shift+K)
+    /// Opens or closes the Visualizer Studio (⌃⇧K); in full screen on another Space it is brought back, not closed
     public func toggleVisualizerStudio() {
-        if visualizerStudioWindow?.isVisible == true {
+        if let studio = visualizerStudioWindow, studio.isVisible, studio.isOnActiveSpace {
             visualizerStudioWindow?.orderOut(nil)
             updateActivityState()
         } else {
@@ -30,16 +30,20 @@ extension PlayerCoordinator {
 
     func startVisualizerStudio() {
         if visualizerStudioWindow == nil {
-            visualizerStudioWindow = RetroVisualizerWindow()
+            let studio = RetroVisualizerWindow()
+            // Where it was left; the first time, centered
+            if persistence.state.windowPositions[AppConstants.Window.studioFrameKey] != nil {
+                studio.setFrame(auxWindowRect(AppConstants.Window.studioFrameKey, size: studio.frame.size), display: false)
+            }
+            visualizerStudioWindow = studio
         }
         guard let win = visualizerStudioWindow else { return }
-        let plugin: StudioVisualizerPreset? = persistence.state.avsPluginSelected ? .avs
-            : persistence.state.goomPluginSelected ? .goom : nil
-        if let plugin {
-            if win.studioView.currentPreset != plugin { win.studioView.currentPreset = plugin }
-        } else if win.studioView.currentPreset == .goom || win.studioView.currentPreset == .avs {
-            win.studioView.currentPreset = .fireSpectrum
-        }
+        // The plug-in selected in Preferences; for the Studio's own row, what it showed last (a built-in or MilkDrop)
+        let state = persistence.state
+        let last = state.studioPreset.flatMap { $0 == .goom || $0 == .avs ? nil : $0 }
+        let preset: StudioVisualizerPreset = state.avsPluginSelected ? .avs : state.goomPluginSelected ? .goom : last ?? state.studioBuiltIn
+        if win.studioView.currentPreset != preset { win.studioView.currentPreset = preset }
+        NSApp.activate(ignoringOtherApps: true)
         win.makeKeyAndOrderFront(nil)
         updateActivityState()
     }

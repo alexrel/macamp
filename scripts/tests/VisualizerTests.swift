@@ -1,4 +1,5 @@
 import Cocoa
+import Carbon
 import Foundation
 import AVFoundation
 import CoreMedia
@@ -13,7 +14,68 @@ func visualizerTests() {
     // 6. Retro Visualizer Studio Mode & Presets Tests
     testGroup("Retro Visualizer Studio & Presets") {
         let presets = StudioVisualizerPreset.allCases
-        assertEqual(presets.count, 8, "Studio has 5 retro presets plus MilkDrop, GOOM and AVS")
+        assertEqual(presets.count, 10, "Studio has 7 built-ins plus MilkDrop, GOOM and AVS")
+        assertEqual(StudioVisualizerPreset.builtIns,
+                    [.fireSpectrum, .phosphorOscilloscope, .neonCyber, .matrixRain, .solarOrb, .spectrogram, .waveform],
+                    "The built-ins are one Studio entry")
+        // The Studio saves what it shows to the real session; put the user's back
+        let userState = PersistenceManager.shared.state
+        defer { PersistenceManager.shared.state = userState }
+        let studio = RetroVisualizerView(frame: NSRect(x: 0, y: 0, width: 320, height: 200))
+        studio.currentPreset = .spectrogram
+        var cycle: [StudioVisualizerPreset] = []
+        var avsSelected: [Bool] = []
+        for _ in 0..<4 {
+            studio.cyclePreset()
+            cycle.append(studio.currentPreset)
+            avsSelected.append(PersistenceManager.shared.state.avsPluginSelected)
+        }
+        assertEqual(cycle, [.milkdrop, .goom, .avs, .spectrogram], "Space walks the four groups, back to the last built-in")
+        assertEqual(avsSelected, [false, false, true, false], "What is shown is the selected vis plug-in")
+        studio.currentPreset = .waveform
+        let click = NSEvent.mouseEvent(with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                       windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        let menu = studio.menu(for: click)!
+        assertEqual(Array(menu.items.prefix(3).map(\.title)), ["Fullscreen", "", "Presets"], "Right-click is laid out as AVS's")
+        let presetItems = menu.items[2].submenu!.items
+        assertEqual(presetItems.map(\.title), StudioVisualizerPreset.builtIns.map(\.title), "Presets lists the built-ins")
+        assertEqual(presetItems.first { $0.state == .on }?.title, StudioVisualizerPreset.waveform.title, "the one shown is checked")
+        assertTrue(menu.items.contains { $0.title == "Colors" }, "the scrolling ones keep their colors in the same menu")
+        let solar = presetItems.first { $0.title == StudioVisualizerPreset.solarOrb.title }!
+        _ = (solar.target as AnyObject).perform(solar.action, with: solar)
+        assertEqual(studio.currentPreset, .solarOrb, "Picking one shows it")
+        let root = URL(fileURLWithPath: "/presets", isDirectory: true)
+        let milk = ["Reaction/Ripples/b.milk", "Dancer/a.milk", "top.milk", "Dancer/Comet/c.milk", "Reaction/d.milk"]
+            .map { root.appendingPathComponent($0) }
+        let top = RetroVisualizerView.folderContents(of: root, in: milk)
+        assertEqual(top.subfolders, ["Dancer", "Reaction"], "MilkDrop's right-click lists its folders as AVS does")
+        assertEqual(top.presets.map(\.lastPathComponent), ["top.milk"], "and the presets right in the folder")
+        let dancer = RetroVisualizerView.folderContents(of: root.appendingPathComponent("Dancer", isDirectory: true), in: milk)
+        assertEqual(dancer.subfolders, ["Comet"])
+        assertEqual(dancer.presets.map(\.lastPathComponent), ["a.milk"], "a folder holds only its own presets")
+        let names = ["Reaction/Liquid Ripples/Flexi - wave", "Dancer/Comet/Geiss - ripples", "Fractal/Julia"]
+        assertEqual(Win32Dialog.matches("", in: names), [0, 1, 2], "Find preset lists everything until something is typed")
+        assertEqual(Win32Dialog.matches("RIPPLES", in: names), [0, 1], "it finds a word in folders and names, in any case")
+        assertEqual(Win32Dialog.matches("ripples liquid", in: names), [0], "every word must be there, in any order")
+        // The same keys in all four: , . step the shown one's presets, Space the next mode
+        func press(_ code: Int, _ characters: String) {
+            studio.keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+                                                  context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                                                  isARepeat: false, keyCode: UInt16(code))!)
+        }
+        studio.currentPreset = .fireSpectrum
+        press(kVK_ANSI_Comma, ",")
+        assertEqual(studio.currentPreset, .waveform, ", steps back through the built-ins, round to the last")
+        press(kVK_ANSI_Period, ".")
+        assertEqual(studio.currentPreset, .fireSpectrum, ". steps forward")
+        press(kVK_Space, " ")
+        assertEqual(studio.currentPreset, .milkdrop, "Space goes to the next mode")
+        studio.currentPreset = .waveform
+        studio.currentPreset = .milkdrop
+        let saved = PersistenceManager.shared.state
+        assertEqual(saved.studioPreset, .milkdrop, "The Studio remembers what it showed last")
+        assertEqual(saved.studioBuiltIn, .waveform, "and the last built-in, for Space to come back to")
+        studio.closeVisualization()
         assertEqual(presets[0].title, "Fire Spectrum & Peak Glow", "Preset 0 title matches")
         assertEqual(presets[1].title, "Retro Phosphor CRT Oscilloscope", "Preset 1 title matches")
         assertEqual(presets[2].title, "Neon Cyber City Spectrum", "Preset 2 title matches")
@@ -22,6 +84,8 @@ func visualizerTests() {
         assertEqual(presets[5].title, "Milkdrop (projectM)", "Preset 5 title matches")
         assertEqual(presets[6].title, "What A Goom!", "Preset 6 title matches")
         assertEqual(presets[7].title, "Advanced Visualization Studio", "Preset 7 title matches")
+        assertEqual(presets[8].title, "Spectrogram", "Preset 8 title matches")
+        assertEqual(presets[9].title, "Waveform", "Preset 9 title matches")
 
         // Dockable windows: Winamp's, and the Visualizer Studio, docked like Winamp's AVS window
         let windowIDs = WindowID.allCases
@@ -32,6 +96,45 @@ func visualizerTests() {
         assertTrue(windowIDs.contains(.main), "WindowID contains .main")
         assertTrue(windowIDs.contains(.equalizer), "WindowID contains .equalizer")
         assertTrue(windowIDs.contains(.playlist), "WindowID contains .playlist")
+    }
+
+    testGroup("Spectrogram rows and colors") {
+        let bins = Spectrogram.makeRowBins(sampleRate: 44_100)
+        assertEqual(bins.count, Spectrogram.rows, "One bin range per row")
+        assertTrue(bins.allSatisfy { !$0.isEmpty && $0.lowerBound >= 1 && $0.upperBound <= 2048 }, "Every row reads at least one real bin")
+        assertTrue(bins.first!.lowerBound > bins.last!.lowerBound, "Row 0 is the top (high frequencies)")
+        assertTrue(abs(bins.last!.lowerBound - Int(20 / (44_100.0 / 4096))) <= 1, "The bottom row starts near 20 Hz")
+        assertEqual(Spectrogram.position(of: 20), 0, "20 Hz is the bottom")
+        assertTrue(abs(Spectrogram.position(of: 20_000) - 1) < 1e-9, "20 kHz is the top")
+        for palette in VisualizerPalette.allCases {
+            assertEqual(palette.colorTable(skin: VisualizerColors.defaultColors()).count, 256 * 3, "\(palette) has 256 RGB entries")
+        }
+        assertEqual(Array(VisualizerPalette.fire.colorTable(skin: []).prefix(3)), [0, 0, 0], "Fire starts black")
+        assertEqual(Array(VisualizerPalette.midnight.colorTable(skin: []).prefix(3)), [10, 10, 14], "A theme starts on its background")
+        let glacier = VisualizerPalette.glacier.colorTable(skin: [])
+        assertTrue(glacier[255 * 3] < glacier[0], "On light Glacier loud is darker than quiet")
+        // The waveform's envelope: a min, max pair for every 256 frames of all the audio, held until it is taken
+        let envelopeFormat = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
+        let envelopeAudio = AVAudioPCMBuffer(pcmFormat: envelopeFormat, frameCapacity: 2048)!
+        envelopeAudio.frameLength = 2048
+        for frame in 0..<2048 {
+            let value: Float = frame == 300 ? 0.8 : frame == 700 ? -0.6 : 0.1
+            envelopeAudio.floatChannelData![0][frame] = value
+            envelopeAudio.floatChannelData![1][frame] = value
+        }
+        VisualizerPCMFeed.setActive(true)
+        VisualizerPCMFeed.add(envelopeAudio)
+        var envelope: [Float] = []
+        VisualizerPCMFeed.consumeEnvelope { envelope = $0 }
+        VisualizerPCMFeed.setActive(false)
+        assertEqual(envelope.count, 16, "2048 frames make 8 min, max pairs, beyond the 1024-frame snapshot")
+        assertEqual(envelope[3], 0.8, "Frame 300 is block 1's high")
+        assertEqual(envelope[4], -0.6, "Frame 700 is block 2's low")
+        assertEqual(envelope[14], 0.1, "A plain block is flat")
+        let spectrogram = Spectrogram(speed: .faster)
+        assertEqual(spectrogram.image(palette: .classic)?.width, 256, "Faster shows 256 columns")
+        spectrogram.setSpeed(.slower)
+        assertEqual(spectrogram.image(palette: .skin)?.height, Spectrogram.rows, "The picture is one row per bin range")
     }
 
     testGroup("MilkDrop preset catalog and visualizer PCM") {
@@ -64,30 +167,6 @@ func visualizerTests() {
         VisualizerPCMFeed.setActive(false)
         VisualizerPCMFeed.add(audio)
         VisualizerPCMFeed.consume { _, _ in assertTrue(false, "An inactive visualizer must not receive PCM") }
-    }
-
-    testGroup("Visualizer list applies changes to the highlighted row") {
-        _ = NSApplication.shared
-        let titles = (0..<10_000).map { "Preset \($0)" }
-        let list = VisualizerSelectionList(frame: NSRect(x: 0, y: 0, width: 500, height: 300),
-                                           titles: titles, selectedRow: 5_000, accessibilityLabel: "Presets")
-        var selections: [Int] = []
-        list.onSelectionChanged = { selections.append($0) }
-        assertEqual(list.selectedRow, 5_000)
-        list.moveSelection(by: -1)
-        assertEqual(list.selectedRow, 4_999)
-        list.moveSelection(by: 10_000)
-        assertEqual(list.selectedRow, 9_999)
-        list.moveSelection(by: 1)
-        assertEqual(selections, [4_999, 9_999], "Selection previews immediately and only once per row change")
-        list.reload(titles: titles, selectedRow: 2)
-        assertEqual(list.selectedRow, 2)
-        assertEqual(selections, [4_999, 9_999], "Opening or refreshing the catalog does not switch presets")
-        list.reload(titles: [], selectedRow: nil)
-        assertEqual(list.selectedRow, nil)
-        list.reload(titles: ["Normal", "Wave"], selectedRow: nil)
-        list.moveSelection(by: 1)
-        assertEqual(selections, [4_999, 9_999, 0], "The first move selects the first effect when there is no previous choice")
     }
 
     testGroup("GOOM original engine and preferences") {
@@ -205,6 +284,26 @@ func visualizerTests() {
         assertEqual(AVSPresets.importPresets(from: read?.folders ?? []), 0, "Installing it again adds nothing")
         assertTrue(AVSPresets.scan().subfolders.contains { $0.url.lastPathComponent == "newpicks" && $0.presets.count == 3 },
                    "The pack's folder becomes the newpicks submenu, as in Winamp")
+        assertTrue(read?.milkdrop == false, "An AVS pack is not MilkDrop's")
+        // MilkDrop's pack: kind milkdrop-presets, its theme folders copied as they are, the notes left out
+        let milkPack = FileManager.default.temporaryDirectory.appendingPathComponent("Test MilkDrop Presets.macampplugin")
+        let milkResources = milkPack.appendingPathComponent("Contents/Resources")
+        try? FileManager.default.removeItem(at: milkPack)
+        try FileManager.default.createDirectory(at: milkResources.appendingPathComponent("Dancer/Comet"), withIntermediateDirectories: true)
+        try Data("[preset00]".utf8).write(to: milkResources.appendingPathComponent("Dancer/Comet/a.milk"))
+        try Data("[preset00]".utf8).write(to: milkResources.appendingPathComponent("Dancer/b.milk"))
+        try Data("public domain".utf8).write(to: milkResources.appendingPathComponent("LICENSE.md"))
+        try (["MacAmpPluginKind": "milkdrop-presets", "MacAmpPluginTitle": "Test MilkDrop"] as NSDictionary)
+            .write(to: milkPack.appendingPathComponent("Contents/Info.plist"))
+        let milkRead = PluginManager.presetPack(milkPack)
+        assertTrue(milkRead?.milkdrop == true, "A MilkDrop pack is recognised as MilkDrop's")
+        let milkTarget = FileManager.default.temporaryDirectory.appendingPathComponent("Test Milkdrop", isDirectory: true)
+        try? FileManager.default.removeItem(at: milkTarget)
+        defer { try? FileManager.default.removeItem(at: milkTarget); try? FileManager.default.removeItem(at: milkPack) }
+        assertEqual(PluginManager.copyPresets(milkRead?.folders ?? [], extension: MilkdropView.fileExtension, into: milkTarget), 2,
+                    "Installing it copies its presets")
+        assertEqual(MilkdropView.findPresets(in: milkTarget).map(\.lastPathComponent), ["a.milk", "b.milk"], "in their folders")
+        assertTrue(!FileManager.default.fileExists(atPath: milkTarget.appendingPathComponent("LICENSE.md").path), "the notes stay in the pack")
         guard let view = AVSView(studioFrame: NSRect(x: 0, y: 0, width: 284, height: 314)) else {
             assertTrue(false, "AVSView starts")
             return
@@ -301,29 +400,6 @@ func visualizerTests() {
         assertEqual(model.string(point.id), "x=i*2-1; y=v", "Expressions are set as typed")
     }
 
-    testGroup("GOOM titles and manual credits") {
-        _ = NSApplication.shared
-        let previousOptions = PersistenceManager.shared.state.goomOptionsStorage
-        PersistenceManager.shared.state.goomOptions = GoomOptions()
-        defer { PersistenceManager.shared.state.goomOptionsStorage = previousOptions }
-        let goom = GoomView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
-        for _ in 0..<105 { goom.renderFrame(playing: false, trackTitle: nil) }
-        assertTrue(!goom.isShowingCredits, "Silence does not start the credits")
-        goom.showCredits()
-        goom.renderFrame(playing: false, trackTitle: nil)
-        assertTrue(goom.isShowingCredits, "Credits still work on demand")
-        goom.hideCredits()
-
-        let title = "Калинов Мост — Вымыты дождём волосы"
-        goom.renderFrame(playing: true, trackTitle: title)
-        let label = goom.subviews.compactMap { $0 as? NSTextField }.first
-        assertEqual(label?.stringValue, title, "The Unicode overlay preserves the original title")
-        assertTrue(label?.isHidden == false, "The Unicode title is visible")
-        PersistenceManager.shared.state.goomOptions.showTitle = false
-        goom.renderFrame(playing: true, trackTitle: title)
-        assertTrue(label?.isHidden == true, "The title setting hides the Unicode overlay as well")
-    }
-
     testGroup("Visualizer Options") {
         let vis = VisualizerView()
         var options = VisualizerOptions()
@@ -392,6 +468,22 @@ func visualizerTests() {
         let studioWindow = RetroVisualizerWindow()
         studioWindow.setFrame(NSRect(x: 0, y: 0, width: 400, height: 300), display: false)
         assertTrue(studioWindow.frameView.layer?.mask == nil, "The Studio frame has no skin region mask")
+        // Open at quit: open again at the next start, where it was left
+        let coordinator = PlayerCoordinator.shared
+        let userState = PersistenceManager.shared.state
+        defer { PersistenceManager.shared.state = userState }
+        coordinator.startVisualizerStudio()
+        let place = NSRect(x: 120, y: 140, width: 640, height: 400)
+        coordinator.visualizerStudioWindow?.setFrame(place, display: false)
+        coordinator.saveWindowLayout()
+        assertTrue(PersistenceManager.shared.state.isStudioVisible, "An open Studio is saved as open")
+        coordinator.visualizerStudioWindow?.orderOut(nil)
+        coordinator.visualizerStudioWindow = nil // as at the next start
+        coordinator.startVisualizerStudio()
+        assertEqual(coordinator.visualizerStudioWindow?.frame, place, "and comes back where it was")
+        coordinator.visualizerStudioWindow?.orderOut(nil)
+        coordinator.saveWindowLayout()
+        assertTrue(!PersistenceManager.shared.state.isStudioVisible, "A closed one stays closed")
 
         // One analysis frame: a loud low band and a sine-like waveform
         let frame = VisualizerFrameBuffer()

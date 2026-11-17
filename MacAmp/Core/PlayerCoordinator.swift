@@ -82,6 +82,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             if let video = self?.video, VideoController.isVideo(url) { video.frameView.info = "\(url.lastPathComponent): \(text)" }
         }
         if persistence.state.isBrowserVisible { browserController.show(); mainWindow.makeKeyAndOrderFront(nil) }
+        if persistence.state.isStudioVisible { startVisualizerStudio(); mainWindow.makeKeyAndOrderFront(nil) }
         if persistence.state.libraryRescanOnStart { Task { await MediaLibrary.shared.rescan() } }
         isStarted = true
         // First start: Winamp's installer launched it with demo.mp3, the llama intro, which then stayed in the playlist

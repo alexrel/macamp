@@ -12,6 +12,12 @@ public enum StudioVisualizerPreset: Int, CaseIterable {
     case milkdrop = 5
     case goom = 6
     case avs = 7
+    case spectrogram = 8
+    case waveform = 9
+
+    /// MacAmp's own visualizations: one entry of the Studio, picked from the right-click menu
+    static let builtIns = allCases.filter(\.isBuiltIn)
+    var isBuiltIn: Bool { ![.milkdrop, .goom, .avs].contains(self) }
     
     public var title: String {
         switch self {
@@ -23,6 +29,8 @@ public enum StudioVisualizerPreset: Int, CaseIterable {
         case .milkdrop: return "Milkdrop (projectM)"
         case .goom: return "What A Goom!"
         case .avs: return "Advanced Visualization Studio"
+        case .spectrogram: return "Spectrogram"
+        case .waveform: return "Waveform"
         }
     }
 }
@@ -34,7 +42,7 @@ public final class RetroVisualizerView: NSView {
     // MARK: - Properties
     public var currentPreset: StudioVisualizerPreset = .fireSpectrum {
         didSet {
-            if oldValue != currentPreset { closeSelectionList() }
+            rememberPreset()
             triggerHUD()
             syncMilkdrop()
             syncGoom()
@@ -47,12 +55,22 @@ public final class RetroVisualizerView: NSView {
 
     // Milkdrop sits on top of the view as a GL subview and exists only while it is the shown preset
     private var milkdropView: MilkdropView?
-    private var milkdropLabel: NSTextField?
-    private var selectionList: VisualizerSelectionList?
-    private var milkdropListedPresets: [URL] = []
-    private var milkdropTick = 0
-    private var showMilkdropInfo = true // F5 toggles preset name and FPS
+    private var milkdropStarted = false
+    /// The hints over every visualizer, shown on a switch or a mouse move, then faded away together:
+    /// "60 FPS · name" at the top right, the track and the keys at the bottom left
+    private let hud = PassThroughView()
+    private let infoLabel = NSTextField(labelWithString: "")
+    private let trackLabel = NSTextField(labelWithString: "")
+    private var infoName = ""
+    private var infoFadeOut: DispatchWorkItem?
+    private var infoTick = 0
+    private static let infoShownFor: TimeInterval = 3
+    private static let infoFadeDuration: TimeInterval = 0.8
     private(set) var isOnScreen = false
+    private lazy var spectrogram = Spectrogram(speed: PersistenceManager.shared.state.scrollSpeed)
+    private lazy var scrollingWaveform = ScrollingWaveform(speed: PersistenceManager.shared.state.scrollSpeed)
+    /// The scrolling built-ins, each with its own colors
+    private var isScrolling: Bool { currentPreset == .spectrogram || currentPreset == .waveform }
     private(set) var isPlaying = false
     private var goomView: GoomView?
     var avsView: AVSView?
@@ -65,127 +83,125 @@ public final class RetroVisualizerView: NSView {
     ]
 
     /// The plate is as wide as its text, cut off (with …) only when the window is narrower
-    private func layoutMilkdropLabel() {
-        guard let label = milkdropLabel else { return }
-        let width = max(0, min(label.intrinsicContentSize.width, bounds.width - 20))
-        label.frame = NSRect(x: bounds.width - width - 10, y: bounds.height - 26, width: width, height: 18)
+    private func layoutInfo() {
+        hud.frame = bounds
+        let width = max(0, min(infoLabel.intrinsicContentSize.width, bounds.width - 20))
+        infoLabel.frame = NSRect(x: bounds.width - width - 10, y: bounds.height - 26, width: width, height: 18)
+        let track = trackLabel.intrinsicContentSize
+        trackLabel.frame = NSRect(x: 10, y: 10, width: max(0, min(track.width, bounds.width - 20)), height: track.height)
+    }
+
+    private static let sharedKeyHints = "Right-click presets · , . prev/next · Space next plug-in · F full screen · Esc close"
+    /// The keys of the shown kind of visualizer
+    private var keyHints: String {
+        switch currentPreset {
+        case .goom: return "\(Self.sharedKeyHints) · F1–F8 effect · M cube"
+        case .avs: return "\(Self.sharedKeyHints) · R random switching · T name"
+        default: return Self.sharedKeyHints
+        }
+    }
+
+    /// Artist, title, transport and time, then the keys
+    private var trackText: NSAttributedString {
+        let player = PlayerCoordinator.shared
+        let track = player.playlist.currentTrack
+        let engine = player.audioEngine
+        let status = engine.status == .playing ? "PLAYING" : engine.status == .paused ? "PAUSED" : "STOPPED"
+        func clock(_ seconds: TimeInterval) -> String { String(format: "%02d:%02d", Int(seconds) / 60, Int(seconds) % 60) }
+        let total = track?.duration ?? 0
+        let time = total > 0 ? "\(clock(engine.currentTime)) / \(clock(total))" : "\(clock(engine.currentTime)) (LIVE)"
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        let text = NSMutableAttributedString()
+        for (line, font, white) in [
+            (track.map(\.artist) ?? "MacAmp \(AppConstants.App.version)", NSFont.monospacedSystemFont(ofSize: 12, weight: .medium), 0.75),
+            (track?.title ?? "Visualizer Studio", NSFont.systemFont(ofSize: 18, weight: .bold), 1),
+            ("\(status)  \(time)", NSFont.monospacedSystemFont(ofSize: 12, weight: .medium), 0.75),
+            (keyHints, NSFont.systemFont(ofSize: 10), 0.55)
+        ] where !line.isEmpty {
+            text.append(NSAttributedString(string: (text.length == 0 ? " " : "\n ") + line + " ", attributes: [
+                .font: font, .foregroundColor: NSColor(white: white, alpha: 1), .paragraphStyle: paragraph
+            ]))
+        }
+        return text
+    }
+
+    /// What the line says for the shown visualizer; an error stays up instead of fading
+    private var infoContent: (fps: Int, name: String, error: Bool) {
+        switch currentPreset {
+        case .milkdrop:
+            guard let view = milkdropView, !view.initializationFailed else { return (0, "MilkDrop could not start", true) }
+            if let failed = view.failedPresetName { return (0, "Could not load \(failed)", true) }
+            return (view.fps, view.presetName, false)
+        case .goom: return (Int(goomView?.fps ?? 0), StudioVisualizerPreset.goom.title, false)
+        case .avs: return (Int((avsView?.fps ?? 0).rounded()), avsView?.presetName ?? StudioVisualizerPreset.avs.title, false)
+        default: return (currentFPS, currentPreset.title, false)
+        }
+    }
+
+    /// Refreshes the line; it comes up when asked to or when the name changed (MilkDrop's and AVS's own switching)
+    private func updateInfo(show: Bool = false) {
+        let info = infoContent
+        // MilkDrop keeps drawing a moment after a preset change while paused (its preview)
+        let previewing = currentPreset == .milkdrop && milkdropView.map { Date() < $0.renderUntil } == true
+        let stopped = PlayerCoordinator.shared.audioEngine.status == .stopped
+        let status = !isPlaying && !previewing ? (stopped ? "stopped" : "paused") : info.fps > 0 ? "\(info.fps) FPS" : "starting"
+        infoLabel.stringValue = info.error ? " \(info.name) " : " \(status)  ·  \(info.name) "
+        trackLabel.attributedStringValue = trackText
+        layoutInfo()
+        let renamed = info.name != infoName
+        infoName = info.name
+        guard show || renamed || info.error else { return }
+        infoFadeOut?.cancel()
+        hud.alphaValue = 1
+        guard !info.error else { return }
+        let fadeOut = DispatchWorkItem { [weak self] in
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Self.infoFadeDuration
+                self?.hud.animator().alphaValue = 0
+            }
+        }
+        infoFadeOut = fadeOut
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.infoShownFor, execute: fadeOut)
+    }
+
+    /// The line stays above MilkDrop, GOOM and AVS, which come and go as subviews
+    public override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        if subview !== hud, hud.superview === self { addSubview(hud, positioned: .above, relativeTo: nil) }
     }
 
     private func syncMilkdrop(closing: Bool = false) {
         if currentPreset == .milkdrop && !closing {
-            guard isOnScreen, milkdropLabel == nil else { return }
+            guard isOnScreen, !milkdropStarted else { return }
+            milkdropStarted = true
             if let view = MilkdropView(studioFrame: bounds) {
                 view.isOnScreen = true
                 addSubview(view)
                 milkdropView = view
                 view.onPresetsChanged = { [weak self] in
-                    self?.reloadMilkdropPresetList()
                     self?.updateAnimation()
-                    self?.updateMilkdropLabel()
+                    self?.updateInfo()
                 }
             }
-            let label = NSTextField(labelWithString: "")
-            label.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
-            label.textColor = .white
-            label.drawsBackground = true
-            label.backgroundColor = NSColor.black.withAlphaComponent(0.55)
-            label.lineBreakMode = .byTruncatingTail
-            label.alignment = .right
-            label.autoresizingMask = [.minXMargin, .minYMargin]
-            label.isHidden = !showMilkdropInfo
-            addSubview(label)
-            milkdropLabel = label
-            updateMilkdropLabel()
+            updateInfo()
         } else {
             milkdropView?.shutdown()
             milkdropView?.removeFromSuperview()
-            milkdropLabel?.removeFromSuperview()
             milkdropView = nil
-            milkdropLabel = nil
+            milkdropStarted = false
         }
-    }
-
-    private func updateMilkdropLabel() {
-        guard let label = milkdropLabel else { return }
-        if let failed = milkdropView?.failedPresetName {
-            label.stringValue = " Could not load \(failed) "
-            label.isHidden = false
-        } else if let view = milkdropView, !view.initializationFailed {
-            let status = !isPlaying && Date() >= view.renderUntil ? "paused" : (view.fps > 0 ? "\(view.fps) FPS" : "starting")
-            label.stringValue = " \(status)  ·  \(view.presetName)  ·  L = presets "
-            label.isHidden = !showMilkdropInfo
-        } else {
-            label.stringValue = " MilkDrop could not start "
-        }
-        layoutMilkdropLabel()
     }
 
     public override func layout() {
         super.layout()
-        layoutMilkdropLabel()
-        layoutSelectionList()
-    }
-
-    private func layoutSelectionList() {
-        guard let list = selectionList else { return }
-        let height = min(list.contentHeight, floor(bounds.height * 0.72))
-        list.frame = NSRect(x: 12, y: bounds.height - 28 - height, width: max(0, bounds.width - 36), height: height)
-    }
-
-    @objc private func toggleSelectionList() {
-        if selectionList != nil {
-            closeSelectionList()
-            return
-        }
-        if let view = goomView {
-            let list = VisualizerSelectionList(frame: .zero, titles: Self.goomEffects.map(\.title),
-                                               selectedRow: view.lastForcedEffect.map { $0 - 1 },
-                                               accessibilityLabel: "GOOM effects")
-            list.onSelectionChanged = { [weak view] in view?.forceEffect($0 + 1) }
-            showSelectionList(list, above: view)
-            return
-        }
-        guard let view = milkdropView else { return }
-        let list = VisualizerSelectionList(frame: .zero, titles: [], selectedRow: nil, accessibilityLabel: "MilkDrop presets")
-        list.onSelectionChanged = { [weak self] in self?.applyMilkdropPreset(at: $0) }
-        list.onOpenFolder = { MilkdropView.openPresetsFolder() }
-        showSelectionList(list, above: view)
-        view.stopPresetClock()
-        reloadMilkdropPresetList()
-        view.rescanPresets()
-    }
-
-    private func showSelectionList(_ list: VisualizerSelectionList, above view: NSView) {
-        list.onKeyDown = { [weak self] in self?.keyDown(with: $0) }
-        addSubview(list, positioned: .above, relativeTo: view)
-        selectionList = list
-        layoutSelectionList()
-        list.focusList()
-    }
-
-    private func reloadMilkdropPresetList() {
-        guard let list = selectionList, let view = milkdropView else { return }
-        let presets = view.presets
-        let selectedURL = list.selectedRow.flatMap { milkdropListedPresets.indices.contains($0) ? milkdropListedPresets[$0] : nil }
-        let selectedRow = (selectedURL ?? view.currentPresetURL).flatMap { presets.firstIndex(of: $0) }
-        milkdropListedPresets = presets
-        list.reload(titles: presets.map { $0.deletingPathExtension().lastPathComponent }, selectedRow: selectedRow)
-        layoutSelectionList()
-        list.focusList()
-    }
-
-    private func closeSelectionList() {
-        guard let list = selectionList else { return }
-        window?.makeFirstResponder(self)
-        list.removeFromSuperview()
-        selectionList = nil
-        milkdropListedPresets = []
+        layoutInfo()
     }
 
     private func applyMilkdropPreset(at row: Int) {
         milkdropView?.selectPreset(at: row, smooth: false)
         updateAnimation()
-        updateMilkdropLabel()
+        updateInfo()
     }
 
     private func syncGoom(closing: Bool = false) {
@@ -244,8 +260,6 @@ public final class RetroVisualizerView: NSView {
     private var solarParticles: [SolarParticle] = []
     
     // HUD overlay state
-    private var hudAlpha: CGFloat = 1.0
-    private var lastUserActivity: TimeInterval = Date().timeIntervalSince1970
     
     // Actions
     public var onExit: (() -> Void)?
@@ -258,6 +272,18 @@ public final class RetroVisualizerView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
         setupTrackingArea()
+        infoLabel.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
+        infoLabel.textColor = .white
+        infoLabel.lineBreakMode = .byTruncatingTail
+        infoLabel.alignment = .right
+        for label in [infoLabel, trackLabel] {
+            label.drawsBackground = true
+            label.backgroundColor = NSColor.black.withAlphaComponent(0.55)
+            hud.addSubview(label)
+        }
+        trackLabel.maximumNumberOfLines = 4
+        hud.alphaValue = 0
+        addSubview(hud)
         initMatrixDrops()
         initSolarParticles()
     }
@@ -283,6 +309,7 @@ public final class RetroVisualizerView: NSView {
     }
     
     func setActivity(visible: Bool, playing: Bool) {
+        let opened = visible && !isOnScreen
         isOnScreen = visible
         isPlaying = playing
         syncMilkdrop()
@@ -291,18 +318,19 @@ public final class RetroVisualizerView: NSView {
         milkdropView?.isOnScreen = visible
         if !visible || !playing { milkdropView?.stopPresetClock() }
         updateAnimation()
+        updateInfo(show: opened)
     }
 
     func updateAnimation() {
         let milkdrop = currentPreset == .milkdrop
         let canRenderMilkdrop = milkdropView.map { !$0.initializationFailed } ?? false
-        VisualizerPCMFeed.setActive(isOnScreen && isPlaying && (goomView != nil || avsView != nil || (milkdrop && canRenderMilkdrop)))
+        VisualizerPCMFeed.setActive(isOnScreen && isPlaying && (goomView != nil || avsView != nil || isScrolling || (milkdrop && canRenderMilkdrop)))
         let previewing = milkdropView.map { Date() < $0.renderUntil } ?? false
         // AVS freezes on pause, as the other visualizers: no frames, no CPU
         guard isOnScreen && (!milkdrop || (canRenderMilkdrop && (isPlaying || previewing))) && (avsView == nil || isPlaying) else {
             displayTimer?.invalidate()
             displayTimer = nil
-            updateMilkdropLabel()
+            updateInfo()
             return
         }
         let goomLimit = currentPreset == .goom ? PersistenceManager.shared.state.goomOptions.frameLimit : 60
@@ -320,7 +348,6 @@ public final class RetroVisualizerView: NSView {
     }
     
     func closeVisualization() {
-        closeSelectionList()
         isOnScreen = false
         syncMilkdrop(closing: true)
         syncGoom(closing: true)
@@ -333,7 +360,7 @@ public final class RetroVisualizerView: NSView {
         triggerHUD()
     }
     
-    // A click switches the preset, a drag moves the window (the window has no title bar to grab)
+    // A drag moves the window (the window has no title bar to grab)
     private var mouseDownEvent: NSEvent?
     /// The window being moved by this drag, with the same magnetic docking as its frame's title bar
     private var draggedWindow: WinampWindow?
@@ -360,36 +387,34 @@ public final class RetroVisualizerView: NSView {
             win.endWindowDrag(with: event)
             return
         }
-        guard mouseDownEvent != nil else { return }
+        // A click does nothing, as in the plug-ins: presets come from the right-click menu
         mouseDownEvent = nil
-        // Milkdrop has its own , / . keys; a stray click must not throw the user out of it
-        if currentPreset != .milkdrop && currentPreset != .goom && currentPreset != .avs { cyclePreset() }
     }
     
     public override func keyDown(with event: NSEvent) {
         triggerHUD()
-        if (currentPreset == .milkdrop || currentPreset == .goom) && handleSelectionListKey(event) { return }
+        // The same keys in all four: F or ⌥Return full screen, Space / Tab the next of the four, , . the previous / next
+        // preset (physical keys, so б / ю on a Russian layout), Esc close
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        let key = Int(event.keyCode)
+        if (modifiers.isEmpty && key == kVK_ANSI_F)
+            || (modifiers == [.option] && (key == kVK_Return || key == kVK_ANSI_KeypadEnter)) {
+            onToggleFullScreen?()
+            return
+        }
+        if modifiers.isEmpty {
+            switch key {
+            case kVK_Space, kVK_Tab: cyclePreset(); return
+            case kVK_ANSI_Comma: stepPreset(by: -1); return
+            case kVK_ANSI_Period: stepPreset(by: 1); return
+            case kVK_Escape: onExit?(); return
+            default: break
+            }
+        }
         if currentPreset == .goom && handleGoomKey(event) { return }
         if currentPreset == .avs && handleAVSKey(event) { return }
-        
+
         switch event.keyCode {
-        case 53: // Esc -> Exit
-            onExit?()
-        case 3: // 'F' -> Toggle Fullscreen
-            onToggleFullScreen?()
-        case 49, 48: // Space / Tab -> next Studio visualization (everywhere, so Milkdrop can be left the same way)
-            cyclePreset()
-        // Milkdrop presets on , / . (physical keys, so б / ю on a Russian layout); letters stay the player's hotkeys
-        case 43 where currentPreset == .milkdrop: // ',' -> previous Milkdrop preset
-            milkdropView?.nextPreset(backwards: true)
-            updateAnimation()
-        case 47 where currentPreset == .milkdrop: // '.' -> next Milkdrop preset
-            milkdropView?.nextPreset()
-            updateAnimation()
-        case 96 where currentPreset == .milkdrop: // F5 -> show / hide preset name and FPS
-            showMilkdropInfo.toggle()
-            milkdropLabel?.isHidden = !showMilkdropInfo
-            updateMilkdropLabel()
         case 8: // 'C' -> Toggle Play / Pause
             PlayerCoordinator.shared.handlePlayPause()
         case 123: // Left Arrow -> Prev Track
@@ -405,64 +430,79 @@ public final class RetroVisualizerView: NSView {
         }
     }
 
-    private func handleSelectionListKey(_ event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection([.command, .control, .option])
-        guard modifiers.isEmpty else { return false }
-        let key = Int(event.keyCode)
-        if key == kVK_ANSI_L {
-            if !event.isARepeat { toggleSelectionList() }
-            return true
+    /// , . in whichever is shown: the built-ins, MilkDrop's presets, GOOM's effects, AVS's presets
+    private func stepPreset(by step: Int) {
+        switch currentPreset {
+        case .milkdrop:
+            milkdropView?.nextPreset(backwards: step < 0)
+            updateAnimation()
+            updateInfo()
+        case .goom:
+            let count = Self.goomEffects.count
+            let current = goomView?.lastForcedEffect.map { $0 - 1 } ?? (step > 0 ? -1 : 0)
+            goomView?.forceEffect(((current + step) % count + count) % count + 1)
+        case .avs:
+            stepAVSPreset(by: step)
+        default:
+            let builtIns = StudioVisualizerPreset.builtIns
+            guard let index = builtIns.firstIndex(of: currentPreset) else { return }
+            currentPreset = builtIns[((index + step) % builtIns.count + builtIns.count) % builtIns.count]
         }
-        guard let list = selectionList else { return false }
-        switch key {
-        case kVK_UpArrow, kVK_ANSI_Comma: list.moveSelection(by: -1)
-        case kVK_DownArrow, kVK_ANSI_Period: list.moveSelection(by: 1)
-        case kVK_PageUp: list.moveSelection(by: -10)
-        case kVK_PageDown: list.moveSelection(by: 10)
-        case kVK_Return, kVK_ANSI_KeypadEnter, kVK_Escape: closeSelectionList()
-        default: return false
-        }
-        return true
     }
 
     private func handleGoomKey(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
         let key = Int(event.keyCode)
-        if modifiers == [.option] && (key == kVK_Return || key == kVK_ANSI_KeypadEnter) {
-            onToggleFullScreen?()
-            return true
-        }
         guard modifiers.isEmpty else { return PlayerCoordinator.shared.handleKeyDown(event) }
         if let effect = Self.goomEffects.firstIndex(where: { $0.key == key }) {
             goomView?.forceEffect(effect + 1)
             return true
         }
         switch key {
-        case kVK_Space: goomView?.showCredits()
         case kVK_ANSI_M: goomView?.toggleCube()
-        case kVK_Escape where goomView?.isShowingCredits == true: goomView?.hideCredits()
         case kVK_ANSI_KeypadPlus where goomView?.isCube == true: goomView?.moveCamera(by: -1)
         case kVK_ANSI_KeypadMinus where goomView?.isCube == true: goomView?.moveCamera(by: 1)
-        case kVK_ANSI_F, kVK_Escape, kVK_Tab: return false
         default: return PlayerCoordinator.shared.handleKeyDown(event)
         }
         return true
     }
 
+    /// One layout for all four, AVS's: the window's commands, then the presets (MilkDrop's and AVS's folders),
+    /// then the shown one's settings. L stays the player's Open file everywhere
     public override func menu(for event: NSEvent) -> NSMenu? {
         if currentPreset == .avs, avsView != nil { return avsMenu() }
-        guard currentPreset == .milkdrop || currentPreset == .goom else { return super.menu(for: event) }
         let menu = NSMenu()
-        let selectionTitle = currentPreset == .milkdrop ? "Load Preset…" : "Choose Effect…"
-        let selection = NSMenuItem(title: selectionTitle, action: #selector(toggleSelectionList), keyEquivalent: "")
-        selection.target = self
-        menu.addItem(selection)
+        menu.autoenablesItems = false // "Fullscreen" as AVS titles it, not AppKit's "Enter Full Screen"
+        let fullScreen = NSMenuItem(title: "Fullscreen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "")
+        fullScreen.target = window
+        menu.addItem(fullScreen)
+        menu.addItem(.separator())
         if currentPreset == .milkdrop {
-            let fullScreen = NSMenuItem(title: "Toggle Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "")
-            fullScreen.target = window
-            menu.addItem(fullScreen)
+            // Where AVS has its editor: a search over all the presets, too many to scroll through
+            let find = NSMenuItem(title: "Find Preset…", action: #selector(findMilkdropPreset), keyEquivalent: "")
+            find.target = self
+            find.isEnabled = milkdropView?.presets.isEmpty == false
+            menu.insertItem(find, at: 1)
+            addMilkdropPresetItems(in: MilkdropView.presetsFolder, to: menu)
+            milkdropView?.rescanPresets() // presets dropped into the folder show up next time
             return menu
         }
+        let presets = NSMenu()
+        let presetsItem = NSMenuItem(title: "Presets", action: nil, keyEquivalent: "")
+        presetsItem.submenu = presets
+        menu.addItem(presetsItem)
+        if currentPreset.isBuiltIn {
+            for (index, preset) in StudioVisualizerPreset.builtIns.enumerated() {
+                addChoice(preset.title, tag: index, checked: preset == currentPreset, action: #selector(chooseBuiltIn(_:)), to: presets)
+            }
+            if isScrolling { addScrollingItems(to: menu) }
+            return menu
+        }
+        for (index, effect) in Self.goomEffects.enumerated() {
+            addChoice(effect.title, tag: index + 1, checked: goomView?.lastForcedEffect == index + 1,
+                      action: #selector(chooseGoomEffect(_:)), to: presets)
+        }
+        menu.addItem(.separator())
         for factor in [1, 2, 4] {
             let item = NSMenuItem(title: "Zoom \(factor)×", action: #selector(zoomGoom(_:)), keyEquivalent: "")
             item.target = self
@@ -471,6 +511,71 @@ public final class RetroVisualizerView: NSView {
         }
         return menu
     }
+
+    /// MilkDrop's presets by folder, as AVS lists its own; a folder fills when it opens, so thousands cost nothing up front
+    private func addMilkdropPresetItems(in folder: URL, to menu: NSMenu) {
+        guard let view = milkdropView else { return }
+        let (subfolders, presets) = Self.folderContents(of: folder, in: view.presets)
+        for name in subfolders {
+            let item = NSMenuItem(title: name, action: nil, keyEquivalent: "")
+            let submenu = NSMenu(title: folder.appendingPathComponent(name, isDirectory: true).path)
+            submenu.delegate = self
+            item.submenu = submenu
+            menu.addItem(item)
+        }
+        for preset in presets {
+            let item = NSMenuItem(title: preset.deletingPathExtension().lastPathComponent,
+                                  action: #selector(chooseMilkdropPreset(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = preset
+            item.state = preset == view.currentPresetURL ? .on : .off
+            menu.addItem(item)
+        }
+    }
+
+    /// The folders (sorted as Finder sorts them) and presets right inside `folder`, out of the scanned preset list
+    static func folderContents(of folder: URL, in presets: [URL]) -> (subfolders: [String], presets: [URL]) {
+        let folderPath = folder.pathComponents
+        var subfolders: [String] = []
+        var inside: [URL] = []
+        for preset in presets {
+            let path = preset.pathComponents
+            guard path.count > folderPath.count, Array(path.prefix(folderPath.count)) == folderPath else { continue }
+            if path.count == folderPath.count + 1 {
+                inside.append(preset)
+            } else if !subfolders.contains(path[folderPath.count]) {
+                subfolders.append(path[folderPath.count])
+            }
+        }
+        return (subfolders.sorted { $0.localizedStandardCompare($1) == .orderedAscending }, inside)
+    }
+
+    @objc private func findMilkdropPreset() {
+        guard let view = milkdropView else { return }
+        let presets = view.presets // a rescan may finish while the dialog is open
+        let root = MilkdropView.presetsFolder.pathComponents.count
+        let names = presets.map { $0.deletingPathExtension().pathComponents.dropFirst(root).joined(separator: "/") }
+        guard let chosen = Win32Dialog.find(title: "Find preset", prompt: "Search for preset:", items: names,
+                                            current: view.currentPresetURL.flatMap { presets.firstIndex(of: $0) }),
+              let index = view.presets.firstIndex(of: presets[chosen]) else { return }
+        applyMilkdropPreset(at: index)
+    }
+
+    @objc private func chooseMilkdropPreset(_ item: NSMenuItem) {
+        guard let url = item.representedObject as? URL, let index = milkdropView?.presets.firstIndex(of: url) else { return }
+        applyMilkdropPreset(at: index)
+    }
+
+    private func addChoice(_ title: String, tag: Int, checked: Bool, action: Selector, to menu: NSMenu) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.tag = tag
+        item.state = checked ? .on : .off
+        menu.addItem(item)
+    }
+
+    @objc private func chooseBuiltIn(_ item: NSMenuItem) { currentPreset = StudioVisualizerPreset.builtIns[item.tag] }
+    @objc private func chooseGoomEffect(_ item: NSMenuItem) { goomView?.forceEffect(item.tag) }
 
     @objc private func zoomGoom(_ item: NSMenuItem) {
         guard let window, !window.styleMask.contains(.fullScreen) else { return }
@@ -483,27 +588,89 @@ public final class RetroVisualizerView: NSView {
                                      height: (CGFloat(height * item.tag) + insets.top + insets.bottom) * scale))
     }
     
+    /// Space: the built-ins (back to the one last shown), MilkDrop, GOOM, AVS
     public func cyclePreset() {
-        let nextRaw = (currentPreset.rawValue + 1) % StudioVisualizerPreset.allCases.count
-        currentPreset = StudioVisualizerPreset(rawValue: nextRaw) ?? .fireSpectrum
+        switch currentPreset {
+        case .milkdrop: currentPreset = .goom
+        case .goom: currentPreset = .avs
+        case .avs: currentPreset = PersistenceManager.shared.state.studioBuiltIn
+        default: currentPreset = .milkdrop
+        }
+    }
+
+    /// Colors of the shown one (the spectrogram and the waveform keep their own) and the shared scroll speed
+    /// What is shown is the selected vis plug-in, as Preferences ▸ Visualization lists them, and the Studio opens on it again
+    private func rememberPreset() {
+        var state = PersistenceManager.shared.state
+        state.studioPreset = currentPreset
+        if currentPreset.isBuiltIn { state.studioBuiltIn = currentPreset }
+        state.goomPluginSelected = currentPreset == .goom
+        state.avsPluginSelected = currentPreset == .avs
+        PersistenceManager.shared.state = state
+        PersistenceManager.shared.scheduleSave()
+    }
+
+    private func addScrollingItems(to menu: NSMenu) {
+        let state = PersistenceManager.shared.state
+        let current = currentPreset == .spectrogram ? state.spectrogramPalette : state.waveformPalette
+        let colors = NSMenu()
+        for palette in VisualizerPalette.allCases {
+            let item = NSMenuItem(title: palette.title, action: #selector(chooseScrollingPalette(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = palette.rawValue
+            item.state = palette == current ? .on : .off
+            colors.addItem(item)
+        }
+        let colorsItem = NSMenuItem(title: "Colors", action: nil, keyEquivalent: "")
+        colorsItem.submenu = colors
+        menu.addItem(.separator())
+        menu.addItem(colorsItem)
+        menu.addItem(.separator())
+        for speed in ScrollSpeed.allCases {
+            let item = NSMenuItem(title: speed.title, action: #selector(chooseScrollSpeed(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = speed.rawValue
+            item.state = speed == state.scrollSpeed ? .on : .off
+            menu.addItem(item)
+        }
+    }
+
+    @objc private func chooseScrollingPalette(_ item: NSMenuItem) {
+        let palette = VisualizerPalette(rawValue: item.tag) ?? .classic
+        if currentPreset == .spectrogram {
+            PersistenceManager.shared.state.spectrogramPalette = palette
+        } else {
+            PersistenceManager.shared.state.waveformPalette = palette
+        }
+        PersistenceManager.shared.scheduleSave()
+        needsDisplay = true
+    }
+
+    @objc private func chooseScrollSpeed(_ item: NSMenuItem) {
+        let speed = ScrollSpeed(rawValue: item.tag) ?? .normal
+        PersistenceManager.shared.state.scrollSpeed = speed
+        PersistenceManager.shared.scheduleSave()
+        spectrogram.setSpeed(speed)
+        scrollingWaveform.setSpeed(speed)
+        needsDisplay = true
     }
     
     private func triggerHUD() {
-        lastUserActivity = Date().timeIntervalSince1970
-        hudAlpha = 1.0
+        updateInfo(show: true)
         needsDisplay = true
     }
     
     // MARK: - Update Tick
     private func renderTick() {
+        infoTick += 1
+        if infoTick % 30 == 0 { updateInfo() }
         if let avsView {
             avsView.renderFrame(playing: isPlaying)
             if isPlaying { switchAVSPresetIfDue() }
             return
         }
         if let goomView {
-            let trackTitle = isPlaying ? PlayerCoordinator.shared.playlist.currentTrack?.displayName : nil
-            goomView.renderFrame(playing: isPlaying, trackTitle: trackTitle)
+            goomView.renderFrame(playing: isPlaying)
             return
         }
         if currentPreset == .milkdrop, let milkdropView {
@@ -511,9 +678,7 @@ public final class RetroVisualizerView: NSView {
                 updateAnimation()
                 return
             }
-            milkdropView.renderFrame(playing: isPlaying && selectionList == nil)
-            milkdropTick += 1
-            if milkdropTick % 30 == 0, showMilkdropInfo { updateMilkdropLabel() }
+            milkdropView.renderFrame(playing: isPlaying)
             return
         }
         let now = Date().timeIntervalSince1970
@@ -527,13 +692,6 @@ public final class RetroVisualizerView: NSView {
             currentFPS = fpsCounter
             fpsCounter = 0
             fpsTimer = 0
-        }
-        
-        // HUD fade out after 3.5 seconds
-        let idleTime = now - lastUserActivity
-        if idleTime > 3.0 {
-            let fade = CGFloat(max(0.0, 1.0 - (idleTime - 3.0) * 1.5))
-            hudAlpha = fade
         }
         
         // Update peak physics
@@ -558,6 +716,9 @@ public final class RetroVisualizerView: NSView {
             }
         }
         
+        if currentPreset == .spectrogram { spectrogram.advance(playing: isPlaying) }
+        if currentPreset == .waveform { scrollingWaveform.advance(playing: isPlaying) }
+
         // Update solar orb particles
         for i in 0..<solarParticles.count {
             solarParticles[i].angle += solarParticles[i].speed * 0.015
@@ -591,17 +752,17 @@ public final class RetroVisualizerView: NSView {
             drawMatrixRain(in: context, width: w, height: h)
         case .solarOrb:
             drawSolarOrb(in: context, width: w, height: h)
+        case .spectrogram:
+            drawSpectrogram(in: context, width: w, height: h)
+        case .waveform:
+            scrollingWaveform.draw(in: context, rect: bounds, palette: PersistenceManager.shared.state.waveformPalette)
         case .milkdrop, .goom, .avs:
             return
         }
         
         // CRT Scanline Overlay
-        drawCRTScanlines(in: context, width: w, height: h)
-        
-        // HUD Overlay
-        if hudAlpha > 0.01 {
-            drawHUD(in: context, width: w, height: h, alpha: hudAlpha)
-        }
+        if !isScrolling { drawCRTScanlines(in: context, width: w, height: h) }
+
     }
     
     // MARK: - Preset 0: Fire Spectrum & Peaks
@@ -852,6 +1013,22 @@ public final class RetroVisualizerView: NSView {
         }
     }
     
+    // MARK: - Spectrogram
+    private func drawSpectrogram(in context: CGContext, width w: CGFloat, height h: CGFloat) {
+        if let image = spectrogram.image(palette: PersistenceManager.shared.state.spectrogramPalette) {
+            context.interpolationQuality = .medium
+            context.draw(image, in: bounds)
+        }
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: NSColor(white: 1, alpha: 0.7)
+        ]
+        for grid in Spectrogram.gridFrequencies {
+            let y = h * CGFloat(Spectrogram.position(of: grid.hz))
+            (grid.title as NSString).draw(at: CGPoint(x: 8, y: y - 6), withAttributes: attrs)
+        }
+    }
+
     // MARK: - CRT Scanlines
     private func drawCRTScanlines(in context: CGContext, width w: CGFloat, height h: CGFloat) {
         context.saveGState()
@@ -865,59 +1042,17 @@ public final class RetroVisualizerView: NSView {
         }
         context.restoreGState()
     }
-    
-    // MARK: - HUD Overlay
-    private func drawHUD(in context: CGContext, width w: CGFloat, height h: CGFloat, alpha: CGFloat) {
-        let coord = PlayerCoordinator.shared
-        let track = coord.playlist.currentTrack
-        let status = coord.audioEngine.status
-        let time = coord.audioEngine.currentTime
-        let total = track?.duration ?? 0
-        let statusStr = (status == .playing) ? "PLAYING" : ((status == .paused) ? "PAUSED" : "STOPPED")
-        
-        let titleStr = track?.title ?? "Winamp Studio"
-        let artistStr = track?.artist ?? "MacAmp \(AppConstants.App.version)"
-        
-        let curM = Int(time) / 60
-        let curS = Int(time) % 60
-        let timeStr: String
-        if total > 0 {
-            let totM = Int(total) / 60
-            let totS = Int(total) % 60
-            timeStr = String(format: "%02d:%02d / %02d:%02d", curM, curS, totM, totS)
-        } else {
-            timeStr = String(format: "%02d:%02d (LIVE)", curM, curS)
-        }
-        
-        // Top-Right: Preset info & FPS
-        let presetStr = "PRESET [\(currentPreset.rawValue + 1)/\(StudioVisualizerPreset.allCases.count)]: \(currentPreset.title.uppercased())  •  \(currentFPS) FPS"
-        let topAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .bold),
-            .foregroundColor: NSColor(white: 0.9, alpha: alpha)
-        ]
-        let topSize = (presetStr as NSString).size(withAttributes: topAttrs)
-        (presetStr as NSString).draw(at: CGPoint(x: w - topSize.width - 24, y: h - topSize.height - 20), withAttributes: topAttrs)
-        
-        // Bottom-Left: Track Title & Transport Status
-        let titleAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 18, weight: .bold),
-            .foregroundColor: NSColor(white: 1.0, alpha: alpha)
-        ]
-        let subAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium),
-            .foregroundColor: NSColor(white: 0.75, alpha: alpha)
-        ]
-        let helpAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10, weight: .regular),
-            .foregroundColor: NSColor(white: 0.5, alpha: alpha)
-        ]
-        
-        (artistStr as NSString).draw(at: CGPoint(x: 28, y: 72), withAttributes: subAttrs)
-        (titleStr as NSString).draw(at: CGPoint(x: 28, y: 48), withAttributes: titleAttrs)
-        let subLine = "[\(statusStr)]  \(timeStr)  •  MacAmp AVS Studio"
-        (subLine as NSString).draw(at: CGPoint(x: 28, y: 30), withAttributes: subAttrs)
-        
-        let helpLine = "[Space / Click]: Change Preset   |   [F]: Fullscreen   |   [Esc]: Exit   |   [←/→]: Tracks   |   [↑/↓]: Volume"
-        (helpLine as NSString).draw(at: CGPoint(x: 28, y: 12), withAttributes: helpAttrs)
+}
+
+/// The hints' layer: it never takes the clicks and drags meant for the visualizer under it
+private final class PassThroughView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+extension RetroVisualizerView: NSMenuDelegate {
+    /// A MilkDrop folder's submenu, its path as the title, filled the first time it opens
+    public func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu.items.isEmpty else { return }
+        addMilkdropPresetItems(in: URL(fileURLWithPath: menu.title, isDirectory: true), to: menu)
     }
 }

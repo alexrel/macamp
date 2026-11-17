@@ -65,10 +65,6 @@ extension RetroVisualizerView {
         guard let avsView else { return false }
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
         let key = Int(event.keyCode)
-        if modifiers == [.option] && (key == kVK_Return || key == kVK_ANSI_KeypadEnter) {
-            onToggleFullScreen?()
-            return true
-        }
         if let index = Self.functionKeys.firstIndex(of: key), modifiers.isSubset(of: [.control]) {
             useAVSSlot(index, name: "F\(index + 1)", save: modifiers == [.control])
             return true
@@ -81,16 +77,13 @@ extension RetroVisualizerView {
         }
         guard modifiers.isEmpty else { return PlayerCoordinator.shared.handleKeyDown(event) }
         switch key {
-        case kVK_Space: randomAVSPreset()
         case kVK_ANSI_U: stepAVSPreset(by: 1)
         case kVK_ANSI_Y: stepAVSPreset(by: -1)
         case kVK_ANSI_T: avsView.showStatus(avsView.presetName)
-        case kVK_ANSI_F: avsView.showsFPS.toggle()
         case kVK_ANSI_R:
             PersistenceManager.shared.state.avsRandomSwitch.toggle()
             PersistenceManager.shared.scheduleSave()
             avsView.showStatus(PersistenceManager.shared.state.avsRandomSwitch ? "random presets on" : "random presets off")
-        case kVK_Escape, kVK_Tab: return false
         default: return PlayerCoordinator.shared.handleKeyDown(event)
         }
         return true

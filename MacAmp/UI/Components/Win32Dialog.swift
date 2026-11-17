@@ -22,6 +22,116 @@ public enum Win32Dialog {
         return accepted ? model.values : nil
     }
 
+    /// A search box over a long list (MilkDrop's thousands of presets): type to filter, ↑ ↓ to pick, Return or a
+    /// double click to take it. Returns the index into `items`, or nil on Cancel / Esc.
+    static func find(title: String, prompt: String, items: [String], current: Int?) -> Int? {
+        let model = FindModel(items: items, current: current)
+        // The search field keeps focus; the arrows move through the list as in Jump to file
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            switch event.keyCode {
+            case AppConstants.KeyCodes.upArrow: model.move(by: -1)
+            case AppConstants.KeyCodes.downArrow: model.move(by: 1)
+            case AppConstants.KeyCodes.pageUp: model.move(by: -findPageStep)
+            case AppConstants.KeyCodes.pageDown: model.move(by: findPageStep)
+            default: return event
+            }
+            return nil
+        }
+        defer { if let monitor { NSEvent.removeMonitor(monitor) } }
+        let accepted = runModal(title: title, width: 420) { finish in
+            FindView(prompt: prompt, model: model, finish: finish)
+        }
+        return accepted ? model.selected : nil
+    }
+
+    /// Rows Page Up / Page Down move in the find list
+    private static let findPageStep = 10
+
+    /// The items holding every word of the query, in any case and order ("ripples liquid" finds "Liquid Ripples/…")
+    static func matches(_ query: String, in items: [String]) -> [Int] {
+        let words = query.split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return Array(items.indices) }
+        return items.indices.filter { index in words.allSatisfy { items[index].localizedCaseInsensitiveContains($0) } }
+    }
+
+    private final class FindModel: ObservableObject {
+        let items: [String]
+        @Published var query = "" {
+            didSet {
+                matches = Win32Dialog.matches(query, in: items)
+                if selected.map({ !matches.contains($0) }) ?? true { selected = matches.first }
+            }
+        }
+        @Published private(set) var matches: [Int]
+        @Published var selected: Int?
+
+        init(items: [String], current: Int?) {
+            self.items = items
+            matches = Array(items.indices)
+            selected = current ?? (items.isEmpty ? nil : 0)
+        }
+
+        func move(by step: Int) {
+            guard !matches.isEmpty else { return }
+            let row = selected.flatMap { matches.firstIndex(of: $0) } ?? -1
+            selected = matches[min(max(row + step, 0), matches.count - 1)]
+        }
+    }
+
+    private struct FindView: View {
+        let prompt: String
+        @ObservedObject var model: FindModel
+        let finish: (Bool) -> Void
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text(prompt)
+                        .font(.system(size: 11))
+                        .foregroundColor(Win32Colors.text)
+                    Win32TextField(text: $model.query, autoFocus: .cursor)
+                }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(model.matches, id: \.self) { index in
+                                let isSelected = index == model.selected
+                                Text(model.items[index])
+                                    .font(.system(size: 11))
+                                    .foregroundColor(isSelected ? .white : Win32Colors.text)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .padding(.horizontal, 6)
+                                    .frame(maxWidth: .infinity, minHeight: 17, alignment: .leading)
+                                    .background(isSelected ? Win32Colors.selectionBlue : Color.clear)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture(count: 2) { model.selected = index; finish(true) }
+                                    .onTapGesture { model.selected = index }
+                                    .id(index)
+                            }
+                        }
+                    }
+                    .frame(height: 260)
+                    .background(Color.white)
+                    .win32Sunken()
+                    .onAppear { if let index = model.selected { proxy.scrollTo(index, anchor: .center) } }
+                    .onChange(of: model.selected) { _, index in if let index { proxy.scrollTo(index, anchor: .center) } }
+                }
+                HStack(spacing: 6) {
+                    Text(model.query.isEmpty ? "\(model.items.count)" : "\(model.matches.count) / \(model.items.count)")
+                        .font(.system(size: 11))
+                        .foregroundColor(Win32Colors.textDisabled)
+                    Spacer()
+                    DialogButton("Load", isDefault: true) { finish(model.selected != nil) }
+                    DialogButton("Cancel") { finish(false) }
+                }
+                .padding(.top, 4)
+            }
+            .padding(12)
+            .background(Win32Colors.dialogBg)
+        }
+    }
+
     /// Asks a yes/no question. Returns true for the confirm button.
     public static func confirm(title: String, message: String, confirmTitle: String = "OK", cancelTitle: String = "Cancel") -> Bool {
         runModal(title: title, width: 340) { finish in

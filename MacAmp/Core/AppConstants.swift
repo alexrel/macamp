@@ -25,6 +25,8 @@ public enum AppConstants {
     
     // MARK: - Window Dimensions (1x Base Scale)
     public enum Window {
+        /// The Visualizer Studio's entry in windowPositions
+        public static let studioFrameKey = "studio"
         /// Standard Winamp 2.x main window width in pixels
         public static let width: CGFloat = 275
         /// Standard Winamp 2.x main window height in pixels

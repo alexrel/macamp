@@ -9,8 +9,6 @@ struct GoomOptions: Codable, Equatable {
     var height = 240
     var frameRate = 30
     var cinemascope = false
-    var showFPS = true
-    var showTitle = true
 
     var renderWidth: Int { min(max(width, Self.widths.lowerBound), Self.widths.upperBound) }
     var renderHeight: Int { min(max(height, Self.heights.lowerBound), Self.heights.upperBound) }
@@ -142,6 +140,37 @@ public struct AppState: Codable {
         set { goomOptionsStorage = newValue }
     }
     var goomOptionsStorage: GoomOptions?
+
+    /// Visualizer Studio: what it showed last (it opens on it again) and the last of its built-ins (Space comes back to it)
+    var studioPreset: StudioVisualizerPreset? {
+        get { studioPresetStorage.flatMap(StudioVisualizerPreset.init) }
+        set { studioPresetStorage = newValue?.rawValue }
+    }
+    var studioPresetStorage: Int?
+    var studioBuiltIn: StudioVisualizerPreset {
+        get { studioBuiltInStorage.flatMap(StudioVisualizerPreset.init).flatMap { $0.isBuiltIn ? $0 : nil } ?? .fireSpectrum }
+        set { studioBuiltInStorage = newValue.rawValue }
+    }
+    var studioBuiltInStorage: Int?
+    /// MilkDrop: the preset last shown, loaded again when MilkDrop comes back
+    var milkdropPresetPath: String?
+
+    /// Visualizer Studio's spectrogram and waveform: each one's colors, and their scroll speed (right-click menu)
+    var spectrogramPalette: VisualizerPalette {
+        get { spectrogramPaletteStorage.flatMap(VisualizerPalette.init) ?? .classic }
+        set { spectrogramPaletteStorage = newValue.rawValue }
+    }
+    var spectrogramPaletteStorage: Int?
+    var waveformPalette: VisualizerPalette {
+        get { waveformPaletteStorage.flatMap(VisualizerPalette.init) ?? .ivory }
+        set { waveformPaletteStorage = newValue.rawValue }
+    }
+    var waveformPaletteStorage: Int?
+    var scrollSpeed: ScrollSpeed {
+        get { scrollSpeedStorage.flatMap(ScrollSpeed.init) ?? .normal }
+        set { scrollSpeedStorage = newValue.rawValue }
+    }
+    var scrollSpeedStorage: Int?
 
     /// Advanced Visualization Studio is the selected vis plug-in (the list's third row)
     var avsPluginSelected: Bool {
@@ -398,6 +427,12 @@ public struct AppState: Codable {
     public var isBrowserVisible: Bool {
         get { isBrowserVisibleStorage ?? false }
         set { isBrowserVisibleStorage = newValue }
+    }
+    /// The Visualizer Studio was open at quit: it opens again, as Winamp restarted a running vis plug-in
+    public var isStudioVisibleStorage: Bool? = nil
+    public var isStudioVisible: Bool {
+        get { isStudioVisibleStorage ?? false }
+        set { isStudioVisibleStorage = newValue }
     }
     public var isLibraryVisibleStorage: Bool? = nil
     public var isLibraryVisible: Bool {

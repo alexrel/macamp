@@ -177,6 +177,18 @@ extension PlayerCoordinator {
     func confirmAndInstallPlugin(_ path: String) {
         let url = URL(fileURLWithPath: path)
         // A preset pack only copies presets: nothing of it runs
+        if let pack = PluginManager.presetPack(url), pack.milkdrop {
+            guard Win32Dialog.confirm(title: "Install plug-in",
+                                      message: "Install \(pack.title)?\n\nThe presets go into the MilkDrop preset folder and show up in the MilkDrop window's right-click menu.",
+                                      confirmTitle: "Install", cancelTitle: "Cancel") else { return }
+            mainView?.marquee.showTemporaryMessage("Installing MilkDrop presets...", duration: 4)
+            let folders = pack.folders, target = MilkdropView.presetsFolder
+            Task { // thousands of files: off the main thread
+                let count = await Task.detached { PluginManager.copyPresets(folders, extension: MilkdropView.fileExtension, into: target) }.value
+                mainView?.marquee.showTemporaryMessage("MilkDrop presets installed: \(count)", duration: 4)
+            }
+            return
+        }
         if let pack = PluginManager.presetPack(url) {
             guard Win32Dialog.confirm(title: "Install plug-in",
                                       message: "Install \(pack.title)?\n\nThe presets go into the AVS preset folder and show up in the AVS window's right-click menu.",

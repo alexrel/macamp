@@ -65,13 +65,38 @@ enum PluginManager {
         return converter
     }
 
-    /// Kind "avs-presets": a pack of AVS presets (Contents/Resources/<folder>/*.avs), installed into AVS's preset folder.
-    /// Returns its title and the folders it brings.
-    static func presetPack(_ bundle: URL) -> (title: String, folders: [URL])? {
-        guard let info = info(bundle, kind: "avs-presets") else { return nil }
+    /// Kinds "avs-presets" and "milkdrop-presets": a pack of presets (Contents/Resources/<folder>/…), installed into
+    /// that visualizer's preset folder. Returns its title, whether it is MilkDrop's, and the folders it brings.
+    static func presetPack(_ bundle: URL) -> (title: String, milkdrop: Bool, folders: [URL])? {
+        let milkdrop = info(bundle, kind: "milkdrop-presets")
+        guard let info = milkdrop ?? info(bundle, kind: "avs-presets") else { return nil }
         let resources = bundle.appendingPathComponent("Contents/Resources", isDirectory: true)
         let folders = (try? FileManager.default.contentsOfDirectory(at: resources, includingPropertiesForKeys: nil)) ?? []
-        return (title(info, bundle), folders)
+        return (title(info, bundle), milkdrop != nil, folders)
+    }
+
+    /// Copies preset files with this extension, or folders of them (keeping their subfolders), into `folder`;
+    /// presets already there stay as they are. Returns how many were copied.
+    nonisolated static func copyPresets(_ urls: [URL], extension ext: String, into folder: URL) -> Int {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        var copied = 0
+        func copy(_ url: URL, into destination: URL) {
+            if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                let target = destination.appendingPathComponent(url.lastPathComponent, isDirectory: true)
+                try? fm.createDirectory(at: target, withIntermediateDirectories: true)
+                for item in (try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.isDirectoryKey],
+                                                         options: [.skipsHiddenFiles])) ?? [] {
+                    copy(item, into: target)
+                }
+            } else if url.pathExtension.lowercased() == ext {
+                let target = destination.appendingPathComponent(url.lastPathComponent)
+                guard !fm.fileExists(atPath: target.path) else { return }
+                if (try? fm.copyItem(at: url, to: target)) != nil { copied += 1 }
+            }
+        }
+        for url in urls { copy(url, into: folder) }
+        return copied
     }
 
     static var extensions: Set<String> { converters.reduce(into: Set<String>()) { $0.formUnion($1.extensions) } }

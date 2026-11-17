@@ -171,6 +171,10 @@ extension PlayerCoordinator {
         persistence.state.isPlaylistVisible = pl.isVisible
         saveAuxFrame(video?.window, "video")
         saveAuxFrame(browser?.window, "browser")
+        if let studio = visualizerStudioWindow {
+            persistence.state.isStudioVisible = studio.isVisible
+            if !studio.styleMask.contains(.fullScreen) { saveAuxFrame(studio, AppConstants.Window.studioFrameKey) }
+        }
         if let library = libraryWindow {
             persistence.state.isLibraryVisible = library.isVisible
             saveLibraryFrame()

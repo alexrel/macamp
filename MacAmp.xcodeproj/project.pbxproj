@@ -105,7 +105,7 @@
 		AA0D5C1E00000000000000A9 /* projectM-LGPL-2.1.txt in Resources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000A8 /* projectM-LGPL-2.1.txt */; };
 		AA0D5C1E00000000000000AB /* projectM-source.tar.gz in Resources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000AA /* projectM-source.tar.gz */; };
 		AA0D5C1E00000000000000B6 /* GoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B1 /* GoomView.swift */; };
-		AA0D5C1E00000000000000B7 /* VisualizerSelectionList.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B2 /* VisualizerSelectionList.swift */; };
+		AA0D5C1E0000000000000F56 /* Spectrogram.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E0000000000000F51 /* Spectrogram.swift */; };
 		AA0D5C1E00000000000000B8 /* libgoom.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B3 /* libgoom.dylib */; };
 		AA0D5C1E00000000000000B9 /* libgoom.dylib in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B3 /* libgoom.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		AA0D5C1E00000000000000BA /* GOOM-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = AA0D5C1E00000000000000B4 /* GOOM-LICENSE.txt */; };
@@ -219,7 +219,7 @@
 		AA0D5C1E00000000000000A8 /* projectM-LGPL-2.1.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "projectM-LGPL-2.1.txt"; path = "build/projectm/projectM-LGPL-2.1.txt"; sourceTree = SOURCE_ROOT; };
 		AA0D5C1E00000000000000AA /* projectM-source.tar.gz */ = {isa = PBXFileReference; lastKnownFileType = archive.gzip; name = "projectM-source.tar.gz"; path = "build/projectm/projectM-source.tar.gz"; sourceTree = SOURCE_ROOT; };
 		AA0D5C1E00000000000000B1 /* GoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "GoomView.swift"; path = "GoomView.swift"; sourceTree = "<group>"; };
-		AA0D5C1E00000000000000B2 /* VisualizerSelectionList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "VisualizerSelectionList.swift"; path = "VisualizerSelectionList.swift"; sourceTree = "<group>"; };
+		AA0D5C1E0000000000000F51 /* Spectrogram.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Spectrogram.swift"; path = "Spectrogram.swift"; sourceTree = "<group>"; };
 		AA0D5C1E00000000000000B3 /* libgoom.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = "libgoom.dylib"; path = "build/goom/libgoom.dylib"; sourceTree = SOURCE_ROOT; };
 		AA0D5C1E00000000000000B4 /* GOOM-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = "GOOM-LICENSE.txt"; path = "build/goom/GOOM-LICENSE.txt"; sourceTree = SOURCE_ROOT; };
 		AA0D5C1E00000000000000B5 /* GOOM-source.zip */ = {isa = PBXFileReference; lastKnownFileType = archive.zip; name = "GOOM-source.zip"; path = "build/goom/GOOM-source.zip"; sourceTree = SOURCE_ROOT; };
@@ -553,7 +553,7 @@
 				AAAE1F0C29EF5855E6B39317 /* RetroVisualizerWindow.swift */,
 				AA0D5C1E00000000000000A1 /* MilkdropView.swift */,
 				AA0D5C1E00000000000000B1 /* GoomView.swift */,
-				AA0D5C1E00000000000000B2 /* VisualizerSelectionList.swift */,
+				AA0D5C1E0000000000000F51 /* Spectrogram.swift */,
 				AA0D5C1E00000000000000B3 /* libgoom.dylib */,
 				AA0D5C1E00000000000000C1 /* AVSView.swift */,
 				AA0D5C1E00000000000000C2 /* RetroVisualizerView+AVS.swift */,
@@ -735,7 +735,7 @@
 				AA41F9DD7C55435BD6A690A7 /* RetroVisualizerWindow.swift in Sources */,
 				AA0D5C1E00000000000000A2 /* MilkdropView.swift in Sources */,
 				AA0D5C1E00000000000000B6 /* GoomView.swift in Sources */,
-				AA0D5C1E00000000000000B7 /* VisualizerSelectionList.swift in Sources */,
+				AA0D5C1E0000000000000F56 /* Spectrogram.swift in Sources */,
 				AA0D5C1E00000000000000C6 /* AVSView.swift in Sources */,
 				AA0D5C1E00000000000000C7 /* RetroVisualizerView+AVS.swift in Sources */,
 				AA0D5C1E00000000000000CE /* AVSEditor.swift in Sources */,
