@@ -355,13 +355,20 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
             baseSkinItem.target = coord
             baseSkinItem.state = SkinManager.shared.isBaseSkinActive ? .on : .off
             skinsMenu.addItem(baseSkinItem)
+            if let hd = SkinManager.shared.baseHDSkinURL {
+                let item = NSMenuItem(title: "Winamp Classic HD", action: #selector(PlayerCoordinator.handleSkinSelected(_:)), keyEquivalent: "")
+                item.target = coord
+                item.representedObject = hd
+                item.state = SkinManager.shared.isBaseHDSkinActive ? .on : .off
+                skinsMenu.addItem(item)
+            }
             
             let installedSkins = SkinManager.shared.installedSkins()
             if !installedSkins.isEmpty {
                 skinsMenu.addItem(NSMenuItem.separator())
                 for skinURL in installedSkins {
                     let name = skinURL.deletingPathExtension().lastPathComponent
-                    let item = NSMenuItem(title: name, action: #selector(PlayerCoordinator.handleSkinSelected(_:)), keyEquivalent: "")
+                    let item = NSMenuItem(title: SkinManager.listName(for: skinURL), action: #selector(PlayerCoordinator.handleSkinSelected(_:)), keyEquivalent: "")
                     item.target = coord
                     item.representedObject = skinURL
                     let isActive = (!SkinManager.shared.isBaseSkinActive && (SkinManager.shared.currentSkinURL?.path == skinURL.path || SkinManager.shared.currentSkin?.name == name))

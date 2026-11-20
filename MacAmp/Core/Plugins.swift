@@ -94,6 +94,29 @@ enum PluginManager {
         return (title(info, bundle), milkdrop != nil, folders)
     }
 
+    /// Kind "skins": a pack of skins (Contents/Resources/…, .msz / .wsz, folders allowed), e.g. the HD skins.
+    /// Returns its title and the skin files it brings.
+    static func skinPack(_ bundle: URL) -> (title: String, skins: [URL])? {
+        guard let info = info(bundle, kind: "skins") else { return nil }
+        let resources = bundle.appendingPathComponent("Contents/Resources", isDirectory: true)
+        let skins = (FileManager.default.enumerator(at: resources, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+            .filter { AppConstants.Audio.skinExtensions.contains($0.pathExtension.lowercased()) }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        return (title(info, bundle), skins)
+    }
+
+    /// Copies a pack's skins into the Skins folder. Unlike presets, a skin of the same name is replaced: a newer pack
+    /// brings newer skins. Returns how many were copied.
+    static func installSkins(_ skins: [URL], into folder: URL) -> Int {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        return skins.filter { skin in
+            let target = folder.appendingPathComponent(skin.lastPathComponent)
+            try? fm.removeItem(at: target)
+            return (try? fm.copyItem(at: skin, to: target)) != nil
+        }.count
+    }
+
     /// Copies preset files with this extension, or folders of them (keeping their subfolders), into `folder`;
     /// presets already there stay as they are. Returns how many were copied.
     nonisolated static func copyPresets(_ urls: [URL], extension ext: String, into folder: URL) -> Int {

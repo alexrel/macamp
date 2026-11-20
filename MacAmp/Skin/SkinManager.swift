@@ -13,7 +13,30 @@ public class SkinManager: ObservableObject {
     
     /// True if the current skin is the built-in Winamp base skin (base-2.91.wsz)
     public var isBaseSkinActive: Bool {
-        return currentSkinURL == nil || currentSkin?.name == "base-2.91"
+        return currentSkinURL == nil || currentSkin?.name == AppConstants.Skins.baseName
+    }
+
+    /// The built-in HD redraw of the base skin (in the app; from the repository when tests run)
+    public let baseHDSkinURL: URL? = [
+        Bundle.main.url(forResource: AppConstants.Skins.baseHDName, withExtension: AppConstants.Skins.hdExtension),
+        URL(fileURLWithPath: "MacAmp/Resources/\(AppConstants.Skins.baseHDName).\(AppConstants.Skins.hdExtension)")
+    ].compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
+
+    public var isBaseHDSkinActive: Bool {
+        currentSkinURL != nil && currentSkinURL?.standardizedFileURL == baseHDSkinURL?.standardizedFileURL
+    }
+
+    /// The skin a saved path points to. The built-in HD skin lives inside the app, whose path changes when it moves
+    /// (an update, /Applications): its file name is enough to find it again.
+    public func savedSkinURL(_ path: String) -> URL? {
+        if FileManager.default.fileExists(atPath: path) { return URL(fileURLWithPath: path) }
+        guard let builtIn = baseHDSkinURL, URL(fileURLWithPath: path).lastPathComponent == builtIn.lastPathComponent else { return nil }
+        return builtIn
+    }
+
+    /// The two built-in skins, never listed among the installed ones or deleted
+    static func isBuiltIn(_ url: URL) -> Bool {
+        [AppConstants.Skins.baseName, AppConstants.Skins.baseHDName].contains(url.deletingPathExtension().lastPathComponent.lowercased())
     }
     
     /// Where skins are listed and installed: Preferences ▸ Skins ▸ "Set skins directory...", by default
@@ -36,12 +59,13 @@ public class SkinManager: ObservableObject {
     
     private func loadBaseSkin() {
         // Look for base-2.91.wsz or unpacked folder in Bundle or project resources
+        let base = AppConstants.Skins.baseName
         let candidateURLs: [URL?] = [
-            Bundle.main.url(forResource: "base-2.91", withExtension: "wsz"),
-            Bundle.main.resourceURL?.appendingPathComponent("base-2.91.wsz"),
-            Bundle.main.resourceURL?.appendingPathComponent("skin/base-2.91.wsz"),
-            URL(fileURLWithPath: "skin/base-2.91.wsz"),
-            URL(fileURLWithPath: "skin/base-2.91")
+            Bundle.main.url(forResource: base, withExtension: "wsz"),
+            Bundle.main.resourceURL?.appendingPathComponent("\(base).wsz"),
+            Bundle.main.resourceURL?.appendingPathComponent("skin/\(base).wsz"),
+            URL(fileURLWithPath: "skin/\(base).wsz"),
+            URL(fileURLWithPath: "skin/\(base)")
         ]
         
         for url in candidateURLs.compactMap({ $0 }) {
@@ -59,6 +83,15 @@ public class SkinManager: ObservableObject {
         print("SkinManager: Warning - base skin not found at standard paths.")
     }
     
+    /// A skin's name in the lists and menus: the file name, with " (HD)" for an .msz HD skin, which often shares its
+    /// name with the classic .wsz it was drawn from, unless the name already says HD ("… Remaster HD")
+    public static func listName(for url: URL) -> String {
+        let name = url.deletingPathExtension().lastPathComponent
+        guard url.pathExtension.lowercased() == AppConstants.Skins.hdExtension,
+              name.range(of: #"\bHD\b"#, options: [.regularExpression, .caseInsensitive]) == nil else { return name }
+        return name + " (HD)"
+    }
+
     /// Returns all user-installed skins in the MacAmp/Skins directory, sorted alphabetically.
     public func installedSkins() -> [URL] {
         let dir = skinsDirectory
@@ -67,15 +100,13 @@ public class SkinManager: ObservableObject {
             return []
         }
         
-        let skinExtensions = Set(["wsz", "zip"])
+        let skinExtensions = AppConstants.Audio.skinExtensions
         var result: [URL] = []
         
         for url in files {
             let ext = url.pathExtension.lowercased()
-            let name = url.deletingPathExtension().lastPathComponent
-            
-            // Skip base skin from custom skins list
-            if name.lowercased().contains("base-2.91") {
+            // The built-in skins have their own entries at the top of the list
+            if SkinManager.isBuiltIn(url) {
                 continue
             }
             
@@ -107,7 +138,7 @@ public class SkinManager: ObservableObject {
         }
     }
     
-    /// Loads a skin from a .wsz file or directory without copying it.
+    /// Loads a skin archive or directory without copying it.
     @discardableResult
     public func loadSkin(from url: URL) -> Bool {
         guard let skin = SkinLoader.shared.loadSkin(from: url) else {
@@ -115,10 +146,14 @@ public class SkinManager: ObservableObject {
             return false
         }
         
+        apply(skin, from: url)
+        return true
+    }
+
+    private func apply(_ skin: Skin, from url: URL) {
         self.currentSkinURL = url
         self.currentSkin = skin
         self.skinDidChange.send(skin)
-        return true
     }
     
     /// Installs a skin from any file or folder URL into MacAmp's Skins directory, then loads it.
@@ -132,6 +167,13 @@ public class SkinManager: ObservableObject {
         
         let dir = skinsDirectory
         let targetURL = dir.appendingPathComponent(sourceURL.lastPathComponent)
+        let hdSkin: Skin?
+        if sourceURL.pathExtension.lowercased() == AppConstants.Skins.hdExtension {
+            guard let skin = SkinLoader.shared.loadSkin(from: sourceURL) else { return nil }
+            hdSkin = skin
+        } else {
+            hdSkin = nil
+        }
         
         // If source is not already inside skinsDirectory, copy it
         if sourceURL.path != targetURL.path {
@@ -147,6 +189,10 @@ public class SkinManager: ObservableObject {
             }
         }
         
+        if let hdSkin {
+            apply(hdSkin, from: targetURL)
+            return targetURL
+        }
         if loadSkin(from: targetURL) {
             return targetURL
         }
@@ -158,7 +204,7 @@ public class SkinManager: ObservableObject {
     @discardableResult
     public func deleteSkin(at url: URL) -> Bool {
         // Safety guard: Never delete built-in base skin
-        if url.lastPathComponent.lowercased().contains("base-2.91") {
+        if SkinManager.isBuiltIn(url) {
             print("SkinManager: Cannot delete built-in base skin")
             return false
         }
@@ -206,11 +252,16 @@ public class SkinManager: ObservableObject {
     
     /// Returns the full sheet CGImage for the given sheet name.
     public func sheet(_ name: String) -> CGImage? {
+        sheetWithScale(name)?.image
+    }
+
+    func sheetWithScale(_ name: String) -> (image: CGImage, scale: Int)? {
         let key = name.uppercased()
         if let current = currentSkin, let sheet = current.images[key] {
-            return sheet
+            return (sheet, current.pixelScale)
         }
-        return baseSkin?.images[key]
+        guard let base = baseSkin, let sheet = base.images[key] else { return nil }
+        return (sheet, base.pixelScale)
     }
 
     /// The text Winamp shows under the skin list: the skin author's own .txt (readme), not its config files

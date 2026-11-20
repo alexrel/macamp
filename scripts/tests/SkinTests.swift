@@ -41,6 +41,90 @@ func skinTests() {
         }
     }
 
+    testGroup("HD skin archives use logical sprite coordinates") {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let scale = AppConstants.Skins.hdScale
+        let board = CGContext(data: nil, width: 275 * scale, height: 116 * scale,
+                              bitsPerComponent: 8, bytesPerRow: 0, space: Skin.colorSpace,
+                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        board.setFillColor(CGColor(red: 0, green: 1, blue: 0, alpha: 1))
+        board.fill(CGRect(x: 20 * scale, y: (116 - 12) * scale, width: 8 * scale, height: 5 * scale))
+        let png = NSBitmapImageRep(cgImage: board.makeImage()!).representation(using: .png, properties: [:])!
+        try png.write(to: dir.appendingPathComponent("MAIN.png"))
+        let archive = dir.appendingPathComponent("test-hd-\(dir.lastPathComponent).msz")
+        let zip = Process()
+        zip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        zip.currentDirectoryURL = dir
+        zip.arguments = ["-q", archive.path, "MAIN.png"]
+        try zip.run()
+        zip.waitUntilExit()
+        guard zip.terminationStatus == 0, let skin = SkinLoader.shared.loadSkin(from: archive),
+              let sprite = skin.image(for: SpriteSlice("patch", "MAIN", 20, 7, 8, 5))
+        else { throw NSError(domain: "test", code: 1) }
+        assertEqual(skin.pixelScale, scale, "MSZ density comes from MAIN")
+        assertEqual([sprite.width, sprite.height], [8 * scale, 5 * scale], "Crop keeps source density")
+        let pixel = NSBitmapImageRep(cgImage: sprite).colorAt(x: 10, y: 5)?.usingColorSpace(.sRGB)
+        assertTrue((pixel?.greenComponent ?? 0) > 0.9 && pixel?.alphaComponent == 1, "The scaled crop hits the opaque green patch")
+        assertEqual(SkinManager.listName(for: URL(fileURLWithPath: "/Skins/Bento.msz")), "Bento (HD)", "HD skins are marked in the skin list")
+        assertEqual(SkinManager.listName(for: URL(fileURLWithPath: "/Skins/Bento.wsz")), "Bento", "Classic skins keep their name")
+        assertEqual(SkinManager.listName(for: URL(fileURLWithPath: "/Skins/Winamp 5 Classified Remaster HD.msz")), "Winamp 5 Classified Remaster HD",
+                    "A name that already says HD gets no second (HD)")
+
+        // HD is 4x only: the same archive drawn at 3x is not an HD skin
+        let three = CGContext(data: nil, width: 275 * 3, height: 116 * 3, bitsPerComponent: 8, bytesPerRow: 0, space: Skin.colorSpace,
+                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        try NSBitmapImageRep(cgImage: three.makeImage()!).representation(using: .png, properties: [:])!.write(to: dir.appendingPathComponent("MAIN.png"))
+        let threeX = dir.appendingPathComponent("three-\(dir.lastPathComponent).msz")
+        let zip3 = Process()
+        zip3.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        zip3.currentDirectoryURL = dir
+        zip3.arguments = ["-q", threeX.path, "MAIN.png"]
+        try zip3.run()
+        zip3.waitUntilExit()
+        assertTrue(SkinLoader.shared.loadSkin(from: threeX) == nil, "A 3x .msz is refused")
+    }
+
+    testGroup("Built-in Base Skin HD and HD skin packs") {
+        let manager = SkinManager.shared
+        guard let hd = manager.baseHDSkinURL else { throw NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "base-2.91-hd.msz missing"]) }
+        defer { manager.resetToBaseSkin() }
+        assertTrue(manager.loadSkin(from: hd) && manager.currentSkin?.pixelScale == AppConstants.Skins.hdScale, "<Base Skin HD> loads, 4x")
+        assertTrue(manager.isBaseHDSkinActive && !manager.isBaseSkinActive, "Only <Base Skin HD> is checked")
+        assertEqual(manager.savedSkinURL("/Applications/Old Place/MacAmp.app/Contents/Resources/\(hd.lastPathComponent)"), hd,
+                    "Remembered across a move of the app (its path inside the bundle changes)")
+        assertTrue(manager.savedSkinURL("/nowhere/Gone.wsz") == nil, "A skin that's gone is forgotten")
+        manager.resetToBaseSkin()
+        assertTrue(manager.isBaseSkinActive && !manager.isBaseHDSkinActive && manager.currentSkin?.pixelScale == 1, "<Base Skin> back, 1x")
+
+        // The built-in names never show up as installed skins, even if someone drops a copy into the Skins folder
+        let skins = manager.skinsDirectory
+        let copy = skins.appendingPathComponent(hd.lastPathComponent)
+        try? FileManager.default.removeItem(at: copy)
+        try FileManager.default.copyItem(at: hd, to: copy)
+        defer { try? FileManager.default.removeItem(at: copy) }
+        assertTrue(!manager.installedSkins().contains { $0.lastPathComponent == hd.lastPathComponent }, "Built-in HD not listed twice")
+
+        // A pack ("skins" kind): its skins go into the Skins folder, the same names replaced by a newer pack
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/skinpack-\(UUID().uuidString)")
+        let pack = root.appendingPathComponent("HD.macampplugin")
+        let resources = pack.appendingPathComponent("Contents/Resources/HD", isDirectory: true)
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        try PropertyListSerialization.data(fromPropertyList: ["MacAmpPluginKind": "skins", "MacAmpPluginTitle": "Test HD skins"], format: .xml, options: 0)
+            .write(to: pack.appendingPathComponent("Contents/Info.plist"))
+        try FileManager.default.copyItem(at: hd, to: resources.appendingPathComponent("Pack Skin HD.msz"))
+        try "readme".write(to: resources.appendingPathComponent("readme.txt"), atomically: true, encoding: .utf8)
+        let read = PluginManager.skinPack(pack)
+        assertTrue(read?.title == "Test HD skins" && read?.skins.map(\.lastPathComponent) == ["Pack Skin HD.msz"], "Pack read: skins only, from subfolders too")
+        let installed = skins.appendingPathComponent("Pack Skin HD.msz")
+        defer { try? FileManager.default.removeItem(at: installed) }
+        try "old".write(to: installed, atomically: true, encoding: .utf8)
+        assertEqual(PluginManager.installSkins(read?.skins ?? [], into: skins), 1, "One skin installed")
+        assertTrue(manager.installedSkins().contains { $0.lastPathComponent == installed.lastPathComponent } && (try? Data(contentsOf: installed)) == (try? Data(contentsOf: hd)),
+                   "In the Skins list, the older file of the same name replaced")
+        assertTrue(PluginManager.presetPack(pack) == nil && PluginManager.read(pack) == nil, "Not taken for presets or a converter")    }
+
     // 20. Skin cursors, visualizer options, playback options, playlist MISC
     testGroup("Skin Cursors") {
         // Base skin ships 8 .CUR files; they decode with the hotspot from the CUR header

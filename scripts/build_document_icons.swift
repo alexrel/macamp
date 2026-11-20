@@ -6,7 +6,8 @@
 //         RT_GROUP_ICON in winamp.exe 2.95 (decoded to RGBA). Use these, not the .ico files: ImageIO returns
 //         the frames of a multi-frame .ico in its own order and easily hands out the 16-color one instead.
 // Output: Choices/winamp-icon-<ID>.icns for every source, plus WinampAudioFile.icns (#131),
-//         WinampPlaylist.icns (#102) and WinampSkin.icns (#164) as the Info.plist defaults.
+//         WinampPlaylist.icns (#102) and WinampSkin.icns (#164) as the Info.plist defaults, and WinampSkinHD.icns
+//         (#162, the same bolt on a light diamond, with pixel letters "HD") for MacAmp's own .msz HD skins.
 import Cocoa
 
 let root = FileManager.default.currentDirectoryPath
@@ -49,4 +50,27 @@ for (id, target) in [(131, "WinampAudioFile"), (102, "WinampPlaylist"), (164, "W
     try? FileManager.default.removeItem(atPath: "\(dir)/\(target).icns")
     try! FileManager.default.copyItem(atPath: "\(dir)/Choices/winamp-icon-\(id).icns", toPath: "\(dir)/\(target).icns")
 }
-print("Built \(sources.count) document icons in \(dir)")
+
+/// "HD" in 4×5 pixel letters in the empty lower right corner of the 32 px frame: the bolt's yellow with its dark red
+/// as a one-pixel shadow (no box or outline, which closes up the letters), readable on light and dark Finder backgrounds
+func withHDLetters(_ image: CGImage) -> CGImage {
+    let letters = ["#..#.###.",
+                   "#..#.#..#",
+                   "####.#..#",
+                   "#..#.#..#",
+                   "#..#.###."]
+    let left = image.width - letters[0].count - 1, top = image.height - letters.count - 1
+    let ink = Set(letters.enumerated().flatMap { y, row in row.enumerated().compactMap { x, c in c == "#" ? [left + x, top + y] : nil } })
+    let c = context(image.width)
+    c.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    func dot(_ p: [Int], _ r: CGFloat, _ g: CGFloat, _ b: CGFloat) {
+        c.setFillColor(CGColor(red: r / 255, green: g / 255, blue: b / 255, alpha: 1))
+        c.fill(CGRect(x: p[0], y: image.height - 1 - p[1], width: 1, height: 1)) // CGContext counts rows from the bottom
+    }
+    for p in ink where !ink.contains([p[0] + 1, p[1] + 1]) { dot([p[0] + 1, p[1] + 1], 139, 0, 0) }
+    for p in ink { dot(p, 255, 199, 0) }
+    return c.makeImage()!
+}
+let hdBase = CGImageSourceCreateWithData(try! Data(contentsOf: URL(fileURLWithPath: "\(dir)/Source/winamp-icon-162.png")) as CFData, nil)!
+makeIcns(from: withHDLetters(CGImageSourceCreateImageAtIndex(hdBase, 0, nil)!), to: "\(dir)/WinampSkinHD.icns")
+print("Built \(sources.count) document icons and WinampSkinHD in \(dir)")

@@ -153,6 +153,20 @@ public enum AppConstants {
         }
     }
     
+    // MARK: - Skins
+    public enum Skins {
+        /// The built-in classic skin (Resources/base-2.91.wsz) and its HD redraw (Resources/base-2.91-hd.msz)
+        public static let baseName = "base-2.91"
+        public static let baseHDName = "base-2.91-hd"
+        /// How the two show up in the Skins menu and Preferences ▸ Skins, as 2.95 shows its <Base Skin>
+        public static let baseTitle = "<Base Skin>"
+        public static let baseHDTitle = "<Base Skin HD>"
+        /// MacAmp's own HD skin: a classic skin's sheets drawn at `hdScale` times the pixels, in a zip named .msz
+        public static let hdExtension = "msz"
+        /// HD means this density only (decided 2026-11-19: no 2× / 3× HD skins)
+        public static let hdScale = 4
+    }
+
     // MARK: - Last.fm (Plug-ins ▸ General Purpose ▸ Last.fm Scrobbler)
     public enum LastFM {
         public static let apiURL = "https://ws.audioscrobbler.com/2.0/"
@@ -341,7 +355,7 @@ public enum AppConstants {
             "mid", "midi", "rmi", "kar",        // in_midi: rendered with the system General MIDI synth
             "mp4", "m4v", "mov"                 // video: sound through the engine, picture in the Video window
         ]
-        public static let skinExtensions: Set<String> = ["wsz", "zip"]
+        public static let skinExtensions: Set<String> = ["wsz", Skins.hdExtension, "zip"]
         public static let playlistExtensions: Set<String> = ["m3u", "m3u8", "pls", "xspf", "cue"] // xspf: VLC's own format
     }
     

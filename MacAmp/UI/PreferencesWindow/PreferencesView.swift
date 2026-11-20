@@ -1453,8 +1453,9 @@ public struct PreferencesView: View {
             VStack(alignment: .leading, spacing: 6) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        skinRow("<Base Skin>", url: nil)
-                        ForEach(viewModel.installedSkins, id: \.self) { url in skinRow(url.deletingPathExtension().lastPathComponent, url: url) }
+                        skinRow(AppConstants.Skins.baseTitle, url: nil)
+                        if let hd = SkinManager.shared.baseHDSkinURL { skinRow(AppConstants.Skins.baseHDTitle, url: hd) }
+                        ForEach(viewModel.installedSkins, id: \.self) { url in skinRow(SkinManager.listName(for: url), url: url) }
                     }
                 }
                 .frame(height: 150)

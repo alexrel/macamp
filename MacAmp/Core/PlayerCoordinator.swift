@@ -60,8 +60,8 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     public func start() {
         // 1. Restore active custom skin before views/windows are created, so views render with it immediately
         if let skinPath = persistence.state.activeSkinPath {
-            if FileManager.default.fileExists(atPath: skinPath) {
-                if !skinManager.loadSkin(from: URL(fileURLWithPath: skinPath)) {
+            if let skinURL = skinManager.savedSkinURL(skinPath) {
+                if !skinManager.loadSkin(from: skinURL) {
                     persistence.state.activeSkinPath = nil
                     persistence.saveSession()
                 }

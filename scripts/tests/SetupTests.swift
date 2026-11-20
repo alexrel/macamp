@@ -42,7 +42,7 @@ func setupTests() {
 
         runMain {
             let manager = FileAssociationManager(provider: fake, appURL: macamp, bundleIdentifier: "test.macamp")
-            assertTrue(manager.entries.contains { $0.ext == "mp3" } && manager.entries.contains { $0.ext == "wsz" }, "List covers audio, playlists and skins")
+            assertTrue(manager.entries.contains { $0.ext == "mp3" } && manager.entries.contains { $0.ext == "wsz" } && manager.entries.contains { $0.ext == "msz" }, "List covers audio, playlists, skins and HD skins")
             assertTrue(!manager.entries.contains { $0.ext == "alac" }, "'alac' is not a real file extension and is not listed")
             assertTrue(!manager.isAssociated("mp3"), "mp3 starts with VLC")
 

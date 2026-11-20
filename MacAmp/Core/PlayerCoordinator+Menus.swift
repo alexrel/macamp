@@ -84,12 +84,17 @@ extension PlayerCoordinator {
         skinsMenu.autoenablesItems = false
         skinsMenu.addItem(menuItem("Skin Browser...", #selector(handleSkinBrowser), key: "s", mods: [.option]))
         skinsMenu.addItem(.separator())
-        skinsMenu.addItem(menuItem("<Base Skin>", #selector(handleResetBaseSkin), checked: skinManager.isBaseSkinActive))
+        skinsMenu.addItem(menuItem(AppConstants.Skins.baseTitle, #selector(handleResetBaseSkin), checked: skinManager.isBaseSkinActive))
+        if let hd = skinManager.baseHDSkinURL {
+            let item = menuItem(AppConstants.Skins.baseHDTitle, #selector(handleSkinSelected(_:)), checked: skinManager.isBaseHDSkinActive)
+            item.representedObject = hd
+            skinsMenu.addItem(item)
+        }
         let installedSkins = skinManager.installedSkins()
         for skinURL in installedSkins {
             let name = skinURL.deletingPathExtension().lastPathComponent
             let isActive = !skinManager.isBaseSkinActive && (skinManager.currentSkinURL?.path == skinURL.path || skinManager.currentSkin?.name == name)
-            let item = menuItem(name, #selector(handleSkinSelected(_:)), checked: isActive)
+            let item = menuItem(SkinManager.listName(for: skinURL), #selector(handleSkinSelected(_:)), checked: isActive)
             item.representedObject = skinURL
             skinsMenu.addItem(item)
         }
@@ -100,7 +105,7 @@ extension PlayerCoordinator {
         if !installedSkins.isEmpty {
             let deleteMenu = NSMenu(title: "Delete Skin")
             for skinURL in installedSkins {
-                let delItem = menuItem(skinURL.deletingPathExtension().lastPathComponent, #selector(handleDeleteSkin(_:)))
+                let delItem = menuItem(SkinManager.listName(for: skinURL), #selector(handleDeleteSkin(_:)))
                 delItem.representedObject = skinURL
                 deleteMenu.addItem(delItem)
             }
@@ -376,7 +381,7 @@ extension PlayerCoordinator {
     
     @objc public func handleDeleteSkin(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
-        let skinName = url.deletingPathExtension().lastPathComponent
+        let skinName = SkinManager.listName(for: url)
         
         if Win32Dialog.confirm(title: "Delete Skin",
                                message: "Are you sure you want to delete the skin \"\(skinName)\"?",

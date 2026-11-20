@@ -15,6 +15,9 @@ extension CGContext {
         saveGState()
         // Antialiased edges leave translucent seams between tiles at fractional scales.
         setShouldAntialias(false)
+        // Drawn smaller than its pixels (an HD skin's 4× art on a 2× or 3× screen): averaged. Nearest pixel at 4:3 (150%)
+        // dropped one row in four, and which one turned on rounding where the tile sat: lines thickened, thinned, rippled
+        if CGFloat(image.width) > convertToDeviceSpace(rect).size.width.magnitude + 0.5 { interpolationQuality = .high }
         translateBy(x: rect.minX, y: rect.maxY)
         scaleBy(x: 1.0, y: -1.0)
         draw(image, in: CGRect(x: 0, y: 0, width: rect.width, height: rect.height))
@@ -38,7 +41,11 @@ extension CGContext {
         var x = startX
         while x < endX {
             let w = min(tileWidth, endX - x)
-            drawSkinImage(image, in: NSRect(x: x, y: y, width: w, height: height))
+            // The last tile cut, as Winamp does, not the whole tile squeezed: squeezed, an HD skin's title rippled
+            if let part = w < tileWidth ? image.cropping(to: CGRect(x: 0, y: 0, width: (CGFloat(image.width) * w / tileWidth).rounded(),
+                                                                    height: CGFloat(image.height))) : image {
+                drawSkinImage(part, in: NSRect(x: x, y: y, width: w, height: height))
+            }
             x += tileWidth
         }
     }
@@ -49,7 +56,11 @@ extension CGContext {
         var y = startY
         while y < endY {
             let h = min(tileHeight, endY - y)
-            drawSkinImage(image, in: NSRect(x: x, y: y, width: width, height: h))
+            // The last tile cut (its top part), not squeezed
+            if let part = h < tileHeight ? image.cropping(to: CGRect(x: 0, y: 0, width: CGFloat(image.width),
+                                                                     height: (CGFloat(image.height) * h / tileHeight).rounded())) : image {
+                drawSkinImage(part, in: NSRect(x: x, y: y, width: width, height: h))
+            }
             y += tileHeight
         }
     }
@@ -89,10 +100,20 @@ open class WinampControlView: NSView {
     
     private func configureLayer() {
         self.wantsLayer = true
-        self.layerContentsRedrawPolicy = .onSetNeedsDisplay
+        // Drawn again at every new size: on setNeedsDisplay alone AppKit stretched the old picture (nearest pixels) to
+        // the new size first, and a resized playlist / Library frame jumped and an HD skin's lines rippled
+        self.layerContentsRedrawPolicy = .duringViewResize
         self.layer?.magnificationFilter = .nearest
         self.layer?.minificationFilter = .nearest
         self.layer?.isOpaque = false
+    }
+
+    /// A new screen scale (a window drawn before it reached the Retina screen, a move between screens): drawn again
+    /// at that scale, not the old picture stretched
+    open override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        if let scale = window?.backingScaleFactor { layer?.contentsScale = scale }
+        needsDisplay = true
     }
     
     /// Winamp 2.95 gives some controls their own right-click menu (transport buttons, seek bar, time, title...)

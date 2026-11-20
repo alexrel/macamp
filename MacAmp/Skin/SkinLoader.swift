@@ -8,7 +8,7 @@ public class SkinLoader {
     
     private init() {}
     
-    /// Loads a skin from either a .wsz/.zip file or a directory containing skin files.
+    /// Loads a skin archive or a directory containing skin files.
     public func loadSkin(from url: URL) -> Skin? {
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else {
@@ -31,6 +31,15 @@ public class SkinLoader {
         let skin = Skin(name: skinName)
         
         loadBitmaps(from: skinDir, into: skin)
+        if url.pathExtension.lowercased() == AppConstants.Skins.hdExtension {
+            // An HD skin is exactly 4× the classic main window; any other density isn't one
+            let scale = AppConstants.Skins.hdScale
+            guard let main = skin.images["MAIN"], main.width == Int(AppConstants.Window.width) * scale,
+                  main.height == Int(AppConstants.Window.height) * scale,
+                  skin.images.values.allSatisfy({ $0.width.isMultiple(of: scale) && $0.height.isMultiple(of: scale) })
+            else { return nil }
+            skin.pixelScale = scale
+        }
         loadPlaylistStyle(from: skinDir, into: skin)
         loadVisualizerColors(from: skinDir, into: skin)
         loadRegion(from: skinDir, into: skin)

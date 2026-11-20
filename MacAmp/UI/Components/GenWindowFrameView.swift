@@ -95,8 +95,8 @@ public class GenWindowFrameView: WinampControlView {
 
         // Bottom bar: left corner, fill, right corner (with the resize grip)
         tile(ctx, GenWindowFrameView.gen(127, 72, 25, 14), from: 125, to: w - 125, y: h - 14, tileWidth: 25, height: 14)
-        draw(ctx, GenWindowFrameView.gen(0, 42, 125, 14), x: 0, y: h - 14, w: min(125, w / 2), h: 14, cropFromLeft: true)
-        draw(ctx, GenWindowFrameView.gen(0, 57, 125, 14), x: max(w / 2, w - 125), y: h - 14, w: min(125, w / 2), h: 14, cropFromLeft: false)
+        draw(ctx, GenWindowFrameView.gen(0, 42, 125, 14), x: 0, y: h - 14, w: min(125, w / 2), h: 14, sourceSize: CGSize(width: 125, height: 14), cropFromLeft: true)
+        draw(ctx, GenWindowFrameView.gen(0, 57, 125, 14), x: max(w / 2, w - 125), y: h - 14, w: min(125, w / 2), h: 14, sourceSize: CGSize(width: 125, height: 14), cropFromLeft: false)
     }
 
     // MARK: Title letters (GEN.BMP: active at y 88, inactive at y 96, 7 px; cyan inside the strips is transparent)
@@ -115,14 +115,15 @@ public class GenWindowFrameView: WinampControlView {
     /// Letter columns in GEN.BMP, measured on the skin: the border row above the letters has a background
     /// pixel between every two letters.
     static func letterRanges() -> [ClosedRange<Int>] {
-        guard let sheet = SkinManager.shared.sheet("GEN"),
-              sheet.height > 96 else { return [] }
+        guard let (sheet, scale) = SkinManager.shared.sheetWithScale("GEN"),
+              sheet.height > 96 * scale else { return [] }
         let rep = NSBitmapImageRep(cgImage: sheet)
-        guard let background = rep.colorAt(x: 0, y: 88) else { return [] }
+        let row = 88 * scale
+        guard let background = rep.colorAt(x: 0, y: row) else { return [] }
         var ranges: [ClosedRange<Int>] = []
         var start: Int?
-        for x in 0..<rep.pixelsWide {
-            let isGap = rep.colorAt(x: x, y: 88) == background
+        for x in 0..<(rep.pixelsWide / scale) {
+            let isGap = rep.colorAt(x: x * scale, y: row) == background
             if !isGap, start == nil { start = x }
             if isGap, let s = start { ranges.append(s...(x - 1)); start = nil }
             if ranges.count == 26 { break }
@@ -151,21 +152,21 @@ public class GenWindowFrameView: WinampControlView {
 
     // MARK: Drawing helpers (flipped view; partial tiles are cropped, not squeezed)
 
-    func draw(_ ctx: CGContext, _ image: CGImage?, x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat, cropFromLeft: Bool? = nil) {
+    func draw(_ ctx: CGContext, _ image: CGImage?, x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat, sourceSize: CGSize? = nil, cropFromLeft: Bool? = nil) {
         guard let image, w > 0, h > 0 else { return }
         ctx.saveGState()
         ctx.setShouldAntialias(false)
         ctx.clip(to: ctx.pixelAligned(CGRect(x: x, y: y, width: w, height: h)))
-        let full = CGFloat(image.width)
-        let originX = (cropFromLeft == false) ? x + w - full : x
-        ctx.drawSkinImage(image, in: CGRect(x: originX, y: y, width: full, height: CGFloat(image.height)))
+        let full = sourceSize ?? CGSize(width: w, height: h)
+        let originX = (cropFromLeft == false) ? x + w - full.width : x
+        ctx.drawSkinImage(image, in: CGRect(origin: CGPoint(x: originX, y: y), size: full))
         ctx.restoreGState()
     }
 
     func tile(_ ctx: CGContext, _ image: CGImage?, from start: CGFloat, to end: CGFloat, y: CGFloat, tileWidth: CGFloat, height: CGFloat) {
         var x = start
         while x < end {
-            draw(ctx, image, x: x, y: y, w: min(tileWidth, end - x), h: height)
+            draw(ctx, image, x: x, y: y, w: min(tileWidth, end - x), h: height, sourceSize: CGSize(width: tileWidth, height: height))
             x += tileWidth
         }
     }
@@ -173,7 +174,7 @@ public class GenWindowFrameView: WinampControlView {
     func vtile(_ ctx: CGContext, _ image: CGImage?, x: CGFloat, from start: CGFloat, to end: CGFloat, width: CGFloat) {
         var y = start
         while y < end {
-            draw(ctx, image, x: x, y: y, w: width, h: min(29, end - y))
+            draw(ctx, image, x: x, y: y, w: width, h: min(29, end - y), sourceSize: CGSize(width: width, height: 29))
             y += 29
         }
     }

@@ -179,14 +179,14 @@ public struct BitmapFont {
     /// at columns x=0 and x=3 on every scanline alongside the space glyph (row 0, col 30).
     /// This captures the authentic stroke color, vertical gradient, and automatically detects
     /// whether the skin uses a 5px or 6px font height (baseline detection).
-    private static func sampleTextColorProfile(from sheet: CGImage) -> TextColorProfile {
+    private static func sampleTextColorProfile(from sheet: CGImage, scale: CGFloat) -> TextColorProfile {
         let w = Int(charWidth)
         let h = Int(charHeight)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         
         func extractBuffer(col: Int, row: Int = 0) -> [UInt8]? {
             let rect = CGRect(x: CGFloat(col) * charWidth, y: CGFloat(row) * charHeight, width: charWidth, height: charHeight)
-            guard let cropped = sheet.cropping(to: rect) else { return nil }
+            guard let cropped = sheet.cropping(to: rect.applying(CGAffineTransform(scaleX: scale, y: scale))) else { return nil }
             var buffer = [UInt8](repeating: 0, count: w * h * 4)
             guard let ctx = CGContext(
                 data: &buffer,
@@ -202,7 +202,7 @@ public struct BitmapFont {
         }
         
         let spaceRect = CGRect(x: 30 * w, y: 0, width: w, height: h)
-        let spaceGlyph = sheet.cropping(to: spaceRect)
+        let spaceGlyph = sheet.cropping(to: spaceRect.applying(CGAffineTransform(scaleX: scale, y: scale)))
         
         // 1. Sample background color from space glyph (col 30: center x=2, y=2)
         let spaceBuffer = extractBuffer(col: 30)
@@ -274,12 +274,12 @@ public struct BitmapFont {
         return TextColorProfile(rowColors: finalRows, spaceGlyph: spaceGlyph, is5PixelFont: is5PixelFont)
     }
     
-    private static func getTextColorProfile(from sheet: CGImage) -> TextColorProfile {
+    private static func getTextColorProfile(from sheet: CGImage, scale: CGFloat) -> TextColorProfile {
         let sheetId = ObjectIdentifier(sheet)
         if let cached = cachedProfile, cachedSheetId == sheetId {
             return cached
         }
-        let profile = sampleTextColorProfile(from: sheet)
+        let profile = sampleTextColorProfile(from: sheet, scale: scale)
         cachedProfile = profile
         cachedSheetId = sheetId
         return profile
@@ -287,7 +287,9 @@ public struct BitmapFont {
     
     /// Draws a single glyph character using TEXT.BMP font with Cyrillic pixel-art fallback
     public static func drawGlyph(char: Character, in context: CGContext, at origin: CGPoint) {
-        guard let textSheet = SkinManager.shared.sheet("TEXT") else { return }
+        guard let (textSheet, density) = SkinManager.shared.sheetWithScale("TEXT") else { return }
+        let scale = CGFloat(density)
+        let transform = CGAffineTransform(scaleX: scale, y: scale)
         
         // 1. Direct match in TEXT.BMP (Latin, digits, lookalike Cyrillic: А, В, Е, К, М, Н, О, Р, С, Т, У, Х, З, І)
         let directMatch = charMap[char] ?? char.uppercased().first.flatMap { charMap[$0] }
@@ -298,7 +300,7 @@ public struct BitmapFont {
                 width: charWidth,
                 height: charHeight
             )
-            if let glyph = textSheet.cropping(to: srcRect) {
+            if let glyph = textSheet.cropping(to: srcRect.applying(transform)) {
                 let destRect = CGRect(x: origin.x, y: origin.y, width: charWidth, height: charHeight)
                 context.drawSkinImage(glyph, in: destRect)
             }
@@ -306,7 +308,7 @@ public struct BitmapFont {
         }
         
         // 2. Custom pixel-art Cyrillic glyphs matching skin text color & gradient from letters 'H' & 'E'
-        let profile = getTextColorProfile(from: textSheet)
+        let profile = getTextColorProfile(from: textSheet, scale: scale)
         let glyphMap = profile.is5PixelFont ? cyrillicGlyphs5px : cyrillicGlyphs6px
         let mask = glyphMap[char] ?? char.uppercased().first.flatMap { glyphMap[$0] }
         if let mask = mask {
@@ -339,7 +341,7 @@ public struct BitmapFont {
             width: charWidth,
             height: charHeight
         )
-        if let glyph = textSheet.cropping(to: srcRect) {
+        if let glyph = textSheet.cropping(to: srcRect.applying(transform)) {
             let destRect = CGRect(x: origin.x, y: origin.y, width: charWidth, height: charHeight)
             context.drawSkinImage(glyph, in: destRect)
         }
@@ -357,9 +359,11 @@ public struct BitmapFont {
     /// Fills the given width with authentic space glyphs from TEXT.BMP.
     /// In Winamp/Webamp, the marquee background is always covered with space glyphs.
     public static func drawSpaceBackground(in context: CGContext, width: CGFloat, height: CGFloat = charHeight) {
-        guard let textSheet = SkinManager.shared.sheet("TEXT") else { return }
+        guard let (textSheet, density) = SkinManager.shared.sheetWithScale("TEXT") else { return }
+        let scale = CGFloat(density)
+        let transform = CGAffineTransform(scaleX: scale, y: scale)
         let spaceRect = CGRect(x: 30.0 * charWidth, y: 0, width: charWidth, height: charHeight)
-        guard let spaceGlyph = textSheet.cropping(to: spaceRect) else { return }
+        guard let spaceGlyph = textSheet.cropping(to: spaceRect.applying(transform)) else { return }
         
         var x: CGFloat = 0
         while x < width {

@@ -56,6 +56,7 @@ public struct VisualizerColors {
 public class Skin {
     public let name: String
     public var images: [String: CGImage] = [:]
+    public internal(set) var pixelScale = 1
     public var playlistStyle: PlaylistStyle = PlaylistStyle()
     public var visualizerColors: VisualizerColors = VisualizerColors()
     public var region: SkinRegion?
@@ -95,12 +96,14 @@ public class Skin {
                 ?? SpriteSlice(slice.name, "NUMS_EX", slice.rect.minX, slice.rect.minY, slice.rect.width, slice.rect.height)
         }
         let sheetKey = slice.sheet.uppercased()
+        let scale = CGFloat(pixelScale)
+        let rect = slice.rect.applying(CGAffineTransform(scaleX: scale, y: scale))
         
         // 1. Direct slice from sheet if present and within bounds
         if let sheet = images[sheetKey] {
-            var crop = slice.rect
+            var crop = rect
             // In skins where BALANCE.BMP was cropped to 38px width (e.g. reptal~1), the 38px frames start at x = 0 instead of standard x = 9.
-            if sheetKey == "BALANCE", slice.name.hasPrefix("BAL_BG"), sheet.width < 47 {
+            if sheetKey == "BALANCE", slice.name.hasPrefix("BAL_BG"), sheet.width < 47 * pixelScale {
                 crop.origin.x = 0
             }
             if crop.minX >= 0, crop.minY >= 0,
@@ -111,17 +114,17 @@ public class Skin {
         }
         
         // 2. Thumb suppression rule:
-        // In skins where VOLUME.BMP or BALANCE.BMP is ~420px high (height < 430),
+        // In skins where VOLUME.BMP or BALANCE.BMP is ~420px high (height < 430 * pixelScale),
         // the author baked the slider thumb directly into the 28 animated background frames.
         // There is no thumb sprite at y=422. Returning a transparent thumb prevents falling back
         // to baseSkin and overlaying the default silver Winamp knob on top of custom theme sliders.
         if slice.name.hasPrefix("VOL_THUMB") {
-            if let volSheet = images["VOLUME"], volSheet.height < 430 {
+            if let volSheet = images["VOLUME"], volSheet.height < 430 * pixelScale {
                 return Skin.transparentThumb
             }
         }
         if slice.name.hasPrefix("BAL_THUMB") {
-            if let balSheet = images["BALANCE"] ?? images["VOLUME"], balSheet.height < 430 {
+            if let balSheet = images["BALANCE"] ?? images["VOLUME"], balSheet.height < 430 * pixelScale {
                 return Skin.transparentThumb
             }
         }
@@ -130,7 +133,7 @@ public class Skin {
         // Balance frame at x = 9, width = 38 is perfectly centered in VOLUME.BMP (68px wide).
         // Balance thumb at x = 15/0, y = 422 is identical to volume thumb coordinates.
         if sheetKey == "BALANCE", let volSheet = images["VOLUME"] {
-            let crop = slice.rect
+            let crop = rect
             if crop.minX >= 0, crop.minY >= 0,
                crop.maxX <= CGFloat(volSheet.width),
                crop.maxY <= CGFloat(volSheet.height) {
@@ -141,12 +144,12 @@ public class Skin {
         // 4. A sheet smaller than the standard (MAIN.BMP 115 rows high, POSBAR.BMP 9): Winamp draws the part that is
         // there. The missing part stays transparent rather than showing the base skin through a custom one.
         if let sheet = images[sheetKey] {
-            let part = slice.rect.intersection(CGRect(x: 0, y: 0, width: sheet.width, height: sheet.height))
+            let part = rect.intersection(CGRect(x: 0, y: 0, width: sheet.width, height: sheet.height))
             if !part.isEmpty, let piece = sheet.cropping(to: part),
-               let ctx = CGContext(data: nil, width: Int(slice.rect.width), height: Int(slice.rect.height), bitsPerComponent: 8,
+               let ctx = CGContext(data: nil, width: Int(rect.width), height: Int(rect.height), bitsPerComponent: 8,
                                    bytesPerRow: 0, space: Skin.colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
                 // CGContext counts rows from the bottom, the sheet from the top
-                ctx.draw(piece, in: CGRect(x: part.minX - slice.rect.minX, y: slice.rect.maxY - part.maxY,
+                ctx.draw(piece, in: CGRect(x: part.minX - rect.minX, y: rect.maxY - part.maxY,
                                            width: part.width, height: part.height))
                 return ctx.makeImage()
             }

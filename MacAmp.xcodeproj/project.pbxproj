@@ -92,8 +92,10 @@
 		AAB30301AFC2DAF68138D1B9 /* WinampAudioFile.icns in Resources */ = {isa = PBXBuildFile; fileRef = AA04AC56F1DC09A5377AC512 /* WinampAudioFile.icns */; };
 		AA1439011306C7704675E1C9 /* WinampPlaylist.icns in Resources */ = {isa = PBXBuildFile; fileRef = AA82159D5E1FC971DD090475 /* WinampPlaylist.icns */; };
 		AA19012C99F123220CCB3149 /* WinampSkin.icns in Resources */ = {isa = PBXBuildFile; fileRef = AADC824D32AEE8B01AAC3A5C /* WinampSkin.icns */; };
+		AA19012C99F123220CCB3150 /* WinampSkinHD.icns in Resources */ = {isa = PBXBuildFile; fileRef = AADC824D32AEE8B01AAC3A60 /* WinampSkinHD.icns */; };
 		AADC170587A89F4091446E8E /* DocumentIconChoices in Resources */ = {isa = PBXBuildFile; fileRef = AA7724DF12051809CF150D4D /* DocumentIconChoices */; };
 		AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */ = {isa = PBXBuildFile; fileRef = AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */; };
+		BAA8B35F1A5F1F9B28F7FB2E /* base-2.91-hd.msz in Resources */ = {isa = PBXBuildFile; fileRef = CF654586ADDEE4B0B7DA4F47 /* base-2.91-hd.msz */; };
 		AAA142DA03338E56678187C0 /* demo.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = AAD8DBF0CFBC66555CB1BA74 /* demo.mp3 */; };
 		BDC069482B887D910009C001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDC069472B887D910009C001 /* Assets.xcassets */; };
 		BDC0694B2B887D910009C001 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BDC0694A2B887D910009C001 /* Preview Assets.xcassets */; };
@@ -210,8 +212,10 @@
 		AA04AC56F1DC09A5377AC512 /* WinampAudioFile.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = "Resources/DocumentIcons/WinampAudioFile.icns"; sourceTree = "<group>"; };
 		AA82159D5E1FC971DD090475 /* WinampPlaylist.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = "Resources/DocumentIcons/WinampPlaylist.icns"; sourceTree = "<group>"; };
 		AADC824D32AEE8B01AAC3A5C /* WinampSkin.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = "Resources/DocumentIcons/WinampSkin.icns"; sourceTree = "<group>"; };
+		AADC824D32AEE8B01AAC3A60 /* WinampSkinHD.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = "Resources/DocumentIcons/WinampSkinHD.icns"; sourceTree = "<group>"; };
 		AA7724DF12051809CF150D4D /* DocumentIconChoices */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DocumentIconChoices; path = Resources/DocumentIcons/Choices; sourceTree = "<group>"; };
 		AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */ = {isa = PBXFileReference; lastKnownFileType = file; path = "base-2.91.wsz"; sourceTree = "<group>"; };
+		CF654586ADDEE4B0B7DA4F47 /* base-2.91-hd.msz */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Resources/base-2.91-hd.msz"; sourceTree = "<group>"; };
 		AAD8DBF0CFBC66555CB1BA74 /* demo.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = demo.mp3; sourceTree = "<group>"; };
 		BDC069402B887D8B0009C001 /* MacAmp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacAmp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BDC069472B887D910009C001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -327,6 +331,7 @@
 				AA467705E65615588891A2B1 /* State */,
 				AA69FDE20A9A6E5FEABD7AC7 /* MacAmpApp.swift */,
 				AAD8DBF0CFBC66555CB1BA72 /* base-2.91.wsz */,
+				CF654586ADDEE4B0B7DA4F47 /* base-2.91-hd.msz */,
 				AAD8DBF0CFBC66555CB1BA74 /* demo.mp3 */,
 				AA7724DF12051809CF150D4D /* DocumentIconChoices */,
 				AA0D5C1E00000000000000C5 /* AVS */,
@@ -334,6 +339,7 @@
 				AA04AC56F1DC09A5377AC512 /* WinampAudioFile.icns */,
 				AA82159D5E1FC971DD090475 /* WinampPlaylist.icns */,
 				AADC824D32AEE8B01AAC3A5C /* WinampSkin.icns */,
+				AADC824D32AEE8B01AAC3A60 /* WinampSkinHD.icns */,
 				BDC069472B887D910009C001 /* Assets.xcassets */,
 				BDC0694C2B887D910009C001 /* MacAmp.entitlements */,
 				BDC069492B887D910009C001 /* Preview Content */,
@@ -642,6 +648,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AAA142DA03338E56678187BE /* base-2.91.wsz in Resources */,
+				BAA8B35F1A5F1F9B28F7FB2E /* base-2.91-hd.msz in Resources */,
 				AAA142DA03338E56678187C0 /* demo.mp3 in Resources */,
 				AA0D5C1E00000000000000A9 /* projectM-LGPL-2.1.txt in Resources */,
 				AA0D5C1E00000000000000AB /* projectM-source.tar.gz in Resources */,
@@ -653,6 +660,7 @@
 				AAB30301AFC2DAF68138D1B9 /* WinampAudioFile.icns in Resources */,
 				AA1439011306C7704675E1C9 /* WinampPlaylist.icns in Resources */,
 				AA19012C99F123220CCB3149 /* WinampSkin.icns in Resources */,
+				AA19012C99F123220CCB3150 /* WinampSkinHD.icns in Resources */,
 
 
 

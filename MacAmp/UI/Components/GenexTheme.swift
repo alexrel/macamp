@@ -50,20 +50,21 @@ public struct GenexTheme {
     private static var cache: (sheet: CGImage?, theme: GenexTheme)?
 
     public static var current: GenexTheme {
-        let sheet = SkinManager.shared.sheet("GENEX")
+        let source = SkinManager.shared.sheetWithScale("GENEX")
+        let sheet = source?.image
         if let cache, cache.sheet === sheet { return cache.theme }
-        let theme = sheet.map(GenexTheme.init(sheet:)) ?? GenexTheme()
+        let theme = source.map { GenexTheme(sheet: $0.image, scale: $0.scale) } ?? GenexTheme()
         cache = (sheet, theme)
         return theme
     }
 
     init() {}
 
-    init(sheet: CGImage) {
+    init(sheet: CGImage, scale: Int = 1) {
         let rep = NSBitmapImageRep(cgImage: sheet)
         // Winamp compares RGB only: a pixel equal to (111, 0), cyan or missing means "not set by this skin"
         func rgb(_ x: Int) -> (NSColor, [Int])? {
-            guard x < rep.pixelsWide, let c = rep.colorAt(x: x, y: 0)?.usingColorSpace(.sRGB) else { return nil }
+            guard x * scale < rep.pixelsWide, let c = rep.colorAt(x: x * scale, y: 0)?.usingColorSpace(.sRGB) else { return nil }
             return (c.withAlphaComponent(1), [c.redComponent, c.greenComponent, c.blueComponent].map { Int(round($0 * 255)) })
         }
         let unset = rgb(111)?.1
@@ -83,8 +84,8 @@ public struct GenexTheme {
             default: break
             }
         }
-        button = sheet.cropping(to: CGRect(x: 0, y: 0, width: 47, height: 15))
-        buttonPressed = sheet.cropping(to: CGRect(x: 0, y: 15, width: 47, height: 15))
+        button = sheet.cropping(to: CGRect(x: 0, y: 0, width: 47 * scale, height: 15 * scale))
+        buttonPressed = sheet.cropping(to: CGRect(x: 0, y: 15 * scale, width: 47 * scale, height: 15 * scale))
     }
 }
 
@@ -141,18 +142,19 @@ struct GenexButtonArt: NSViewRepresentable {
         override var isFlipped: Bool { true }
         override func draw(_ dirtyRect: NSRect) {
             guard let image, let ctx = NSGraphicsContext.current?.cgContext else { return }
-            ctx.drawNinePatch(image, in: bounds, edge: 4)
+            ctx.drawNinePatch(image, in: bounds, edge: 4, sourceScale: CGFloat(image.width) / 47)
         }
     }
 }
 
 extension CGContext {
     /// Windows-style 9-slice: `edge` px corners copied, edges and centre stretched.
-    func drawNinePatch(_ image: CGImage, in rect: CGRect, edge e: CGFloat) {
+    func drawNinePatch(_ image: CGImage, in rect: CGRect, edge e: CGFloat, sourceScale: CGFloat) {
         interpolationQuality = .none
         let iw = CGFloat(image.width), ih = CGFloat(image.height)
-        let xs: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [(0, e, rect.minX, e), (e, iw - 2 * e, rect.minX + e, rect.width - 2 * e), (iw - e, e, rect.maxX - e, e)]
-        let ys: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [(0, e, rect.minY, e), (e, ih - 2 * e, rect.minY + e, rect.height - 2 * e), (ih - e, e, rect.maxY - e, e)]
+        let s = e * sourceScale
+        let xs: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [(0, s, rect.minX, e), (s, iw - 2 * s, rect.minX + e, rect.width - 2 * e), (iw - s, s, rect.maxX - e, e)]
+        let ys: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [(0, s, rect.minY, e), (s, ih - 2 * s, rect.minY + e, rect.height - 2 * e), (ih - s, s, rect.maxY - e, e)]
         for x in xs where x.3 > 0 {
             for y in ys where y.3 > 0 {
                 if let piece = image.cropping(to: CGRect(x: x.0, y: y.0, width: x.1, height: y.1)) {

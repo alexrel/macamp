@@ -195,6 +195,15 @@ extension PlayerCoordinator {
     func confirmAndInstallPlugin(_ path: String) {
         let url = URL(fileURLWithPath: path)
         // A preset pack only copies presets: nothing of it runs
+        if let pack = PluginManager.skinPack(url) {
+            guard Win32Dialog.confirm(title: Self.installPluginTitle,
+                                      message: "Install \(pack.title)?\n\n\(pack.skins.count) skins go into the Skins folder and show up in the Skins menu. Skins of the same name are replaced.",
+                                      confirmTitle: "Install", cancelTitle: "Cancel") else { return }
+            let count = PluginManager.installSkins(pack.skins, into: skinManager.skinsDirectory)
+            MainMenuManager.shared.updateStates()
+            mainView?.marquee.showTemporaryMessage("Skins installed: \(count)", duration: AppConstants.Marquee.noticeDuration)
+            return
+        }
         if let pack = PluginManager.presetPack(url), pack.milkdrop {
             guard Win32Dialog.confirm(title: Self.installPluginTitle,
                                       message: "Install \(pack.title)?\n\nThe presets go into the MilkDrop preset folder and show up in the MilkDrop window's right-click menu.",

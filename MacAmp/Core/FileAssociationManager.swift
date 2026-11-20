@@ -59,7 +59,7 @@ public final class FileAssociationManager: ObservableObject {
         let audio = AppConstants.Audio.builtInExtensions.subtracting(["alac"]).sorted()
         self.entries = audio.map { FileTypeEntry(ext: $0, kind: .audio) }
             + AppConstants.Audio.playlistExtensions.sorted().map { FileTypeEntry(ext: $0, kind: .playlist) }
-            + [FileTypeEntry(ext: "wsz", kind: .skin)]
+            + ["wsz", AppConstants.Skins.hdExtension].map { FileTypeEntry(ext: $0, kind: .skin) }
         refresh()
     }
 
