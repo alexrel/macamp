@@ -275,7 +275,8 @@ final class VideoController: NSObject, AVPlayerItemLegibleOutputPushDelegate {
         if state.videoStopOnClose, currentURL != nil, coordinator.audioEngine.status != .stopped { coordinator.handleStop() }
     }
 
-    func toggle() { window.isVisible ? close() : show() }
+    /// Open but buried under other windows: brought up instead of closed
+    func toggle() { window.isVisible && window.occlusionState.contains(.visible) ? close() : show() }
 
     /// Window size for the video at a zoom, frame included, and the scale the picture really gets. A picture that
     /// doesn't fit `screen` is shrunk keeping its proportions; the window is never below Winamp's 275 × 116.

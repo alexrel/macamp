@@ -90,6 +90,31 @@ link_and_register() {
     "$LSREGISTER" -f "$app"
 }
 
+# An ad-hoc signature names the app by its hash, so after every build the Keychain asked again for the Subsonic
+# password. A free Apple Development certificate names it by Team ID instead (docs: logstalgia keychain-signing.md).
+# MACAMP_SIGN_IDENTITY picks the certificate ("-": stay ad-hoc); without one the build stays ad-hoc.
+signing_identity() {
+    if [ -n "${MACAMP_SIGN_IDENTITY:-}" ]; then echo "$MACAMP_SIGN_IDENTITY"; return; fi
+    local found
+    found=$(security find-identity -v -p codesigning 2>/dev/null | grep -m1 '"Apple Development' | awk '{print $2}')
+    echo "${found:--}"
+}
+
+sign_app() {
+    local app="$1" identity lib
+    identity=$(signing_identity)
+    # Always signed here, ad-hoc included: Xcode skips an unchanged build, which would keep an earlier certificate
+    # signature (and its e-mail) in a published DMG
+    # Nested code first, the bundle last
+    for lib in "$app"/Contents/Frameworks/*.dylib "$app"/Contents/MacOS/*.dylib; do
+        [ -e "$lib" ] && codesign --force --sign "$identity" "$lib"
+    done
+    if ! codesign --force --sign "$identity" --preserve-metadata=entitlements,flags "$app"; then
+        log_err "Couldn't sign with $identity; the build stays ad-hoc"
+        codesign --force --deep --sign - --preserve-metadata=entitlements,flags "$app"
+    fi
+}
+
 build_debug() {
     log_step "Building Debug configuration"
     xcodebuild -quiet -scheme "$SCHEME" \
@@ -98,6 +123,7 @@ build_debug() {
                build
     
     if [ -d "$DEBUG_APP" ]; then
+        sign_app "$DEBUG_APP"
         link_and_register "$DEBUG_APP"
         log_ok "Debug build succeeded: $BUILD_DIR/$APP_NAME.app (and ./$APP_NAME.app)"
     else
@@ -116,6 +142,7 @@ build_release() {
                build
     
     if [ -d "$RELEASE_APP" ]; then
+        sign_app "$RELEASE_APP"
         link_and_register "$RELEASE_APP"
         log_ok "Release build succeeded: $BUILD_DIR/$APP_NAME.app (and ./$APP_NAME.app)"
     else
@@ -132,8 +159,10 @@ run_app() {
     fi
     
     log_step "Closing any existing MacAmp instance"
+    # SIGTERM makes MacAmp quit normally (it saves the playlist and session); wait for it, kill only if it hangs
     pkill -x "$APP_NAME" 2>/dev/null || true
-    sleep 0.3
+    for _ in $(seq 50); do pgrep -x "$APP_NAME" >/dev/null || break; sleep 0.1; done
+    pkill -9 -x "$APP_NAME" 2>/dev/null || true
     
     log_step "Launching $target_app"
     open "$target_app"
@@ -141,7 +170,8 @@ run_app() {
 }
 
 build_dmg() {
-    build_release
+    # Published builds stay ad-hoc unless asked: a certificate signature shows the Apple ID's e-mail to anyone
+    MACAMP_SIGN_IDENTITY="${MACAMP_SIGN_IDENTITY:--}" build_release
     
     DMG_PATH="$BUILD_DIR/${APP_NAME}-$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$RELEASE_APP/Contents/Info.plist").dmg"
     log_step "Creating DMG package"

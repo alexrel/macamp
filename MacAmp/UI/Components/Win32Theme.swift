@@ -482,6 +482,8 @@ public struct Win32TextField: View {
     public var monospaced: Bool = false
     /// Take keyboard focus when the window appears (search boxes, prompts)
     public var autoFocus: Focus = .none
+    /// Password box: dots instead of the text
+    public var secure = false
 
     @Environment(\.isEnabled) private var isEnabled
 
@@ -489,7 +491,8 @@ public struct Win32TextField: View {
     public static let textInset: CGFloat = 4
 
     public init(_ placeholder: String = "", text: Binding<String>, height: CGFloat = 20,
-                alignment: NSTextAlignment = .natural, monospaced: Bool = false, autoFocus: Focus = .none) {
+                alignment: NSTextAlignment = .natural, monospaced: Bool = false, autoFocus: Focus = .none, secure: Bool = false) {
+        self.secure = secure
         self.placeholder = placeholder
         self._text = text
         self.height = height
@@ -501,7 +504,7 @@ public struct Win32TextField: View {
     public var body: some View {
         // The field is one line tall; the sunken box around it centers it vertically
         Win32NSTextField(placeholder: placeholder, text: $text, isEnabled: isEnabled,
-                         alignment: alignment, monospaced: monospaced, autoFocus: autoFocus)
+                         alignment: alignment, monospaced: monospaced, autoFocus: autoFocus, secure: secure)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, Win32TextField.textInset)
             .frame(maxWidth: .infinity)
@@ -518,11 +521,12 @@ struct Win32NSTextField: NSViewRepresentable {
     var alignment: NSTextAlignment = .natural
     var monospaced: Bool = false
     var autoFocus: Win32TextField.Focus = .none
+    var secure = false
 
     func makeNSView(context: Context) -> NSTextField {
         // Stock cell on purpose: measured after real clicks and Tab focus, it keeps the text in place
         // (custom drawing/editor rects made it jump)
-        let field = NSTextField()
+        let field = secure ? NSSecureTextField() : NSTextField()
         field.isEditable = true
         field.isSelectable = true
         field.cell?.isScrollable = true

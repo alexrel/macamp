@@ -71,6 +71,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         setupWindows()
         setupBindings()
         restoreState()
+        playlist.autosaves = true
         showWindows()
         if persistence.state.isLibraryVisible { showLibraryWindow(); mainWindow.makeKeyAndOrderFront(nil) }
         watchForAudioCDs()
@@ -478,7 +479,10 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         // Observe window focus & application active state changes to update active titlebars
         NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.updateTitleBarFocus() }
+            .sink { [weak self] note in
+                self?.updateTitleBarFocus()
+                self?.raisePlayerGroup(around: note.object as? NSWindow)
+            }
             .store(in: &cancellables)
             
         NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)
@@ -520,6 +524,15 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             .store(in: &cancellables)
     }
     
+    /// Main, EQ and Playlist are one player: a click on one brings the other two up right under it (above the Library)
+    func raisePlayerGroup(around key: NSWindow?) {
+        let group: [NSWindow] = [mainWindow, eqWindow, plWindow].compactMap { $0 }
+        guard let key, group.contains(where: { $0 === key }) else { return }
+        for window in group where window !== key && window.isVisible && !window.isMiniaturized {
+            window.order(.below, relativeTo: key.windowNumber)
+        }
+    }
+
     public func updateTitleBarFocus() {
         mainView?.needsDisplay = true
         eqView?.needsDisplay = true
@@ -550,14 +563,14 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     }
     
     /// Turns per-frame work on only when someone can see it: spectrum tap (visualizer visible and on),
-    /// marquee scrolling (playing, main window visible) and the pause blink (a time display visible).
+    /// marquee scrolling (main window visible) and the pause blink (a time display visible).
     public func updateActivityState() {
         guard let mainView else { return }
         let mainVisible = isWindowOnScreen(mainWindow)
         let studioVisible = isWindowOnScreen(visualizerStudioWindow)
         visualizerStudioWindow?.studioView.setActivity(visible: studioVisible, playing: audioEngine.status == .playing)
         audioEngine.isAnalysisEnabled = (mainVisible && mainView.visualizer.mode != .off) || studioVisible
-        mainView.marquee.isScrollingActive = mainVisible && audioEngine.status == .playing
+        mainView.marquee.isScrollingActive = mainVisible
         updateBlinkState(for: audioEngine.status)
     }
     

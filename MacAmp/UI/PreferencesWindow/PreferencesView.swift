@@ -943,7 +943,13 @@ public struct PreferencesView: View {
     // MARK: - Media Library (Library ▸ Library preferences...)
     private var librarySection: some View {
         Win32TabView(tabs: LibraryPrefsTab.allCases, selectedTab: $libraryTab) {
-            if libraryTab == .general { libraryGeneralTab } else { libraryRadioTab }
+            switch libraryTab {
+            case .general: libraryGeneralTab
+            case .radio: libraryRadioTab
+            case .subsonic:
+                // The group keeps its own height at the top of the tab
+                VStack(spacing: 0) { SubsonicPrefsGroup().fixedSize(horizontal: false, vertical: true); Spacer(minLength: 0) }.padding(8)
+            }
         }
     }
 
@@ -1829,5 +1835,92 @@ enum LoginItem {
 }
 
 /// Options ▸ Library tabs (2.95)
-enum LibraryPrefsTab: String, CaseIterable { case general = "General", radio = "Internet Radio" }
+enum LibraryPrefsTab: String, CaseIterable { case general = "General", radio = "Internet Radio", subsonic = "Subsonic" }
 
+
+/// Media Library ▸ Subsonic (MacAmp's own group): a home music server shown as a Library section.
+/// Connect checks the server first and only then saves; the password is stored encrypted for this Mac.
+struct SubsonicPrefsGroup: View {
+    @State private var server = PersistenceManager.shared.state.subsonicServer
+    @State private var user = PersistenceManager.shared.state.subsonicUser
+    @State private var password = Subsonic.isConfigured ? (Subsonic.savedPassword() ?? "") : ""
+    @State private var status = Subsonic.isConfigured ? "Connected server: Library ▸ Subsonic" : ""
+    @State private var busy = false
+
+    var body: some View {
+        Win32GroupBox("Subsonic server (Navidrome, Gonic, Airsonic...)") {
+            VStack(alignment: .leading, spacing: 6) {
+                field("Server:", Win32TextField("http://localhost:4533", text: $server))
+                    .onChange(of: server) { _, text in
+                        // A pasted login link: user and password go to their boxes, the address keeps the server only
+                        guard let found = Subsonic.credentials(in: text) else { return }
+                        user = found.user
+                        password = found.password
+                        server = Subsonic.normalized(text)
+                    }
+                HStack(spacing: 6) {
+                    field("User:", Win32TextField(text: $user))
+                    Text("Password:").font(.system(size: 11)).foregroundColor(Win32Colors.text).fixedSize()
+                    Win32TextField(text: $password, secure: true)
+                }
+                Text("Your own music server (2005+, not in Winamp 2.95). When connected, Library shows a Subsonic section; tracks are downloaded as they play, and the password is stored encrypted for this Mac.")
+                    .font(.system(size: 10)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 6) {
+                    Win32Button("Connect", width: nil) { connect() }
+                        .disabled(busy || server.trimmingCharacters(in: .whitespaces).isEmpty || user.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Win32Button("Remove", width: nil) { remove() }
+                        .disabled(busy || PersistenceManager.shared.state.subsonicServer.isEmpty)
+                    Text(status).font(.system(size: 10)).foregroundColor(Win32Colors.text).lineLimit(2)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private func field(_ label: String, _ box: Win32TextField) -> some View {
+        HStack(spacing: 6) {
+            Text(label).font(.system(size: 11)).foregroundColor(Win32Colors.text).frame(width: 44, alignment: .leading)
+            box
+        }
+    }
+
+    private func connect() {
+        busy = true
+        status = "Connecting..."
+        Task { @MainActor in
+            defer { busy = false }
+            do {
+                try await Subsonic.ping(server: server, user: user, password: password)
+                // Another server or user replaces the old one: its saved password is removed too
+                let old = PersistenceManager.shared.state
+                if !old.subsonicServer.isEmpty, old.subsonicServer != Subsonic.normalized(server) || old.subsonicUser != user.trimmingCharacters(in: .whitespaces) {
+                    Subsonic.savePassword("", server: old.subsonicServer, user: old.subsonicUser)
+                }
+                guard Subsonic.savePassword(password, server: server, user: user) else {
+                    status = "[Error] Couldn't save the password"
+                    return
+                }
+                let state = PersistenceManager.shared
+                state.state.subsonicServer = Subsonic.normalized(server)
+                state.state.subsonicUser = user.trimmingCharacters(in: .whitespaces)
+                state.scheduleSave()
+                server = state.state.subsonicServer
+                SubsonicLibrary.shared.settingsChanged()
+                status = "Connected: open Library ▸ Subsonic"
+            } catch {
+                status = "[Error] \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func remove() {
+        let state = PersistenceManager.shared
+        Subsonic.savePassword("", server: state.state.subsonicServer, user: state.state.subsonicUser)
+        state.state.subsonicServer = ""
+        state.state.subsonicUser = ""
+        state.scheduleSave()
+        password = ""
+        status = "Removed"
+        SubsonicLibrary.shared.settingsChanged()
+    }
+}

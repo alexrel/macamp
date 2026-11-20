@@ -49,7 +49,8 @@ final class BrowserController: NSObject, WKNavigationDelegate, WKScriptMessageHa
         coordinator.updateActivityState()
     }
 
-    func toggle() { window.isVisible ? hide() : show() }
+    /// Open but buried under other windows: brought up instead of hidden
+    func toggle() { window.isVisible && window.occlusionState.contains(.visible) ? hide() : show() }
 
     /// Opens an address in the minibrowser (Open Internet Location, links from elsewhere in MacAmp)
     func open(_ url: URL) {

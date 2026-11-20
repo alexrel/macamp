@@ -76,6 +76,10 @@ extension PlayerCoordinator {
         
         let keyWin = NSApp.keyWindow
         
+        // Library, Video, Minibrowser and the Studio come up too, under the player, or they stay behind other apps
+        for aux in [libraryWindow, video?.window, browser?.window, visualizerStudioWindow] {
+            if let aux, aux.isVisible, !aux.isMiniaturized { aux.orderFront(nil) }
+        }
         if persistence.state.isPlaylistVisible, let pl = plWindow, !pl.isMiniaturized {
             pl.orderFront(nil)
         }

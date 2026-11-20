@@ -19,6 +19,7 @@
 		E9577154D6A98C0A09366630 /* LibraryActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1394E2EECCD621B6CA00DB /* LibraryActions.swift */; };
 		7F51C5A6CBDFDF9512950278 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 266B8A7B453A7B846E354765 /* LibraryView.swift */; };
 		77DAB62E991CD11B351E5D79 /* RadioDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB387DBB64F2911A11E8442C /* RadioDirectory.swift */; };
+		7EBB10B66FED334F6CEBB3E2 /* SubsonicClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F0BC0DBC4EADFBD83A60D12 /* SubsonicClient.swift */; };
 		620EB2BA15D10C3E2F781292 /* GenexTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98FFA2CF3CC88421071BA174 /* GenexTheme.swift */; };
 		AA66A61DF043AA5F7F89A4D4 /* MacAmpApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA69FDE20A9A6E5FEABD7AC7 /* MacAmpApp.swift */; };
 		AA9DAD216D7E3F566897F67A /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB520C6C4119B5F82B65A00 /* MainWindowView.swift */; };
@@ -80,6 +81,7 @@
 		AA1DD7DC105F775895AD4CD4 /* EqualizerPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA05E180143679538AA8E2C1 /* EqualizerPresets.swift */; };
 		AA3C615651677658C9AE8BC3 /* FFTAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA962E83A0FAE25570805F4F /* FFTAnalyzer.swift */; };
 		AABF54D3F594B758539B8D0C /* ICYStreamSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA68B6DF33DD1F5006AFF6A9 /* ICYStreamSession.swift */; };
+		40B4C9AC6459491D2AB65A2C /* HLSStreamSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F8933709E2172819F3F2555 /* HLSStreamSession.swift */; };
 		AA7B0832325E915DC9956E69 /* MainMenuManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AADC616BDF0E715B60B9A10B /* MainMenuManager.swift */; };
 		AA836AC777451C59AB95C33A /* StatusBarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA4A12DEC63F8C5A2597ACE9 /* StatusBarManager.swift */; };
 		AA7915404346F35EF3A845E4 /* WinampWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAE9F927208E8E5D3EA7E7A3 /* WinampWindow.swift */; };
@@ -132,6 +134,7 @@
 		AA1394E2EECCD621B6CA00DB /* LibraryActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryActions.swift; sourceTree = "<group>"; };
 		266B8A7B453A7B846E354765 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		EB387DBB64F2911A11E8442C /* RadioDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RadioDirectory.swift; sourceTree = "<group>"; };
+		7F0BC0DBC4EADFBD83A60D12 /* SubsonicClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubsonicClient.swift; sourceTree = "<group>"; };
 		98FFA2CF3CC88421071BA174 /* GenexTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenexTheme.swift; sourceTree = "<group>"; };
 		AA69FDE20A9A6E5FEABD7AC7 /* MacAmpApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MacAmpApp.swift"; sourceTree = "<group>"; };
 		AAB520C6C4119B5F82B65A00 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MainWindowView.swift"; sourceTree = "<group>"; };
@@ -193,6 +196,7 @@
 		AA05E180143679538AA8E2C1 /* EqualizerPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EqualizerPresets.swift"; sourceTree = "<group>"; };
 		AA962E83A0FAE25570805F4F /* FFTAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FFTAnalyzer.swift"; sourceTree = "<group>"; };
 		AA68B6DF33DD1F5006AFF6A9 /* ICYStreamSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ICYStreamSession.swift"; sourceTree = "<group>"; };
+		2F8933709E2172819F3F2555 /* HLSStreamSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HLSStreamSession.swift; sourceTree = "<group>"; };
 		AADC616BDF0E715B60B9A10B /* MainMenuManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MainMenuManager.swift"; sourceTree = "<group>"; };
 		AA4A12DEC63F8C5A2597ACE9 /* StatusBarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatusBarManager.swift"; sourceTree = "<group>"; };
 		AAE9F927208E8E5D3EA7E7A3 /* WinampWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WinampWindow.swift"; sourceTree = "<group>"; };
@@ -393,6 +397,7 @@
 				AA05E180143679538AA8E2C1 /* EqualizerPresets.swift */,
 				AA962E83A0FAE25570805F4F /* FFTAnalyzer.swift */,
 				AA68B6DF33DD1F5006AFF6A9 /* ICYStreamSession.swift */,
+				2F8933709E2172819F3F2555 /* HLSStreamSession.swift */,
 							AAF62A9AAAA8BC001D825328 /* StreamDecoder.swift */,
 );
 			path = "Audio";
@@ -402,6 +407,7 @@
 			isa = PBXGroup;
 			children = (
 				EB387DBB64F2911A11E8442C /* RadioDirectory.swift */,
+				7F0BC0DBC4EADFBD83A60D12 /* SubsonicClient.swift */,
 				ABE8B60495F376B2250C231C /* MediaLibrary.swift */,
 				AB4F7C6EA4349278B0D175CD /* LibraryQuery.swift */,
 			);
@@ -728,6 +734,7 @@
 				E9577154D6A98C0A09366630 /* LibraryActions.swift in Sources */,
 				7F51C5A6CBDFDF9512950278 /* LibraryView.swift in Sources */,
 				77DAB62E991CD11B351E5D79 /* RadioDirectory.swift in Sources */,
+				7EBB10B66FED334F6CEBB3E2 /* SubsonicClient.swift in Sources */,
 				620EB2BA15D10C3E2F781292 /* GenexTheme.swift in Sources */,
 				AA66A61DF043AA5F7F89A4D4 /* MacAmpApp.swift in Sources */,
 				AA9DAD216D7E3F566897F67A /* MainWindowView.swift in Sources */,
@@ -795,6 +802,7 @@
 				AA1DD7DC105F775895AD4CD4 /* EqualizerPresets.swift in Sources */,
 				AA3C615651677658C9AE8BC3 /* FFTAnalyzer.swift in Sources */,
 				AABF54D3F594B758539B8D0C /* ICYStreamSession.swift in Sources */,
+				40B4C9AC6459491D2AB65A2C /* HLSStreamSession.swift in Sources */,
 				AA7B0832325E915DC9956E69 /* MainMenuManager.swift in Sources */,
 				AA836AC777451C59AB95C33A /* StatusBarManager.swift in Sources */,
 				AA7915404346F35EF3A845E4 /* WinampWindow.swift in Sources */,

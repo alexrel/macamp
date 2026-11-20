@@ -160,6 +160,8 @@ public enum AppConstants {
         public static let minTracksVisible: Int = 4
         /// Addresses kept in Open location's drop-down list
         public static let recentLocationsLimit = 10
+        /// The player's playlist reaches playlist.json this long after a change (one write for a burst of changes)
+        public static let autosaveDelay: TimeInterval = 2
         
         /// Authentic Winamp 2.x geometry parameters
         public enum Layout {
@@ -295,6 +297,8 @@ public enum AppConstants {
         public static let height: CGFloat = 6
         public static let pauseDuration: TimeInterval = 2.5
         public static let scrollInterval: TimeInterval = 0.12
+        /// Between the end of a scrolling title and its next round, as in Winamp / Webamp
+        public static let separator = "  ***  "
     }
     
     // MARK: - Audio Engine Constants & Supported Formats

@@ -272,6 +272,11 @@ public struct AppState: Codable {
     /// Internet Radio tab: how old the cached station list may get (hours; 0 = never refresh by itself)
     public var radioRefreshHoursStorage: Int? = nil
     public var radioRefreshHours: Int { get { radioRefreshHoursStorage ?? 1 } set { radioRefreshHoursStorage = newValue } }
+    /// Media Library ▸ Subsonic: server address and user name (the password is in the app defaults, encrypted)
+    public var subsonicServerStorage: String? = nil
+    public var subsonicServer: String { get { subsonicServerStorage ?? "" } set { subsonicServerStorage = newValue } }
+    public var subsonicUserStorage: String? = nil
+    public var subsonicUser: String { get { subsonicUserStorage ?? "" } set { subsonicUserStorage = newValue } }
 
     /// Options ▸ Media Library: rescan the library folders at startup
     public var libraryRescanOnStartStorage: Bool? = nil
@@ -571,7 +576,8 @@ public class PersistenceManager {
     
     public func savePlaylist(_ tracks: [TrackItem]) {
         if let data = try? JSONEncoder().encode(tracks) {
-            try? data.write(to: playlistURL)
+            // Atomic: a kill in the middle of a write must not leave a broken playlist.json
+            try? data.write(to: playlistURL, options: .atomic)
         }
     }
 }

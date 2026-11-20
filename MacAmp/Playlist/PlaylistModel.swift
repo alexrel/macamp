@@ -43,7 +43,7 @@ public struct TrackItem: Codable, Identifiable, Equatable {
     public static func entry(url: URL, title: String? = nil, duration: TimeInterval = 0) -> TrackItem {
         guard url.isFileURL else {
             let name = url.lastPathComponent.isEmpty ? (url.host ?? url.absoluteString) : url.lastPathComponent
-            return TrackItem(url: url, title: title ?? name, artist: "Internet Stream", duration: duration)
+            return TrackItem(url: url, title: title ?? name, artist: Subsonic.isTrack(url) ? "" : "Internet Stream", duration: duration)
         }
         return TrackItem(url: url, title: title ?? url.deletingPathExtension().lastPathComponent, duration: duration)
     }
@@ -203,6 +203,20 @@ public class PlaylistModel: ObservableObject {
             objectWillChange.send()
             cachedTotalDuration = nil
             cachedRunningTimeMessage = nil
+            scheduleAutosave()
+        }
+    }
+    /// Set on the player's playlist: changes reach playlist.json shortly after, so a crash or a kill doesn't lose them
+    public var autosaves = false
+    private var autosaveScheduled = false
+
+    private func scheduleAutosave() {
+        guard autosaves, !autosaveScheduled else { return }
+        autosaveScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + AppConstants.Playlist.autosaveDelay) { [weak self] in
+            guard let self else { return }
+            self.autosaveScheduled = false
+            PersistenceManager.shared.savePlaylist(self.tracks)
         }
     }
     @Published public var currentIndex: Int? = nil {

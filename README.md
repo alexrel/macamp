@@ -23,7 +23,7 @@ macOS 14 Sonoma or later).
 - **Playlists:** M3U/M3U8, PLS, XSPF and CUE sheets, authentic shuffle/repeat, sort, Jump to File/Time, bookmarks.
 - **Internet radio:** SHOUTcast and Icecast streams with live titles.
 - **Audio CD:** play and rip to FLAC, ALAC, AAC, WAV or AIFF, with M3U/PLS playlists of the rip.
-- **Media Library** with local media, playlists and Internet Radio; **Minibrowser** and **Video** window.
+- **Media Library** with local media, playlists, Internet Radio and your Subsonic server (Navidrome, Gonic, Airsonic); **Minibrowser** and **Video** window.
 - **Visualizer:** spectrum and oscilloscope in the main window, full-screen Visualizer Studio, MilkDrop through projectM, What A Goom! 1.99.4, and Advanced Visualization Studio 2.81d with its editor.
 - **Track Info** with ID3 tag editing, Winamp-style Preferences, About, context menus and the 2.95 hotkeys
   (on any keyboard layout), global hotkeys and media keys.
@@ -92,7 +92,6 @@ Planned, in no fixed order:
 - MOD / XM / S3M / IT playback.
 - MP3 and Ogg Vorbis encoders for CD ripping.
 - Last.fm scrobbling, off by default.
-- Subsonic servers (Navidrome and others) as a Media Library source.
 
 Not planned: Winamp 3/5 "Modern" skins and a Linux or Windows version.
 

@@ -29,7 +29,7 @@ public struct TrackMetadata: Equatable {
 ///     streamNode (radio)  ─┘                                                                    └─ tap: spectrum / oscilloscope
 ///
 /// Internet radio is decoded by `StreamDecoder` and played through the same graph, so EQ, DSP and the
-/// visualizer work for streams too. Formats the decoder cannot handle (Ogg, HLS) fall back to `AVPlayer`.
+/// visualizer work for streams too. Formats the decoder cannot handle (Ogg Vorbis, fMP4 or encrypted HLS) fall back to `AVPlayer`.
 ///
 /// Main-thread confined, except for the mixer tap and the stream decoding queue.
 public class AudioEngine {
@@ -106,7 +106,7 @@ public class AudioEngine {
     }
 
     // Streaming state
-    public private(set) var icySession: ICYStreamSession?
+    public private(set) var icySession: RadioStreamSession?
     private var streamURL: URL?
     /// AVPlayer fallback for formats StreamDecoder can't decode (no EQ/DSP/visualizer there).
     private var streamPlayer: AVPlayer?
@@ -484,6 +484,12 @@ public class AudioEngine {
     public func load(url: URL) async throws -> TrackMetadata {
         loadGeneration += 1
         let loadToken = loadGeneration
+        // A Subsonic track plays from its downloaded file; the old track keeps playing while it arrives
+        var url = url
+        if Subsonic.isTrack(url) {
+            url = try await Subsonic.localFile(for: url)
+            guard loadToken == loadGeneration else { throw CancellationError() }
+        }
 
         // Track change: quick fade so the old track doesn't end with a click
         if status == .playing && fadeOutDuration > 0 && !crossfadeArmed {
@@ -653,7 +659,8 @@ public class AudioEngine {
         let token = streamSessionToken
         streamNeedsRestart = false
 
-        let session = ICYStreamSession(url: url)
+        // HLS (a .m3u8 left after resolving playlists) is read segment by segment; everything else is one ICY connection
+        let session: RadioStreamSession = url.pathExtension.lowercased() == "m3u8" ? HLSStreamSession(url: url) : ICYStreamSession(url: url)
         icySession = session
 
         session.onMetadataUpdate = { [weak self] artist, title, bitrate, sampleRate in
@@ -784,7 +791,7 @@ public class AudioEngine {
         DispatchQueue.main.asyncAfter(deadline: .now() + AudioEngine.reconnectDelay, execute: work)
     }
 
-    /// Ogg/Opus/HLS and other formats AudioFileStream can't parse: play via AVPlayer (bypasses EQ/DSP/visualizer).
+    /// Ogg Vorbis, fMP4 / encrypted HLS and other formats the decoder can't take: play via AVPlayer (bypasses EQ/DSP/visualizer).
     private func fallBackToAVPlayer(token: Int) {
         guard token == streamSessionToken, let url = streamURL, streamPlayer == nil else { return }
         print("AudioEngine: stream format not decodable in-engine, falling back to AVPlayer for \(url)")
@@ -1168,11 +1175,17 @@ public class AudioEngine {
         playerNode.volume = 1
     }
 
+    /// Radio time counts only while sound comes out: not while connecting, prebuffering or reconnecting with nothing left
+    private var isStreamAudible: Bool {
+        if let player = streamPlayer { return player.timeControlStatus == .playing }
+        return isStreamNodeStarted && streamBufferedSeconds > 0
+    }
+
     private func startStreamTimer() {
         playbackTimer?.invalidate()
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            guard self.status == .playing else { return }
+            guard self.status == .playing, self.isStreamAudible else { return }
             self.streamElapsed += 0.25
             self.onTimeUpdate?(self.streamElapsed)
         }

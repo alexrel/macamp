@@ -467,7 +467,10 @@ func audioTests() {
         _ = try loadSync(engine, URL(string: "http://127.0.0.1:\(server.port)/stream")!)
         assertTrue(engine.isStreaming, "Engine is in stream mode")
         engine.play()
+        _ = spinRunLoop(until: { false }, timeout: 0.35) // the server answers after 0.4 s
+        assertEqual(engine.currentTime, 0, "No time runs while the station is still connecting")
         assertTrue(spinRunLoop(until: { engine.streamBufferedSeconds > 0.5 }, timeout: 5), "Decoded radio audio is queued on the engine's stream node")
+        assertTrue(spinRunLoop(until: { engine.currentTime > 0 }, timeout: 5), "Time runs once the sound plays")
         assertTrue(engine.isStreamDecodedInEngine, "Stream is decoded in-engine (EQ/DSP/visualizer apply), not via AVPlayer")
         assertTrue(spinRunLoop(until: { waveformSeen }, timeout: 3), "Visualizer tap sees the real radio signal")
         assertTrue(spinRunLoop(until: { titles.contains("Кукушка") }, timeout: 3), "ICY StreamTitle parsed (artist/title split)")
@@ -481,6 +484,85 @@ func audioTests() {
         server.stop()
         assertTrue(spinRunLoop(until: { engine.status == .stopped }, timeout: 15), "Engine gives up after the reconnect attempts")
         assertTrue(events.contains("Stream lost"), "User sees 'Stream lost' (events: \(events))")
+    }
+
+    testGroup("Internet Radio over HLS (playlists, MPEG-TS, packed AAC) through the engine") {
+        // Master playlists: audio rendition, best audio-only variant, else the lightest
+        let base = URL(string: "https://radio.example/live/master.m3u8")!
+        let master = HLSPlaylist.parse("""
+        #EXTM3U
+        #EXT-X-STREAM-INF:BANDWIDTH=64000,CODECS="mp4a.40.5"
+        low/index.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=320000,CODECS="mp4a.40.2"
+        https://cdn.example/hi/index.m3u8
+        #EXT-X-STREAM-INF:BANDWIDTH=2000000,CODECS="avc1.4d401f,mp4a.40.2"
+        video/index.m3u8
+        """, base: base)
+        assertEqual(master.variants.count, 3, "Three variants, the CODECS list with its comma kept whole")
+        assertEqual(master.preferredVariant?.absoluteString, "https://cdn.example/hi/index.m3u8", "Best audio-only variant")
+        let video = HLSPlaylist.parse("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000\na.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=300000\nb.m3u8", base: base)
+        assertEqual(video.preferredVariant?.lastPathComponent, "b.m3u8", "No codec info: the lightest variant")
+        let rendition = HLSPlaylist.parse("#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aac\",NAME=\"Radio\",URI=\"audio/aac.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=900000,AUDIO=\"aac\"\nv.m3u8", base: base)
+        assertEqual(rendition.preferredVariant?.absoluteString, "https://radio.example/live/audio/aac.m3u8", "Separate audio rendition first")
+        let media = HLSPlaylist.parse("#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:311641\n#EXTINF:10,\nseg1.ts\n#EXTINF:10,\nseg2.ts", base: base)
+        assertTrue(media.segments.map(\.lastPathComponent) == ["seg1.ts", "seg2.ts"] && media.mediaSequence == 311641 && media.targetDuration == 10 && !media.isEnded,
+                   "Media playlist: segments, sequence, target duration, live")
+        assertTrue(HLSPlaylist.parse("#EXT-X-KEY:METHOD=AES-128,URI=\"k\"", base: base).isEncrypted, "Encrypted segments noticed (left to AVPlayer)")
+        assertTrue(!HLSPlaylist.parse("#EXT-X-KEY:METHOD=NONE", base: base).isEncrypted, "METHOD=NONE isn't encryption")
+        assertTrue(HLSPlaylist.parse("#EXT-X-MAP:URI=\"init.mp4\"", base: base).hasInitSection, "fMP4 noticed (left to AVPlayer)")
+
+        // Segments: AAC out of MPEG-TS, and packed AAC without its ID3 tag
+        let adts = try makeTestADTS(seconds: 3)
+        let ts = makeTestTS(audio: adts)
+        let demuxed = HLSSegment.audio(from: ts)
+        assertEqual(demuxed?.contentType, "audio/aac", "MPEG-TS with an AAC stream")
+        assertTrue(demuxed?.bytes == adts, "PES headers and TS packets removed: the ADTS stream comes out whole (\(demuxed?.bytes.count ?? 0) of \(adts.count))")
+        let tag = Data("ID3".utf8) + Data([4, 0, 0, 0, 0, 0, 20]) + Data(count: 20)
+        assertTrue(HLSSegment.audio(from: tag + adts)?.bytes == adts, "Packed AAC: the ID3 tag in front dropped")
+        assertTrue(HLSSegment.audio(from: tag + tag + adts)?.bytes == adts, "Two tags in front, as NHK and RTL 102.5 send")
+        assertTrue(HLSSegment.audio(from: Data("ftypiso6".utf8) + Data(count: 400)) == nil, "fMP4 segment: not handled here")
+
+        // Through the engine from a local server: playlist kept as the stream, segments decoded in-engine
+        let half = adts.count / 2
+        let cut = adts[half...].firstIndex(of: 0xFF).map { $0 } ?? half // next ADTS frame
+        let segments = [makeTestTS(audio: Data(adts[..<cut])), makeTestTS(audio: Data(adts[cut...]))]
+        let server = try TestHTTPServer { path in
+            if path.hasSuffix("live.m3u8") {
+                return ("application/vnd.apple.mpegurl", Data("#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:7\n#EXTINF:1.5,\ns7.ts\n#EXTINF:1.5,\ns8.ts\n#EXT-X-ENDLIST\n".utf8))
+            }
+            return ("video/MP2T", path.hasSuffix("s7.ts") ? segments[0] : segments[1])
+        }
+        defer { server.stop() }
+        let liveURL = URL(string: "http://127.0.0.1:\(server.port)/live.m3u8")!
+        assertEqual(awaitValue { await ICYStreamSession.resolveStreamURL(from: liveURL) }, liveURL, "An HLS playlist isn't resolved to one of its segments")
+        let engine = AudioEngine.shared
+        _ = try loadSync(engine, liveURL)
+        engine.play()
+        assertTrue(spinRunLoop(until: { engine.streamBufferedSeconds > 1 }, timeout: 5), "HLS audio decoded and queued on the stream node (\(engine.streamBufferedSeconds) s)")
+        assertTrue(engine.isStreamDecodedInEngine, "Decoded in-engine (EQ, DSP, visualizer), not via AVPlayer")
+        engine.stop()
+
+        // A live playlist moves on: each new segment is fetched once, in order, from three before the live edge
+        let lock = NSLock()
+        var playlistRequests = 0, fetched: [Int] = []
+        let live = try TestHTTPServer { path in
+            if path.hasSuffix(".m3u8") {
+                let first = lock.withLock { () -> Int in playlistRequests += 1; return playlistRequests - 1 }
+                let lines = (first..<first + 5).map { "#EXTINF:1.0,\nseg\($0).ts" }.joined(separator: "\n")
+                return ("application/vnd.apple.mpegurl", Data("#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:\(first)\n\(lines)\n".utf8))
+            }
+            let n = Int(path.split(separator: "seg").last?.split(separator: ".").first ?? "") ?? -1
+            lock.withLock { fetched.append(n) }
+            return ("video/MP2T", segments[n % 2])
+        }
+        defer { live.stop() }
+        let session = HLSStreamSession(url: URL(string: "http://127.0.0.1:\(live.port)/live.m3u8")!)
+        session.start()
+        _ = spinRunLoop(until: { lock.withLock { fetched.count >= 6 } }, timeout: 10)
+        session.stop()
+        let order = lock.withLock { fetched }
+        assertEqual(Array(order.prefix(3)), [2, 3, 4], "Starts three segments before the live edge")
+        assertEqual(order, Array(order.first.map { $0..<($0 + order.count) } ?? 0..<0), "Then each new segment once, in order (\(order))")
     }
 
     testGroup("Playback Options: Stop After Current, Manual Advance, Fade Stop") {
@@ -836,4 +918,39 @@ func audioTests() {
         assertEqual(c.trackTags(meta("1 Audio Track", ""), for: entry).title, "La Femme d’argent", "Untagged file keeps the entry's name")
         assertEqual(c.trackTags(meta("Sexy Boy", "Air"), for: entry).title, "Sexy Boy", "Tags still win")
     }
+}
+
+/// An MPEG-TS segment as HLS radio sends it: PAT, PMT with one AAC stream (PID 0x101), the audio in one PES packet
+func makeTestTS(audio: Data) -> Data {
+    var out = Data()
+    var counter: UInt8 = 0
+    func packet(pid: Int, start: Bool, payload: [UInt8]) {
+        precondition(payload.count <= 184)
+        var p: [UInt8] = [0x47, UInt8((start ? 0x40 : 0) | (pid >> 8)), UInt8(pid & 0xFF)]
+        if payload.count == 184 {
+            p.append(0x10 | (counter & 0x0F))
+        } else {
+            // adaptation field stuffing fills the packet
+            let stuffing = 184 - payload.count - 1
+            p.append(0x30 | (counter & 0x0F))
+            p.append(UInt8(stuffing))
+            if stuffing > 0 { p.append(0x00); p += [UInt8](repeating: 0xFF, count: stuffing - 1) }
+        }
+        counter &+= 1
+        out.append(contentsOf: p + payload)
+    }
+    // PAT: program 1 → PMT PID 0x100 (CRC not checked by the reader)
+    packet(pid: 0, start: true, payload: [0, 0x00, 0xB0, 0x0D, 0, 1, 0xC1, 0, 0, 0, 1, 0xE1, 0x00, 0, 0, 0, 0])
+    // PMT: PCR PID 0x101, no program info, stream type 0x0F (ADTS AAC) on PID 0x101
+    packet(pid: 0x100, start: true, payload: [0, 0x02, 0xB0, 0x12, 0, 1, 0xC1, 0, 0, 0xE1, 0x01, 0xF0, 0x00, 0x0F, 0xE1, 0x01, 0xF0, 0x00, 0, 0, 0, 0])
+    // PES: audio stream 0xC0, unbounded length, PTS only
+    var pes: [UInt8] = [0, 0, 1, 0xC0, 0, 0, 0x80, 0x80, 0x05, 0x21, 0, 0x01, 0, 0x01] + [UInt8](audio)
+    var first = true
+    while !pes.isEmpty {
+        let chunk = Array(pes.prefix(184))
+        pes.removeFirst(chunk.count)
+        packet(pid: 0x101, start: first, payload: chunk)
+        first = false
+    }
+    return out
 }

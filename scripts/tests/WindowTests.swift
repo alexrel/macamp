@@ -166,6 +166,27 @@ func windowTests() {
         winB.setFrameOrigin(NSPoint(x: 650, y: 380))
         winC.setFrameOrigin(NSPoint(x: winB.frame.minX, y: winB.frame.minY - winC.frame.height))
         wlm.updateAdjacencies()
+        // Library-style window: the SwiftUI content keeps its skin-pixel size through every interface scale change,
+        // not only after a restart (it was left at the old size: gaps at 200%, doubled after 200% → 100%)
+        let measured = MeasuredSize()
+        let libContent = ScaledHostingContent(SizeProbe(measured: measured), insideScaledFrame: true)
+        let lib = WinampWindow(windowID: .library, contentRect: NSRect(x: winA.frame.maxX + 40, y: 100, width: 500, height: 348))
+        lib.contentView = GenWindowFrameView(title: "Library", content: libContent)
+        lib.updateContentScale(1, logicalSize: NSSize(width: 500, height: 348))
+        lib.orderFront(nil)
+        _ = spinRunLoop(until: { measured.size != .zero }, timeout: 2)
+        let logical = measured.size
+        for scale in [InterfaceScale.large, .extraLarge, .standard, .extraLarge, .standard] {
+            persistence.state.interfaceScale = scale
+            wlm.setScale(1)
+            _ = spinRunLoop(until: { abs(measured.size.width - logical.width) < 1.5 }, timeout: 1)
+            assertTrue(abs(measured.size.width - logical.width) < 1.5 && abs(measured.size.height - logical.height) < 1.5,
+                       "Library content laid out at its own size at \(scale.rawValue)% (\(measured.size), expected \(logical))")
+        }
+        lib.orderOut(nil)
+        WindowLayoutManager.shared.unregister(id: .library)
+        persistence.state.interfaceScale = .standard
+
         persistence.state.interfaceScale = .large
         wlm.setScale(1)
         assertEqual(winC.frame.maxY, winB.frame.minY, "A group detached from Main stays docked")
@@ -294,5 +315,16 @@ func windowTests() {
         _ = wlm.startDrag(for: .main)
         assertTrue(wlm.hasUserMovedWindowsSinceRelocation, "User manual drag marks windows as moved")
         assertTrue(wlm.savedExternalPositions == nil, "User manual drag clears saved external positions")
+    }
+}
+
+/// The size SwiftUI really gives its content, for the interface scale test
+final class MeasuredSize { var size: CGSize = .zero }
+struct SizeProbe: View {
+    let measured: MeasuredSize
+    var body: some View {
+        GeometryReader { g in
+            Color.clear.onAppear { measured.size = g.size }.onChange(of: g.size) { _, size in measured.size = size }
+        }
     }
 }

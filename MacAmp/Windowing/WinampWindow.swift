@@ -6,7 +6,10 @@ extension NSWindow {
     func updateContentScale(_ scale: CGFloat, logicalSize: NSSize? = nil) {
         guard let view = contentView else { return }
         view.bounds.size = logicalSize ?? NSSize(width: (view.frame.width / scale).rounded(), height: (view.frame.height / scale).rounded())
-        view.needsLayout = true
+        // Views inside keep their logical frames, so AppKit wouldn't lay them out again; the SwiftUI content of the
+        // Library / Video / Minibrowser sizes itself to the new window scale only in layout()
+        func markForLayout(_ view: NSView) { view.needsLayout = true; view.subviews.forEach(markForLayout) }
+        markForLayout(view)
         view.layoutSubtreeIfNeeded()
         view.setNeedsDisplayRecursively()
     }
@@ -45,6 +48,7 @@ final class ScaledHostingContent: NSView {
     fileprivate let zoom: HostingZoom
     private let hosting: NSView
     private let insideScaledFrame: Bool
+    private var hostedSize: NSSize = .zero
 
     init<Content: View>(_ content: Content, size: NSSize? = .zero, insideScaledFrame: Bool = false) {
         self.insideScaledFrame = insideScaledFrame
@@ -65,8 +69,15 @@ final class ScaledHostingContent: NSView {
         super.layout()
         guard insideScaledFrame else { return }
         // SwiftUI handles input at window scale even though the skin around it uses logical pixels.
+        let size = convert(bounds, to: nil).size
+        if size != hostedSize {
+            // NSHostingView lays SwiftUI out again only when its frame changes, and a new interface scale changes just
+            // the bounds (the frame stays in skin pixels): measured, 200% → 100% left the Library laid out doubled
+            hosting.frame = bounds.insetBy(dx: 0, dy: 0.5)
+            hostedSize = size
+        }
         hosting.frame = bounds
-        hosting.bounds.size = convert(bounds, to: nil).size
+        hosting.bounds.size = size
         let scale = PersistenceManager.shared.state.interfaceScale.multiplier
         if zoom.value != scale { zoom.value = scale }
     }

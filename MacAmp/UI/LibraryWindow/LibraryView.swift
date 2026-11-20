@@ -17,6 +17,7 @@ enum LibraryNode: Hashable {
     case devices
     case cd(URL)
     case internetRadio
+    case subsonic
 }
 
 /// Winamp 2.95 Media Library content (inside the GEN frame): tree on the left with the "Library" button,
@@ -26,6 +27,7 @@ struct MediaLibraryView: View {
     @ObservedObject private var skinManager = SkinManager.shared
     @ObservedObject var library = MediaLibrary.shared
     @ObservedObject private var navigation = LibraryNavigation.shared
+    @ObservedObject private var subsonic = SubsonicLibrary.shared
     private var node: LibraryNode {
         get { navigation.node }
         nonmutating set { navigation.node = newValue }
@@ -73,6 +75,7 @@ struct MediaLibraryView: View {
                 treeRow("Devices", .devices, indent: 0, theme)
                 ForEach(discs, id: \.self) { disc in treeRow("CD \(disc.lastPathComponent)", .cd(disc), indent: 1, last: disc == discs.last, theme) }
                 treeRow("Internet Radio", .internetRadio, indent: 0, theme)
+                if subsonic.isConfigured { treeRow("Subsonic", .subsonic, indent: 0, theme) }
             }
             .padding(2)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -146,6 +149,8 @@ struct MediaLibraryView: View {
             CDPage(disc: disc)
         case .internetRadio:
             RadioPage()
+        case .subsonic:
+            SubsonicPage()
         }
     }
 }
@@ -467,6 +472,140 @@ struct RadioPage: View {
                 }
                 status = "[Error] \(error.localizedDescription)"
             }
+        }
+    }
+}
+
+// MARK: - Subsonic
+
+/// Library ▸ Subsonic: artists and albums of the server above the tracks, like Local Media ▸ Audio.
+/// The search box under the panes asks the server (Enter). Albums and tracks are fetched when picked, never the whole server.
+struct SubsonicPage: View {
+    /// Redraws with the new skin's colours: GenexTheme.current is read in body and is not observable by itself
+    @ObservedObject private var skinManager = SkinManager.shared
+    @ObservedObject private var library = SubsonicLibrary.shared
+    @State private var artist: String?
+    @State private var albums: [SubsonicAlbum] = []
+    @State private var album: String?
+    @State private var songs: [SubsonicSong] = []
+    @State private var search = ""
+    @State private var status = ""
+    @State private var panesHeight = CGFloat(PersistenceManager.shared.state.libraryPanesHeight)
+    @State private var artistFraction = CGFloat(PersistenceManager.shared.state.libraryArtistFraction)
+
+    var body: some View {
+        let theme = GenexTheme.current
+        VStack(spacing: 0) {
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    artistPane
+                    .frame(width: max(60, (geo.size.width - 4) * artistFraction))
+                    PaneDivider(vertical: true) { delta in
+                        artistFraction = min(0.85, max(0.15, artistFraction + delta / max(1, geo.size.width - 4)))
+                    } onEnd: {
+                        PersistenceManager.shared.state.libraryArtistFraction = Double(artistFraction)
+                        PersistenceManager.shared.scheduleSave()
+                    }
+                    albumPane
+                }
+            }
+            .frame(height: panesHeight)
+            PaneDivider(vertical: false) { delta in
+                panesHeight = min(400, max(40, panesHeight + delta))
+            } onEnd: {
+                PersistenceManager.shared.state.libraryPanesHeight = Double(panesHeight)
+                PersistenceManager.shared.scheduleSave()
+            }
+            // As in Audio (2.95): the search box sits under the panes, over the tracks it fills
+            HStack(spacing: 4) {
+                SearchBar(text: $search).onSubmit { runSearch() }
+                Text(status).font(.system(size: 10)).foregroundColor(theme.windowText).lineLimit(1).frame(maxWidth: 220, alignment: .leading)
+            }
+            .padding(.bottom, 3)
+            MediaListPage(items: songs.map(\.libraryItem), searchable: false)
+        }
+        // Opening the page, and a new Connect in Preferences while it is open, load the artists again
+        .task(id: library.generation) {
+            if library.artists.isEmpty {
+                artist = nil; album = nil; albums = []; songs = []
+                loadArtists()
+            }
+        }
+    }
+
+    private var artistPane: some View {
+        let columns: [MediaListView<SubsonicArtist>.Column] = [("Artist", 150, .leading, { $0.name }),
+                                                              ("Albums", 46, .trailing, { $0.albumCount.map(String.init) ?? "" })]
+        let selection = Binding<Set<String>>(get: { Set(artist.map { [$0] } ?? []) }, set: { pick(artist: $0.first) })
+        return MediaListView(rows: library.artists, columns: columns, selection: selection, autosave: "SubsonicArtists", defaultSort: "Artist") { rows, shift in
+            playArtist(rows.first, shift: shift)
+        }
+    }
+
+    private var albumPane: some View {
+        let columns: [MediaListView<SubsonicAlbum>.Column] = [("Album", 170, .leading, { $0.name }),
+                                                             ("Year", 40, .leading, { $0.year.map(String.init) ?? "" }),
+                                                             ("Tracks", 46, .trailing, { $0.songCount.map(String.init) ?? "" })]
+        let selection = Binding<Set<String>>(get: { Set(album.map { [$0] } ?? []) }, set: { pick(album: $0.first) })
+        return MediaListView(rows: albums, columns: columns, selection: selection, autosave: "SubsonicAlbums") { _, shift in
+            LibraryActions.doubleClick(songs.map(\.trackItem), shift: shift)
+        }
+    }
+
+    /// Runs a server request, showing "Loading..." and then the error, if any
+    private func fetch(_ work: @escaping @MainActor () async throws -> Void) {
+        status = "Loading..."
+        Task { @MainActor in
+            do {
+                try await work()
+                status = ""
+            } catch {
+                status = "[Error] \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func loadArtists() {
+        fetch {
+            library.artists = try await Subsonic.artists()
+            status = "\(library.artists.count) artists"
+        }
+    }
+
+    private func pick(artist id: String?) {
+        guard let id, id != artist else { return }
+        artist = id
+        album = nil
+        albums = []
+        songs = []
+        fetch { let found = try await Subsonic.albums(artistID: id); if artist == id { albums = found } }
+    }
+
+    private func pick(album id: String?) {
+        guard let id, id != album else { return }
+        album = id
+        fetch { let found = try await Subsonic.songs(albumID: id); if album == id { songs = found } }
+    }
+
+    private func runSearch() {
+        let text = search.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        album = nil
+        fetch {
+            songs = try await Subsonic.search(text)
+            status = "\(songs.count) found"
+        }
+    }
+
+    /// Double-click an artist: all their albums, in the server's order
+    private func playArtist(_ row: SubsonicArtist?, shift: Bool) {
+        guard let row else { return }
+        fetch {
+            var tracks: [TrackItem] = []
+            for album in try await Subsonic.albums(artistID: row.id) {
+                tracks += try await Subsonic.songs(albumID: album.id).map(\.trackItem)
+            }
+            LibraryActions.doubleClick(tracks, shift: shift)
         }
     }
 }

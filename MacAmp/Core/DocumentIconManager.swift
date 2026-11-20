@@ -23,9 +23,13 @@ public struct SystemBundleIconInstaller: BundleIconInstaller {
     }
 
     public func resign(bundle: URL) throws {
+        try sign(bundle, as: "-")
+    }
+
+    private func sign(_ bundle: URL, as identity: String) throws {
         let codesign = Process()
         codesign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-        codesign.arguments = ["--force", "--sign", "-", "--preserve-metadata=entitlements,requirements,flags,runtime", bundle.path]
+        codesign.arguments = ["--force", "--sign", identity, "--preserve-metadata=entitlements,requirements,flags,runtime", bundle.path]
         let errors = Pipe()
         codesign.standardError = errors
         try codesign.run()
@@ -218,8 +222,8 @@ public final class DocumentIconManager: ObservableObject {
         return text.count > 160 ? String(text.prefix(160)) + "…" : text
     }
 
-    /// True for ad-hoc signed bundles we can write to (local builds). Developer ID / App Store
-    /// signatures are never replaced.
+    /// True for local builds we can write to: ad-hoc, or an Apple Development certificate (a developer's own Mac,
+    /// signed again with it after the change). Developer ID / App Store signatures are never replaced.
     public nonisolated static func isLocallySigned(_ bundle: URL) -> Bool {
         guard FileManager.default.isWritableFile(atPath: bundle.appendingPathComponent("Contents/Resources").path) else { return false }
         var code: SecStaticCode?
@@ -229,6 +233,8 @@ public final class DocumentIconManager: ObservableObject {
               let dict = info as? [String: Any] else { return false }
         let flags = (dict[kSecCodeInfoFlags as String] as? UInt32) ?? 0
         let adhocFlag: UInt32 = 0x0002 // kSecCodeSignatureAdhoc
-        return flags & adhocFlag != 0
+        if flags & adhocFlag != 0 { return true }
+        let leaf = (dict[kSecCodeInfoCertificates as String] as? [SecCertificate])?.first
+        return leaf.flatMap { SecCertificateCopySubjectSummary($0) as String? }?.hasPrefix("Apple Development:") == true
     }
 }

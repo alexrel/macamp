@@ -101,7 +101,10 @@ extension PlayerCoordinator {
                 print("Failed to load track \(track.url): \(error)")
                 await MainActor.run {
                     let offline = (error as? URLError)?.code == .notConnectedToInternet && MacAmpNetwork.isOffline
-                    self.mainView.marquee.showTemporaryMessage(offline ? "Internet disabled (Preferences > Setup)" : (track.url.isFileURL ? "Cannot open file" : "Stream Error"))
+                    let message = offline ? "Internet disabled (Preferences > Setup)"
+                        : error is SubsonicError ? "Subsonic: \(error.localizedDescription)"
+                        : track.url.isFileURL ? "Cannot open file" : "Stream Error"
+                    self.mainView.marquee.showTemporaryMessage(message, duration: error is SubsonicError ? 4 : 1.5)
                 }
             }
         }

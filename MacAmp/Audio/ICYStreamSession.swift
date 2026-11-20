@@ -263,6 +263,8 @@ public class ICYStreamSession: NSObject, URLSessionDataDelegate {
             return url
         }
         let content = TextEncoding.decode(data)
+        // An HLS playlist is the stream itself, not a list of station addresses
+        if HLSPlaylist.isHLS(content) { return url }
         
         let lines = content.components(separatedBy: .newlines)
         for rawLine in lines {

@@ -699,4 +699,18 @@ func playlistTests() {
         pl.currentIndex = pl.tracks.firstIndex { $0.id == first.id }
         assertEqual(pl.previous()?.id, unplayed.id, "Previous after picking an already played track")
     }
+
+    testGroup("Playlist autosave") {
+        let before = PersistenceManager.shared.loadPlaylist()
+        defer { PersistenceManager.shared.savePlaylist(before) }
+        let pl = PlaylistModel()
+        pl.autosaves = true
+        let added = [TrackItem(url: URL(string: "subsonic://song/1.mp3")!, title: "One"), TrackItem(url: URL(string: "subsonic://song/2.mp3")!, title: "Two")]
+        pl.add(tracks: added)
+        let saved = spinRunLoop(until: { PersistenceManager.shared.loadPlaylist().map(\.id) == added.map(\.id) }, timeout: AppConstants.Playlist.autosaveDelay + 3)
+        assertTrue(saved, "Added tracks reach playlist.json without quitting")
+        pl.clear()
+        assertTrue(spinRunLoop(until: { PersistenceManager.shared.loadPlaylist().isEmpty }, timeout: AppConstants.Playlist.autosaveDelay + 3), "So does clearing")
+        pl.autosaves = false
+    }
 }

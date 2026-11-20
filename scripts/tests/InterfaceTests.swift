@@ -74,6 +74,20 @@ func interfaceTests() {
         assertEqual(marquee.trueTypeFont().pointSize, 8, "A size that fits is not shrunk")
     }
 
+    testGroup("Marquee Loops With *** Separator") {
+        let mode = PersistenceManager.shared.state.marqueeFontMode
+        defer { PersistenceManager.shared.state.marqueeFontMode = mode }
+        PersistenceManager.shared.state.marqueeFontMode = .bitmap
+        let marquee = MarqueeView()
+        marquee.fontSettingsChanged()
+        marquee.text = "1. DJ Mike Llama - Llama Whippin' Intro (0:05)"
+        assertEqual(marquee.loopText, "1. DJ Mike Llama - Llama Whippin' Intro (0:05)  ***  ", "One round is the title and the Winamp separator")
+        assertEqual(marquee.loopWidth(), CGFloat(marquee.loopText.count) * AppConstants.Font.charWidth, "The next copy trails by the title plus separator")
+        marquee.scrollOffset = 40
+        marquee.isScrollingActive = false
+        assertEqual(marquee.scrollOffset, 40, "A hidden window keeps the scroll position")
+    }
+
     testGroup("Status Bar Menu Title") {
         let font = [NSAttributedString.Key.font: NSFont.menuFont(ofSize: 0)]
         let long = "▶ Шок видео! Гитара с одной наклейкой! Эксклюзив (нет) 2016 год [cdJzZETdxYY]"

@@ -130,4 +130,135 @@ func libraryTests() {
         assertEqual(reloaded.playlists.map(\.name), ["Mix"], "Playlists saved")
         assertEqual(reloaded.folders.map(\.lastPathComponent), ["library"], "Folders remembered for rescans")
     }
+
+    testGroup("Subsonic: token, responses, subsonic:// tracks") {
+        // Token example from the Subsonic API docs
+        assertEqual(Subsonic.token(password: "sesame", salt: "c19b2d"), "26719a1196d2a940705a59634eb18eab", "md5(password + salt)")
+        let url = Subsonic.requestURL("ping", server: "http://music.local:4533", user: "admin", password: "sesame", salt: "c19b2d")!.absoluteString
+        assertTrue(url.hasPrefix("http://music.local:4533/rest/ping.view?") && url.contains("t=26719a1196d2a940705a59634eb18eab") && url.contains("s=c19b2d"),
+                   "Request carries user, token and salt (\(url))")
+        assertTrue(!url.contains("sesame") && !url.contains("p="), "The password itself is never in the URL")
+        assertEqual(Subsonic.normalized(" music.local:4533/ "), "http://music.local:4533", "Server address: scheme added, slash dropped")
+        assertEqual(Subsonic.normalized("https://nd.example.org"), "https://nd.example.org", "https kept")
+        assertEqual(Subsonic.normalized("http://demo.subsonic.org/login.view?user=guest&password=guest"), "http://demo.subsonic.org", "A web page of the server: its root")
+        assertEqual(Subsonic.normalized("https://demo.navidrome.org/app/#/login"), "https://demo.navidrome.org", "Navidrome's web app address: its root")
+        assertEqual(Subsonic.normalized("https://host.example/music/rest/"), "https://host.example/music", "A path prefix stays, /rest goes")
+        assertTrue(Subsonic.credentials(in: "http://demo.subsonic.org/login.view?user=guest&password=secret")! == ("guest", "secret"), "User and password from a pasted link")
+        assertTrue(Subsonic.savePassword("sesame", server: "http://music.local:4533/", user: " admin"), "Password saved")
+        assertEqual(Subsonic.savedPassword(server: "http://music.local:4533", user: "admin"), "sesame", "Read back for the same server and user")
+        let stored = UserDefaults.standard.data(forKey: Subsonic.passwordDefaultsPrefix + "admin@http://music.local:4533") ?? Data()
+        assertTrue(!stored.isEmpty && stored.range(of: Data("sesame".utf8)) == nil, "Stored encrypted, not as plain text")
+        Subsonic.savePassword("", server: "http://music.local:4533", user: "admin")
+        assertTrue(Subsonic.savedPassword(server: "http://music.local:4533", user: "admin") == nil, "An empty password removes it")
+        assertTrue(Subsonic.credentials(in: "http://h/rest/ping.view?u=bob&p=enc:736563726574")! == ("bob", "secret"), "u= / p=enc: hex")
+        assertTrue(Subsonic.credentials(in: "http://music.local:4533") == nil, "A plain address has none")
+
+        // Saved server answers (OpenSubsonic examples; Cyrillic; empty results come without the array)
+        let artists = Data("""
+        {"subsonic-response":{"status":"ok","version":"1.16.1","artists":{"ignoredArticles":"The","index":[
+          {"name":"A","artist":[{"id":"5","name":"Antígona","albumCount":1}]},
+          {"name":"К","artist":[{"id":"9","name":"Кино","albumCount":3}]}]}}}
+        """.utf8)
+        assertEqual(try Subsonic.parseArtists(Subsonic.payload(artists, key: "artists")).map(\.name), ["Antígona", "Кино"], "getArtists: every index flattened")
+        let empty = Data(#"{"subsonic-response":{"status":"ok","version":"1.16.1","artists":{"ignoredArticles":"The"}}}"#.utf8)
+        assertEqual(try Subsonic.parseArtists(Subsonic.payload(empty, key: "artists")).count, 0, "Empty collection")
+        let album = Data("""
+        {"subsonic-response":{"status":"ok","version":"1.16.1","album":{"id":"6","name":"Группа крови","song":[
+          {"id":"79","title":"Закрой за мной дверь","artist":"Кино","album":"Группа крови","track":2,"discNumber":1,"duration":254,"suffix":"flac"},
+          {"id":"78","title":"Группа крови","artist":"Кино","album":"Группа крови","track":1,"discNumber":1,"duration":286,"suffix":"mp3","year":1988}]}}}
+        """.utf8)
+        let songs = try Subsonic.parseAlbum(Subsonic.payload(album, key: "album"))
+        assertEqual(songs.map(\.title), ["Группа крови", "Закрой за мной дверь"], "getAlbum: tracks in album order")
+        assertEqual(songs[0].trackItem.duration, 286, "Length straight from the server")
+        assertEqual(songs[0].trackItem.artist, "Кино", "Artist straight from the server")
+        assertEqual(songs[0].libraryItem.year, "1988", "Year for the list")
+        let none = Data(#"{"subsonic-response":{"status":"ok","version":"1.16.1","searchResult3":{}}}"#.utf8)
+        assertEqual(try Subsonic.parseSearch(Subsonic.payload(none, key: "searchResult3")).count, 0, "search3 with nothing found")
+        let failed = Data(#"{"subsonic-response":{"status":"failed","version":"1.16.1","error":{"code":40,"message":"Wrong username or password"}}}"#.utf8)
+        do {
+            _ = try Subsonic.payload(failed, key: "artists")
+            assertTrue(false, "A failed answer throws")
+        } catch let error as SubsonicError {
+            assertEqual(error, SubsonicError(code: 40, message: "Wrong username or password"), "Failed status (HTTP 200) becomes the server's error")
+        }
+        assertTrue((try? Subsonic.payload(Data("<html>".utf8), key: nil)) == nil, "Not a Subsonic server")
+
+        // Playlist entries: subsonic://song/<id>.<suffix>, nothing secret, saved and read back
+        let track = songs[1].trackItem
+        assertEqual(track.url.absoluteString, "subsonic://song/79.flac", "Track URL has only the song id and type")
+        assertEqual(Subsonic.songID(track.url), "79", "Song id read back")
+        let saved = String(data: try JSONEncoder().encode([track]), encoding: .utf8)!
+        assertTrue(!saved.contains("t=") && !saved.contains("music.local"), "playlist.json holds no server or token")
+        assertEqual(try JSONDecoder().decode([TrackItem].self, from: Data(saved.utf8)).first?.url, track.url, "Entry read back from playlist.json")
+        assertEqual(TrackItem.entry(url: track.url).artist, "", "A Subsonic entry isn't an Internet Stream")
+        assertEqual(PlaylistIO.resolveEntry("subsonic://song/79.flac", baseURL: URL(fileURLWithPath: "/tmp/")), track.url, "And comes back from an M3U line")
+
+        // Download through a local server: stream with format=raw, an error answer, then the cache
+        let wav = try Data(contentsOf: try makeTestWAV(named: "subsonic-src.wav", seconds: 0.5))
+        let server = try TestHTTPServer { path in
+            if path.contains("/rest/stream.view") && path.contains("id=78") && path.contains("format=raw") { return ("audio/wav", wav) }
+            return ("application/json", Data(#"{"subsonic-response":{"status":"failed","version":"1.16.1","error":{"code":70,"message":"Song not found"}}}"#.utf8))
+        }
+        defer { server.stop() }
+        let base = "http://127.0.0.1:\(server.port)"
+        let cache = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/subsonic", isDirectory: true)
+        try? FileManager.default.removeItem(at: cache)
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        let got = awaitValue { try? await Subsonic.download(id: "78", to: cache.appendingPathComponent("78.wav"), server: base, user: "u", password: "p") }
+        assertEqual(got.flatMap { try? Data(contentsOf: $0) }, wav, "stream: the original file downloaded")
+        let missing = awaitValue { () -> String in
+            do { _ = try await Subsonic.download(id: "1", to: cache.appendingPathComponent("1.mp3"), server: base, user: "u", password: "p"); return "" }
+            catch { return error.localizedDescription }
+        }
+        assertEqual(missing, "Song not found", "An error body instead of audio is reported, not saved")
+        assertTrue(!FileManager.default.fileExists(atPath: cache.appendingPathComponent("1.mp3").path), "Nothing cached for it")
+        let cached = Subsonic.cacheFolder.appendingPathComponent("cached1.wav")
+        try FileManager.default.createDirectory(at: Subsonic.cacheFolder, withIntermediateDirectories: true)
+        try wav.write(to: cached)
+        let local = awaitValue { try? await Subsonic.localFile(for: Subsonic.trackURL(id: "cached1", suffix: "wav")) }
+        assertEqual(local?.standardizedFileURL, cached.standardizedFileURL, "A cached track plays without the network")
+        let engine = AudioEngine.shared
+        assertTrue(abs((try loadSync(engine, Subsonic.trackURL(id: "cached1", suffix: "wav"))).duration - 0.5) < 0.05, "The engine plays a subsonic:// track as a file (seekable, with length)")
+        engine.stop()
+        try? FileManager.default.removeItem(at: cached)
+
+        // Cache cap: the oldest files go, the one just played stays
+        let prune = cache.appendingPathComponent("prune", isDirectory: true)
+        try FileManager.default.createDirectory(at: prune, withIntermediateDirectories: true)
+        for (i, age) in [300.0, 200, 100].enumerated() {
+            let f = prune.appendingPathComponent("c\(i).bin")
+            try Data(count: 1000).write(to: f)
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -age)], ofItemAtPath: f.path)
+        }
+        Subsonic.pruneCache(keeping: prune.appendingPathComponent("c0.bin"), limit: 1500, folder: prune)
+        let left = try FileManager.default.contentsOfDirectory(atPath: prune.path).sorted()
+        assertEqual(left, ["c0.bin", "c2.bin"], "Over the limit: older files removed, the newest and the playing one kept")
+    }
+}
+
+/// A tiny HTTP/1.0 server for client tests: answers each request by its path
+final class TestHTTPServer {
+    let listener: NWListener
+    private let queue = DispatchQueue(label: "test.http")
+    var port: UInt16 { listener.port?.rawValue ?? 0 }
+
+    init(answer: @escaping (String) -> (String, Data)) throws {
+        listener = try NWListener(using: .tcp, on: .any)
+        listener.newConnectionHandler = { [queue] conn in
+            conn.start(queue: queue)
+            conn.receive(minimumIncompleteLength: 1, maximumLength: 8192) { data, _, _, _ in
+                let line = String(data: data ?? Data(), encoding: .utf8)?.components(separatedBy: "\r\n").first ?? ""
+                let path = line.split(separator: " ").dropFirst().first.map(String.init) ?? ""
+                let (type, body) = answer(path)
+                let header = "HTTP/1.0 200 OK\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\n\r\n"
+                conn.send(content: Data(header.utf8) + body, completion: .contentProcessed { _ in conn.cancel() })
+            }
+        }
+        let ready = DispatchSemaphore(value: 0)
+        listener.stateUpdateHandler = { state in if case .ready = state { ready.signal() } }
+        listener.start(queue: queue)
+        _ = ready.wait(timeout: .now() + 2)
+    }
+
+    func stop() { listener.cancel() }
 }

@@ -115,7 +115,7 @@ func setupTests() {
         try? FileManager.default.removeItem(at: copy)
         try FileManager.default.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: built, to: copy)
-        assertTrue(DocumentIconManager.isLocallySigned(copy), "Local Debug build is ad-hoc signed and writable")
+        assertTrue(DocumentIconManager.isLocallySigned(copy), "Local Debug build (ad-hoc or Apple Development) can take new icons")
         assertEqual(DocumentIconManager.resourceIDs.count, 10, "Ten original Winamp document icons on the slider")
         for id in DocumentIconManager.resourceIDs {
             assertTrue(FileManager.default.fileExists(atPath: copy.appendingPathComponent("Contents/Resources/Choices/winamp-icon-\(id).icns").path), "Choice #\(id) is in the bundle")

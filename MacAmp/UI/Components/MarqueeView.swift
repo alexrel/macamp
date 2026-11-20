@@ -5,10 +5,10 @@ import AppKit
 /// Scrolling text display for current track title and system messages.
 /// Renders using TEXT.BMP (5x6 bitmap font).
 /// When text exceeds marquee width (152px), it pauses for 2.5s at start,
-/// then smoothly scrolls at 2px per tick (0.12s interval) with a looping trailing copy.
+/// then smoothly scrolls at 2px per tick (0.12s interval) as "title  ***  title", like Winamp / Webamp.
 ///
 /// The scroll timer only exists while it is needed: text wider than the marquee, scrolling enabled,
-/// and `isScrollingActive` (playing and window visible). Otherwise the marquee costs no CPU.
+/// and `isScrollingActive` (window visible; it scrolls in any player state, as in Winamp). Otherwise the marquee costs no CPU.
 public class MarqueeView: WinampControlView {
     /// Persistent song title or default text.
     public var text: String = "MACAMP \(AppConstants.App.version)" {
@@ -24,7 +24,7 @@ public class MarqueeView: WinampControlView {
     /// Currently displayed text in ticker (temporary status message or song title).
     public private(set) var currentDisplayText: String = "MACAMP \(AppConstants.App.version)"
     
-    /// Set by PlayerCoordinator: false while paused/stopped or when the window is hidden/minimized.
+    /// Set by PlayerCoordinator: false when the window is hidden, minimized or covered.
     public var isScrollingActive: Bool = true {
         didSet { if oldValue != isScrollingActive { updateScrollTimer() } }
     }
@@ -32,10 +32,11 @@ public class MarqueeView: WinampControlView {
     /// Text width cache, keyed on everything the width depends on
     private var cachedWidthKey: String?
     private var cachedWidth: CGFloat = 0
+    private var cachedLoopWidth: CGFloat = 0
     
     private var temporaryMessage: String?
     private var temporaryTimer: Timer?
-    private var scrollOffset: CGFloat = 0.0
+    var scrollOffset: CGFloat = 0.0
     private var scrollTimer: Timer?
     private var isPausedAtStart = true
     private var pauseTicksRemaining: Int = Int(AppConstants.Marquee.pauseDuration / AppConstants.Marquee.scrollInterval)
@@ -119,31 +120,42 @@ public class MarqueeView: WinampControlView {
             RunLoop.main.add(timer, forMode: .common)
             scrollTimer = timer
         } else {
+            // A hidden window keeps its place and goes on from there when it is back
             scrollTimer?.invalidate()
             scrollTimer = nil
-            if scrollOffset != 0 && !isScrollingActive {
-                // Frozen mid-scroll looks broken; show the start of the text while idle
-                scrollOffset = 0
-                needsDisplay = true
-            }
         }
     }
     
     public var isScrollTimerRunning: Bool { scrollTimer != nil }
     
+    /// One scrolling round: the text with the separator after it.
+    var loopText: String { currentDisplayText + AppConstants.Marquee.separator }
+
     /// Pixel width of the current text; measured once per text/font change instead of on every tick.
     private func currentTextWidth() -> CGFloat {
+        measure()
+        return cachedWidth
+    }
+
+    /// Pixel width of `loopText`: the distance the second copy trails the first.
+    func loopWidth() -> CGFloat {
+        measure()
+        return cachedLoopWidth
+    }
+
+    private func measure() {
         let state = PersistenceManager.shared.state
         guard state.marqueeFontMode == .desktop else {
-            return CGFloat(currentDisplayText.count) * AppConstants.Font.charWidth
+            cachedWidth = CGFloat(currentDisplayText.count) * AppConstants.Font.charWidth
+            cachedLoopWidth = CGFloat(loopText.count) * AppConstants.Font.charWidth
+            return
         }
         let key = "\(state.desktopFontFamily)|\(state.desktopFontSize)|\(bounds.height)|\(currentDisplayText)"
-        if key == cachedWidthKey { return cachedWidth }
-        let font = trueTypeFont()
-        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        if key == cachedWidthKey { return }
+        let attrs: [NSAttributedString.Key: Any] = [.font: trueTypeFont()]
         cachedWidth = NSString(string: currentDisplayText).size(withAttributes: attrs).width
+        cachedLoopWidth = NSString(string: loopText).size(withAttributes: attrs).width
         cachedWidthKey = key
-        return cachedWidth
     }
     
     private func tick() {
@@ -163,7 +175,7 @@ public class MarqueeView: WinampControlView {
         
         scrollOffset += 2.0 // Classic Winamp 2px step
         
-        if scrollOffset > totalTextWidth + 24.0 {
+        if scrollOffset >= loopWidth() {
             scrollOffset = 0.0
             pauseTicksRemaining = Int(AppConstants.Marquee.pauseDuration / AppConstants.Marquee.scrollInterval)
         }
@@ -183,7 +195,10 @@ public class MarqueeView: WinampControlView {
         BitmapFont.drawSpaceBackground(in: context, width: bounds.width, height: bounds.height)
         
         let state = PersistenceManager.shared.state
-        let totalTextWidth = currentTextWidth()
+        // Long text scrolls as "title  ***  title"; text that fits shows alone
+        let scrolls = currentTextWidth() > bounds.width
+        let shown = scrolls ? loopText : currentDisplayText
+        let loopedX = loopWidth() - scrollOffset
         
         if state.marqueeFontMode == .desktop {
             let font = trueTypeFont()
@@ -196,7 +211,7 @@ public class MarqueeView: WinampControlView {
                 .font: font,
                 .foregroundColor: textColor
             ]
-            let str = NSString(string: currentDisplayText)
+            let str = NSString(string: shown)
             // Center the glyph box (ascender..descender). draw(at:) positions the whole line box, which
             // includes the font's leading above the baseline, so take that extra space back out.
             let glyphHeight = font.ascender - font.descender
@@ -208,17 +223,15 @@ public class MarqueeView: WinampControlView {
             
             // If scrolling, draw trailing looped copy
             if scrollOffset > 0 {
-                let loopedX = totalTextWidth + 24.0 - scrollOffset
                 str.draw(at: CGPoint(x: loopedX, y: yPos), withAttributes: attrs)
             }
         } else {
             // 2. Draw primary text using authentic BitmapFont
-            BitmapFont.draw(string: currentDisplayText, in: context, at: CGPoint(x: -scrollOffset, y: 0))
+            BitmapFont.draw(string: shown, in: context, at: CGPoint(x: -scrollOffset, y: 0))
             
             // 3. If scrolling, loop text
             if scrollOffset > 0 {
-                let loopedX = totalTextWidth + 20.0 - scrollOffset
-                BitmapFont.draw(string: currentDisplayText, in: context, at: CGPoint(x: loopedX, y: 0))
+                BitmapFont.draw(string: shown, in: context, at: CGPoint(x: loopedX, y: 0))
             }
         }
     }

@@ -7,7 +7,6 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
     public static let shared = StatusBarManager()
     
     private var statusItem: NSStatusItem?
-    private var titleItem: NSMenuItem?
     private var playPauseItem: NSMenuItem?
     
     private override init() {
@@ -62,7 +61,6 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
         // 1. Current track title header
         let trackTitle = NSMenuItem(title: "MacAmp \(AppConstants.App.version)", action: nil, keyEquivalent: "")
         trackTitle.isEnabled = false
-        self.titleItem = trackTitle
         trackTitle.view = titleView
         menu.addItem(trackTitle)
         
@@ -118,6 +116,8 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
     
     /// Widest the track title may make the menu (about twice the other items)
     static let titleWidth: CGFloat = 300
+    /// The Dock menu's title does not scroll, it is cut with "…": kept narrower, near its other items
+    static let dockTitleWidth: CGFloat = 220
 
     /// Cuts `text` with "…" so it fits `width` in the menu font.
     static func truncated(_ text: String, toWidth width: CGFloat) -> String {
@@ -165,13 +165,12 @@ public final class StatusBarManager: NSObject, NSMenuDelegate {
             let name = track.displayName
             let prefix = StatusBarManager.stateMark(playing: isPlaying)
             let displayName = name.isEmpty ? track.url.lastPathComponent : name
-            // A long name would stretch the whole menu: it scrolls instead, and the tooltip has it in full
-            titleItem?.title = prefix + displayName
+            // A long name would stretch the whole menu: it scrolls instead, and the tooltip has it in full.
+            // The item keeps its short title, since macOS sizes the menu by it even under a custom view.
             titleView.show(prefix: prefix, name: displayName)
             titleView.toolTip = displayName
             statusItem?.button?.toolTip = "MacAmp: " + displayName
         } else {
-            titleItem?.title = "MacAmp \(AppConstants.App.version) [Stopped]"
             titleView.show(prefix: "", name: "MacAmp \(AppConstants.App.version) [Stopped]")
             titleView.toolTip = nil
             statusItem?.button?.toolTip = "MacAmp \(AppConstants.App.version)"
@@ -225,8 +224,6 @@ final class MenuTitleView: NSView {
     static let height: CGFloat = 22
     /// Pixels per tick, as the main window's song title moves
     static let step: CGFloat = 2
-    /// Between the end of the name and its next round
-    static let separator = "  ***  "
     private static let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.menuFont(ofSize: 0), .foregroundColor: NSColor.disabledControlTextColor]
     private var prefix = "", name = ""
     private var prefixWidth: CGFloat = 0, nameWidth: CGFloat = 0
@@ -238,6 +235,9 @@ final class MenuTitleView: NSView {
         if name != self.name { offset = 0 }
         self.prefix = prefix
         self.name = name
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel(prefix + name)
         prefixWidth = (prefix as NSString).size(withAttributes: Self.attributes).width
         nameWidth = (name as NSString).size(withAttributes: Self.attributes).width
         scrolls = prefixWidth + nameWidth > StatusBarManager.titleWidth
@@ -251,7 +251,7 @@ final class MenuTitleView: NSView {
         let left = Self.inset + prefixWidth
         guard scrolls else { return (name as NSString).draw(at: NSPoint(x: left, y: y), withAttributes: Self.attributes) }
         NSRect(x: left, y: 0, width: bounds.width - Self.inset - left, height: bounds.height).clip()
-        let loop = (name + Self.separator) as NSString
+        let loop = (name + AppConstants.Marquee.separator) as NSString
         let loopWidth = loop.size(withAttributes: Self.attributes).width
         let x = left - offset.truncatingRemainder(dividingBy: loopWidth)
         loop.draw(at: NSPoint(x: x, y: y), withAttributes: Self.attributes)

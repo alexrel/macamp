@@ -3,7 +3,15 @@ import AppKit
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var terminateSignal: DispatchSourceSignal?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // `kill` / `pkill` (SIGTERM) quits like ⌘Q, saving the playlist and session, instead of dying on the spot
+        signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        source.setEventHandler { NSApp.terminate(nil) }
+        source.resume()
+        terminateSignal = source
         MainMenuManager.shared.setupMenu()
         StatusBarManager.shared.setVisible(PersistenceManager.shared.state.showMenuBarIcon)
         StatusBarManager.shared.setDockIconVisible(PersistenceManager.shared.state.showDockIcon)
@@ -73,8 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let name = track.displayName
             let prefix = StatusBarManager.stateMark(playing: isPlaying)
             let displayName = name.isEmpty ? track.url.lastPathComponent : name
-            // Cut like the menu bar item's title
-            titleItem = NSMenuItem(title: StatusBarManager.truncated(prefix + displayName, toWidth: StatusBarManager.titleWidth),
+            titleItem = NSMenuItem(title: StatusBarManager.truncated(prefix + displayName, toWidth: StatusBarManager.dockTitleWidth),
                                    action: nil, keyEquivalent: "")
         } else {
             titleItem = NSMenuItem(title: "MacAmp \(AppConstants.App.version) [Stopped]", action: nil, keyEquivalent: "")

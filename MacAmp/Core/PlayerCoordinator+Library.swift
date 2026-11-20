@@ -3,8 +3,9 @@ import SwiftUI
 
 /// Winamp 2.95 Media Library window (⌥L): a GEN.BMP frame around the library page; frame kept in windowPositions["library"].
 extension PlayerCoordinator {
+    /// Open but buried under other windows: the menu item / ⌥L brings it up instead of closing it
     @objc public func handleToggleLibrary() {
-        if libraryWindow?.isVisible == true {
+        if isWindowOnScreen(libraryWindow) {
             hideLibraryWindow()
         } else {
             showLibraryWindow()
