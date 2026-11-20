@@ -569,7 +569,8 @@ public class AudioEngine {
         if range == nil {
             let (resolvedDur, resolvedArtist, resolvedTitle) = await TrackItem.resolveMetadataAsync(from: localURL)
             guard loadToken == loadGeneration else { throw CancellationError() }
-            if resolvedDur > 0 {
+            // A converted file's own length is what plays (a module renders with a short fade the plug-in doesn't count)
+            if resolvedDur > 0, audioURL == localURL || MIDIRenderer.isMIDI(localURL) {
                 duration = resolvedDur
             }
             (artist, title) = (resolvedArtist, resolvedTitle)

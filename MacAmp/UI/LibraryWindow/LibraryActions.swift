@@ -10,7 +10,7 @@ enum LibraryActions {
         guard !tracks.isEmpty else { return }
         // A disc being ripped can't play: refuse before the playlist is touched
         if tracks.contains(where: { AudioCD.isRipping($0.url) }) {
-            coordinator.mainView?.marquee.showTemporaryMessage(AudioCD.busyMessage, duration: 4)
+            coordinator.mainView?.marquee.showTemporaryMessage(AudioCD.busyMessage, duration: AppConstants.Marquee.noticeDuration)
             return
         }
         let c = coordinator

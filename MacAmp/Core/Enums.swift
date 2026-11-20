@@ -35,6 +35,8 @@ public enum WindowID: String, Codable, CaseIterable {
     case browser
     /// Visualizer Studio: MacAmp's own window, docked like Winamp's AVS window
     case studio
+    /// Album Art plug-in (General Purpose)
+    case albumArt
     
     /// Windows that stay at the base scale in Double Size mode: the playlist and general-purpose windows, and the equalizer
     /// when Preferences ▸ Options ▸ "Equalizer doublesize linked" is off

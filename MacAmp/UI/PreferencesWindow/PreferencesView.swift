@@ -895,27 +895,33 @@ public struct PreferencesView: View {
                 }
             }
             Win32GroupBox("Encoder") {
+              VStack(alignment: .leading, spacing: 4) {
+                // Labels never wrap; the format box takes what's left of the row, the bitrate box keeps its size
                 HStack(spacing: 6) {
-                    Text("Format:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
+                    Text("Format:").font(.system(size: 11)).foregroundColor(Win32Colors.text).fixedSize()
                     Win32ComboBox(selection: Binding(
                         get: { PersistenceManager.shared.state.cdRipFormat },
                         set: { format in
                             viewModel.objectWillChange.send()
                             PersistenceManager.shared.state.cdRipFormat = format
                             PersistenceManager.shared.scheduleSave()
-                        }), options: DiskWriterFormat.allCases.map { (value: $0, title: $0.title) }, width: 190)
-                    if state.cdRipFormat == .aac {
-                        Text("Bitrate:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
+                        }), options: DiskWriterFormat.available.map { (value: $0, title: $0.title) })
+                        .frame(maxWidth: .infinity)
+                    if state.cdRipFormat.hasBitrate {
+                        Text("Bitrate:").font(.system(size: 11)).foregroundColor(Win32Colors.text).fixedSize()
                         Win32ComboBox(selection: Binding(
                             get: { PersistenceManager.shared.state.cdRipAACKbps },
-                            set: { setLibrary(\.cdRipAACKbps, $0) }), options: DiskWriterFormat.aacBitrates.map { (value: $0, title: "\($0) kbps") }, width: 80)
+                            set: { setLibrary(\.cdRipAACKbps, $0) }), options: DiskWriterFormat.aacBitrates.map { (value: $0, title: "\($0) kbps") }, width: 90)
                     }
-                    Spacer()
                 }
+                if !DiskWriterFormat.available.contains(.ogg) {
+                    note("Ogg Vorbis and MP3: install the FFmpeg plug-in (Plug-ins ▸ Input ▸ Get plug-ins).")
+                }
+              }
             }
             Win32GroupBox("Tags / Library") {
                 VStack(alignment: .leading, spacing: 6) {
-                    Win32Checkbox("Write tags (FLAC, M4A), with the comment \"Extracted by MacAmp\"", isOn: setting(\.cdRipWriteTags))
+                    Win32Checkbox("Write tags (all but WAV / AIFF), with the comment \"Extracted by MacAmp\"", isOn: setting(\.cdRipWriteTags))
                     Win32Checkbox("Add ripped files to the Media Library", isOn: setting(\.cdRipAddToLibrary))
                     note("Track names come from MusicBrainz (CDDB is gone). To rip: Media Library (⌥L) ▸ Devices ▸ CD ▸ Extract; playing a CD doesn't rip it.")
                 }
@@ -1038,6 +1044,7 @@ public struct PreferencesView: View {
     @State private var selectedInput = 0
     @State private var skinDescription = ""
     @State private var libraryTab = LibraryPrefsTab.general
+    @State private var generalPlugin = 0
     
     private var inputSection: some View {
         // Built-in decoders, then installed plug-ins (Plug-ins folder)
@@ -1048,7 +1055,7 @@ public struct PreferencesView: View {
                 PluginListBox(rows: all.map(\.name), selection: $selectedInput)
                 note("Formats: " + all[min(selectedInput, all.count - 1)].formats)
                 HStack(spacing: 8) {
-                    if plugins.isEmpty { note("MKV, WebM, AVI, WMV, WMA, APE, WavPack and more: install the FFmpeg plug-in.") }
+                    if plugins.isEmpty { note("MKV, WebM, AVI, WMV, WMA, APE, WavPack and more: the FFmpeg plug-in. MOD, XM, S3M, IT: the Module plug-in.") }
                     Spacer()
                     Button("Get plug-ins") { NSWorkspace.shared.open(AppConstants.App.pluginsPage) }
                         .buttonStyle(.link).font(.system(size: 11))
@@ -1095,7 +1102,7 @@ public struct PreferencesView: View {
                                     viewModel.objectWillChange.send()
                                     PersistenceManager.shared.state.diskWriterFormat = format
                                     PersistenceManager.shared.scheduleSave()
-                                }), options: DiskWriterFormat.allCases.map { (value: $0, title: $0.title) }, width: 190)
+                                }), options: DiskWriterFormat.available.map { (value: $0, title: $0.title) }, width: 190)
                             Spacer()
                         }
                     }
@@ -1242,12 +1249,33 @@ public struct PreferencesView: View {
     private var generalSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Win32GroupBox("General purpose plug-ins (loaded at startup)") {
-                PluginListBox(rows: ["MacAmp Global Hotkeys \(AppConstants.App.version) [gen_hotkeys]"], selection: .constant(0))
+                PluginListBox(rows: ["MacAmp Global Hotkeys \(AppConstants.App.version) [gen_hotkeys]",
+                                     "MacAmp Album Art \(AppConstants.App.version) [gen_albumart]",
+                                     "MacAmp Last.fm Scrobbler \(AppConstants.App.version) [gen_audioscrobbler]"], selection: $generalPlugin)
             }
-            hotkeysSection
+            switch generalPlugin {
+            case 0: hotkeysSection
+            case 1: albumArtSection
+            default: LastFMPrefsGroup()
+            }
         }
     }
     
+    /// Album Art: off by default; on, it adds "Album Art" to the main menu
+    private var albumArtSection: some View {
+        Win32GroupBox("Album Art") {
+            VStack(alignment: .leading, spacing: 6) {
+                Win32Checkbox("Enable Album Art (adds Album Art to the main menu)", isOn: Binding(
+                    get: { PersistenceManager.shared.state.albumArtEnabled },
+                    set: { enabled in
+                        viewModel.objectWillChange.send()
+                        PlayerCoordinator.shared.setAlbumArtEnabled(enabled)
+                    }))
+                note("A window with the playing track's cover, docked like the others: the picture in the file's tags, else folder.jpg / cover.jpg beside it; for Subsonic tracks the server's cover.")
+            }
+        }
+    }
+
     // MARK: - Section: Audio Output Devices
     private var outputSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1806,6 +1834,8 @@ private struct SetupSection: View {
         offline = value
         PersistenceManager.shared.state.networkOffline = value
         PersistenceManager.shared.saveSession()
+        // Scrobbles queued while offline go out now, not at the next scrobble or launch
+        if !value { Task { await Scrobbler.shared.flush() } }
     }
 }
 
@@ -1922,5 +1952,40 @@ struct SubsonicPrefsGroup: View {
         password = ""
         status = "Removed"
         SubsonicLibrary.shared.settingsChanged()
+    }
+}
+
+/// Plug-ins ▸ General Purpose ▸ Last.fm Scrobbler: off by default; Connect opens Last.fm in the browser to allow MacAmp
+struct LastFMPrefsGroup: View {
+    @ObservedObject private var scrobbler = Scrobbler.shared
+
+    var body: some View {
+        Win32GroupBox("Last.fm Scrobbler") {
+            VStack(alignment: .leading, spacing: 6) {
+                Win32Checkbox("Enable scrobbling to Last.fm", isOn: Binding(
+                    get: { scrobbler.isEnabled }, set: { scrobbler.setEnabled($0) }))
+                Text(account)
+                    .font(.system(size: 11)).foregroundColor(Win32Colors.text)
+                HStack(spacing: 6) {
+                    if scrobbler.isConnected {
+                        Win32Button("Disconnect", width: nil) { scrobbler.disconnect() }
+                    } else {
+                        Win32Button("Connect", width: nil) { scrobbler.connect() }
+                            .disabled(scrobbler.isConnecting || !LastFM.hasAPIKey)
+                    }
+                    Text(scrobbler.status).font(.system(size: 10)).foregroundColor(Win32Colors.text).lineLimit(2)
+                    Spacer(minLength: 0)
+                }
+                Text("Tracks you play go to your Last.fm profile once played for half their length or \(Int(AppConstants.LastFM.scrobbleAfterAtMost / 60)) minutes (\(Int(AppConstants.LastFM.shortestScrobbled)) seconds or shorter and radio are skipped). Without network they wait and are sent later.")
+                    .font(.system(size: 10)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var account: String {
+        guard LastFM.hasAPIKey else { return "This build has no Last.fm API key" }
+        guard scrobbler.isConnected else { return "Not connected" }
+        let waiting = scrobbler.queuedCount > 0 ? " (\(scrobbler.queuedCount) waiting to be sent)" : ""
+        return "Connected as \(scrobbler.user.isEmpty ? "?" : scrobbler.user)" + waiting
     }
 }

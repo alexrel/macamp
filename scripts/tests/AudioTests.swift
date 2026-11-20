@@ -767,7 +767,8 @@ func audioTests() {
             let f = try AVAudioFile(forReading: url)
             return Double(f.length) / f.processingFormat.sampleRate
         }
-        for format in DiskWriterFormat.allCases {
+        // macOS's own encoders; Ogg Vorbis / MP3 need the FFmpeg plug-in (PluginTests)
+        for format in DiskWriterFormat.allCases where !format.needsEncoderPlugin {
             let out = awaitValue { try? await DiskWriter.write(TrackItem(url: wav, title: "Song", artist: "Band"), to: folder, format: format) }
             assertTrue(out?.lastPathComponent.hasPrefix("Band - Song") == true, "\(format): named Artist - Title (\(out?.lastPathComponent ?? "-"))")
             assertEqual(out?.pathExtension, format.fileExtension, "\(format): extension")

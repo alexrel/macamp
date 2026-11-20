@@ -258,6 +258,13 @@ enum AudioTagWriter {
         switch url.pathExtension.lowercased() {
         case "flac": try writeFLAC(tags, to: url)
         case "m4a": try await writeM4A(tags, to: url)
+        case "ogg", "mp3":
+            // ffmpeg's own tag names; it turns them into Vorbis comments or ID3v2 frames
+            let names: [Field: String] = [.artist: "artist", .title: "title", .album: "album", .albumArtist: "album_artist",
+                                          .year: "date", .track: "track", .comment: "comment"]
+            guard let encoder = PluginManager.encoder(for: url.pathExtension.lowercased()) else { return }
+            try await PluginConversion.retag(url, tags: Dictionary(uniqueKeysWithValues: tags.compactMap { field, value in
+                names[field].map { ($0, value) } }), with: encoder)
         default: break
         }
     }

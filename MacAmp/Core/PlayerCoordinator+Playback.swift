@@ -50,7 +50,7 @@ extension PlayerCoordinator {
     
     public func loadAndPlay(track: TrackItem) {
         if AudioCD.isRipping(track.url) {
-            mainView.marquee.showTemporaryMessage(AudioCD.busyMessage, duration: 4)
+            mainView.marquee.showTemporaryMessage(AudioCD.busyMessage, duration: AppConstants.Marquee.noticeDuration)
             return
         }
         if persistence.state.diskWriterEnabled {
@@ -81,7 +81,11 @@ extension PlayerCoordinator {
                     self.mainView.marquee.resetScroll()
                     self.mainView.timeDisplay.totalDuration = meta.duration
                     self.mainView.timeDisplay.status = .playing
+                    Scrobbler.shared.trackStarted(artist: artist, title: title, duration: meta.duration,
+                                                   isStream: !track.url.isFileURL && track.url.scheme != Subsonic.scheme)
                     self.audioEngine.play()
+                    // A crossfade keeps the engine "playing", so no status change would start the scrobble clock
+                    Scrobbler.shared.playbackChanged(playing: self.audioEngine.status == .playing)
                     // Preferences ▸ Plug-ins ▸ "Auto execute visualization plug-in on play"
                     if self.persistence.state.autoStartVisPlugin && self.visualizerStudioWindow?.isVisible != true {
                         self.toggleVisualizerStudio()
@@ -90,6 +94,7 @@ extension PlayerCoordinator {
                     self.plView.needsDisplay = true
                     MediaKeyController.shared.updateNowPlayingInfo()
                     StatusBarManager.shared.updateStatus()
+                    self.refreshAlbumArt()
                     
                     if self.persistence.state.isEqAuto {
                         self.applyAutoEQ(for: track.url)
@@ -104,7 +109,7 @@ extension PlayerCoordinator {
                     let message = offline ? "Internet disabled (Preferences > Setup)"
                         : error is SubsonicError ? "Subsonic: \(error.localizedDescription)"
                         : track.url.isFileURL ? "Cannot open file" : "Stream Error"
-                    self.mainView.marquee.showTemporaryMessage(message, duration: error is SubsonicError ? 4 : 1.5)
+                    self.mainView.marquee.showTemporaryMessage(message, duration: error is SubsonicError ? AppConstants.Marquee.noticeDuration : MarqueeView.flashDuration)
                 }
             }
         }
@@ -154,6 +159,7 @@ extension PlayerCoordinator {
                     
                     MediaKeyController.shared.updateNowPlayingInfo()
                     StatusBarManager.shared.updateStatus()
+                    self.refreshAlbumArt()
                     
                     if self.persistence.state.isEqAuto {
                         self.applyAutoEQ(for: track.url)

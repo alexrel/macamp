@@ -27,6 +27,9 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
     public var visualizerStudioWindow: RetroVisualizerWindow?
     /// Media Library (⌥L), made on first show
     public var libraryWindow: WinampWindow?
+    public var albumArtWindow: WinampWindow?
+    /// Library, Album Art, Video, Minibrowser, Studio windows that went into the Dock with the player
+    var hiddenByMinimize: [NSWindow] = []
     /// Video and Minibrowser windows (PlayerCoordinator+Media), made on first use
     var video: VideoController?
     var browser: BrowserController?
@@ -72,8 +75,11 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         setupBindings()
         restoreState()
         playlist.autosaves = true
+        // Scrobbles left from the last session (no network then); does nothing while the plug-in is off
+        Task { await Scrobbler.shared.flush() }
         showWindows()
         if persistence.state.isLibraryVisible { showLibraryWindow(); mainWindow.makeKeyAndOrderFront(nil) }
+        if persistence.state.albumArtEnabled && persistence.state.isAlbumArtVisible { showAlbumArtWindow(); mainWindow.makeKeyAndOrderFront(nil) }
         watchForAudioCDs()
         PluginConversion.onProgress = { [weak self] url, fraction in
             let text = "Converting for playback: \(Int(fraction * 100))%"
@@ -216,6 +222,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
             
             self.mainView.timeDisplay.status = status
             self.plView.status = status
+            Scrobbler.shared.playbackChanged(playing: status == .playing)
             self.updateBlinkState(for: status)
             self.mainView.seekSlider.isThumbHidden = (status == .stopped)
             if status == .stopped {
@@ -538,6 +545,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         eqView?.needsDisplay = true
         plView?.needsDisplay = true
         libraryWindow?.contentView?.needsDisplay = true
+        albumArtWindow?.contentView?.needsDisplay = true
         video?.frameView.needsDisplay = true
         browser?.frameView.needsDisplay = true
         visualizerStudioWindow?.frameView.needsDisplay = true
@@ -550,6 +558,7 @@ public class PlayerCoordinator: NSObject, NSWindowDelegate {
         visualizerStudioWindow?.frameView.setNeedsDisplayRecursively()
         // The Library, Video and Minibrowser frames are skinned too: without this they kept the old skin until clicked
         libraryWindow?.contentView?.setNeedsDisplayRecursively()
+        albumArtWindow?.contentView?.setNeedsDisplayRecursively()
         video?.frameView.setNeedsDisplayRecursively()
         browser?.frameView.setNeedsDisplayRecursively()
         updateWindowMasks()

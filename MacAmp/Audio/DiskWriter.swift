@@ -1,9 +1,10 @@
 import AVFoundation
 
 /// Winamp's Disk Writer output (out_disk): instead of the speakers, playback goes into audio files.
-/// MacAmp writes them with the encoders macOS has: WAV, AIFF, FLAC, Apple Lossless, AAC.
+/// MacAmp writes them with the encoders macOS has: WAV, AIFF, FLAC, Apple Lossless, AAC; with the FFmpeg plug-in also
+/// Ogg Vorbis (what 2.95 ripped to) and MP3.
 public enum DiskWriterFormat: String, CaseIterable, Codable {
-    case wav, aiff, flac, alac, aac
+    case wav, aiff, flac, alac, aac, ogg, mp3
 
     public var title: String {
         switch self {
@@ -12,8 +13,21 @@ public enum DiskWriterFormat: String, CaseIterable, Codable {
         case .flac: return "FLAC (lossless)"
         case .alac: return "Apple Lossless (.m4a)"
         case .aac: return "AAC (.m4a)"
+        case .ogg: return "Ogg Vorbis"
+        case .mp3: return "MP3"
         }
     }
+
+    /// Encoded by the FFmpeg plug-in's ffmpeg (macOS has no encoder for them)
+    var needsEncoderPlugin: Bool { self == .ogg || self == .mp3 }
+
+    /// What Preferences offers: macOS's own formats, plus Ogg Vorbis and MP3 while a plug-in that encodes them is installed
+    public static var available: [DiskWriterFormat] {
+        allCases.filter { !$0.needsEncoderPlugin || PluginManager.encoder(for: $0.fileExtension) != nil }
+    }
+
+    /// Lossy formats take a bitrate (CD Ripping ▸ Encoder ▸ Bitrate)
+    public var hasBitrate: Bool { self == .aac || needsEncoderPlugin }
 
     var fileExtension: String {
         switch self {
@@ -21,16 +35,18 @@ public enum DiskWriterFormat: String, CaseIterable, Codable {
         case .aiff: return "aiff"
         case .flac: return "flac"
         case .alac, .aac: return "m4a"
+        case .ogg: return "ogg"
+        case .mp3: return "mp3"
         }
     }
 
-    /// AAC bitrate choices (kbps) for CD Ripping ▸ Encoder; Disk Writer uses 256
+    /// Bitrate choices (kbps) for AAC, Ogg Vorbis and MP3 in CD Ripping ▸ Encoder; Disk Writer uses 256
     public static let aacBitrates = [128, 160, 192, 256, 320]
 
     func settings(sampleRate: Double, channels: AVAudioChannelCount, aacKbps: Int = 256) -> [String: Any] {
         var settings: [String: Any] = [AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: channels]
         switch self {
-        case .wav, .aiff:
+        case .wav, .aiff, .ogg, .mp3: // Ogg / MP3: a WAV first, the plug-in encodes it
             settings[AVFormatIDKey] = kAudioFormatLinearPCM
             settings[AVLinearPCMBitDepthKey] = 16
             settings[AVLinearPCMIsFloatKey] = false
@@ -65,10 +81,24 @@ public enum DiskWriter {
             ?? uniqueURL(in: folder, name: fileName(for: track), ext: format.fileExtension)
         try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
         let range = track.url.playbackRange
+        guard format.needsEncoderPlugin else {
+            let job = Task.detached(priority: .userInitiated) {
+                try convert(audioURL, range: range, to: output, format: format, aacKbps: aacKbps) { Task.isCancelled }
+            }
+            try await withTaskCancellationHandler { try await job.value } onCancel: { job.cancel() }
+            return output
+        }
+        // Ogg Vorbis / MP3: a WAV in the temporary folder, then the plug-in's ffmpeg encodes it next to where it belongs
+        guard let encoder = PluginManager.encoder(for: format.fileExtension) else {
+            throw PluginConversion.PluginError(message: "\(format.title) needs the FFmpeg plug-in (Preferences ▸ Plug-ins ▸ Input)")
+        }
+        let wav = FileManager.default.temporaryDirectory.appendingPathComponent("MacAmp-\(UUID().uuidString).wav")
+        defer { try? FileManager.default.removeItem(at: wav) }
         let job = Task.detached(priority: .userInitiated) {
-            try convert(audioURL, range: range, to: output, format: format, aacKbps: aacKbps) { Task.isCancelled }
+            try convert(audioURL, range: range, to: wav, format: .wav) { Task.isCancelled }
         }
         try await withTaskCancellationHandler { try await job.value } onCancel: { job.cancel() }
+        try await PluginConversion.encode(wav, to: output, codec: format == .ogg ? "libvorbis" : "libmp3lame", kbps: aacKbps, with: encoder)
         return output
     }
 

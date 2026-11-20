@@ -9,7 +9,7 @@ extension PlayerCoordinator {
         mainWindow?.level = level
         eqWindow?.level = level
         plWindow?.level = persistence.state.playlistAlwaysOnTop ? .floating : .normal
-        for window in [libraryWindow, video?.window, browser?.window] { window?.level = level }
+        for window in [libraryWindow, albumArtWindow, video?.window, browser?.window] { window?.level = level }
         bringAllWindowsToFront()
         mainView?.alwaysOnTopButton?.isSelected = enabled
     }
@@ -77,7 +77,7 @@ extension PlayerCoordinator {
         let keyWin = NSApp.keyWindow
         
         // Library, Video, Minibrowser and the Studio come up too, under the player, or they stay behind other apps
-        for aux in [libraryWindow, video?.window, browser?.window, visualizerStudioWindow] {
+        for aux in [libraryWindow, albumArtWindow, video?.window, browser?.window, visualizerStudioWindow] {
             if let aux, aux.isVisible, !aux.isMiniaturized { aux.orderFront(nil) }
         }
         if persistence.state.isPlaylistVisible, let pl = plWindow, !pl.isMiniaturized {
@@ -105,7 +105,27 @@ extension PlayerCoordinator {
         isDeminiaturizing = false
         eqWindow?.orderOut(nil)
         plWindow?.orderOut(nil)
+        hideAuxWindowsForMinimize()
         mainWindow?.miniaturize(nil)
+    }
+
+    /// In Winamp the other windows belong to the main one: they go into the Dock with the player and come back with it
+    func hideAuxWindowsForMinimize() {
+        let open = [libraryWindow, albumArtWindow, video?.window, browser?.window, visualizerStudioWindow].compactMap { $0 }
+            .filter { $0.isVisible && !$0.isMiniaturized && !$0.styleMask.contains(.fullScreen) }
+        hiddenByMinimize += open
+        open.forEach { $0.orderOut(nil) }
+    }
+
+    func restoreAuxWindowsAfterMinimize() {
+        hiddenByMinimize.forEach { $0.orderFront(nil) }
+        hiddenByMinimize = []
+    }
+
+    /// Open, or put away with the minimized player (what to remember on quit)
+    func isOpen(_ window: NSWindow?) -> Bool {
+        guard let window else { return false }
+        return window.isVisible || hiddenByMinimize.contains { $0 === window }
     }
     
     // MARK: - NSWindowDelegate
@@ -114,6 +134,7 @@ extension PlayerCoordinator {
         isDeminiaturizing = false
         eqWindow?.orderOut(nil)
         plWindow?.orderOut(nil)
+        hideAuxWindowsForMinimize()
     }
     
     public func windowDidMiniaturize(_ notification: Notification) {
@@ -126,6 +147,7 @@ extension PlayerCoordinator {
     public func windowDidDeminiaturize(_ notification: Notification) {
         guard let win = notification.object as? NSWindow, win == mainWindow else { return }
         isDeminiaturizing = false
+        restoreAuxWindowsAfterMinimize()
         bringAllWindowsToFront()
     }
     

@@ -153,6 +153,28 @@ public enum AppConstants {
         }
     }
     
+    // MARK: - Last.fm (Plug-ins ▸ General Purpose ▸ Last.fm Scrobbler)
+    public enum LastFM {
+        public static let apiURL = "https://ws.audioscrobbler.com/2.0/"
+        /// The page where the user lets MacAmp scrobble (desktop auth: token, then this page in the browser)
+        public static let authURL = "https://www.last.fm/api/auth/"
+        /// MacAmp's API account (last.fm/api/account/create, registered to alexrel). Every copy of the app uses it; each
+        /// user still signs in to their own Last.fm. Kept XOR-ed and base64'd only so scrapers of public repos don't
+        /// match it: whoever has the source can undo it, and the worst they can do is get the key blocked.
+        public static let apiKey = reveal("bDxpa2JpOGI/YmJra2g5Ym88bWo8Oz9pbmJsPD9iY2g=")
+        public static let sharedSecret = reveal("bW9qaT45aW0/bmw8PmlqYz4+bG9iaWlpaWpsbWk8ajg=")
+        static func reveal(_ hidden: String) -> String {
+            String(decoding: (Data(base64Encoded: hidden) ?? Data()).map { $0 ^ 0x5A }, as: UTF8.self)
+        }
+        /// While the user allows MacAmp in the browser: ask for the session this often, for this long
+        public static let authPollInterval: TimeInterval = 3
+        public static let authPollLimit: TimeInterval = 300
+        /// Last.fm's scrobbling rule: a track counts once played for half its length, but never later than this...
+        public static let scrobbleAfterAtMost: TimeInterval = 240
+        /// ...and tracks this long or shorter never count
+        public static let shortestScrobbled: TimeInterval = 30
+    }
+
     // MARK: - Playlist Window Layout
     public enum Playlist {
         /// Row height follows Preferences ▸ Display ▸ Playlist font size (2.95's default 10 gives 13 px rows)
@@ -299,6 +321,8 @@ public enum AppConstants {
         public static let scrollInterval: TimeInterval = 0.12
         /// Between the end of a scrolling title and its next round, as in Winamp / Webamp
         public static let separator = "  ***  "
+        /// How long a notice (plug-in or skins installed, a format needing a plug-in, CD busy) stays in the marquee
+        public static let noticeDuration: TimeInterval = 4
     }
     
     // MARK: - Audio Engine Constants & Supported Formats

@@ -87,9 +87,9 @@ func visualizerTests() {
         assertEqual(presets[8].title, "Spectrogram", "Preset 8 title matches")
         assertEqual(presets[9].title, "Waveform", "Preset 9 title matches")
 
-        // Dockable windows: Winamp's, and the Visualizer Studio, docked like Winamp's AVS window
+        // Dockable windows: Winamp's, the Visualizer Studio (docked like Winamp's AVS window) and the Album Art plug-in
         let windowIDs = WindowID.allCases
-        assertEqual(windowIDs, [.main, .equalizer, .playlist, .library, .video, .browser, .studio], "Dockable windows")
+        assertEqual(windowIDs, [.main, .equalizer, .playlist, .library, .video, .browser, .studio, .albumArt], "Dockable windows")
         assertTrue(WindowID.studio.keepsOwnSize, "The Studio keeps its size in Double Size mode")
         assertTrue(WindowID.library.keepsOwnSize && WindowID.playlist.keepsOwnSize && !WindowID.main.keepsOwnSize,
                    "Playlist and Library keep their size in Double Size mode, like Winamp")

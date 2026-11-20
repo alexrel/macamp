@@ -129,7 +129,13 @@ public struct AboutView: View {
                     .foregroundColor(Win32Colors.text)
 
                 // The FFmpeg plug-in is LGPL: its notice and where the source is (also inside the plug-in)
-                Text("FFmpeg plug-in (in_ffmpeg): FFmpeg by the FFmpeg developers, LGPL v2.1 or later.\nSource: https://ffmpeg.org — built by MacAmp's scripts/build_ffmpeg_plugin.sh, unmodified.")
+                Text("FFmpeg plug-in (in_ffmpeg): FFmpeg by the FFmpeg developers, LGPL v2.1 or later; for Ogg Vorbis and MP3 ripping with LAME (LGPL) and libogg / libvorbis (BSD, © Xiph.Org Foundation). Licenses inside the plug-in.\nSource: https://ffmpeg.org, https://lame.sourceforge.io, https://xiph.org — built by MacAmp's scripts/build_ffmpeg_plugin.sh, unmodified.")
+                    .font(.system(size: 10))
+                    .foregroundColor(Win32Colors.text)
+                    .textSelection(.enabled)
+
+                // libopenmpt is BSD 3-clause: its notice travels with the binary (also inside the plug-in)
+                Text("Module plug-in (in_mod): libopenmpt, copyright © 2004–2026 OpenMPT Project Developers and Contributors, © 1997–2003 Olivier Lapicque, BSD 3-clause license (LICENSE.libopenmpt.txt in the plug-in).\nSource: https://lib.openmpt.org — built by MacAmp's scripts/build_mod_plugin.sh, unmodified.")
                     .font(.system(size: 10))
                     .foregroundColor(Win32Colors.text)
                     .textSelection(.enabled)

@@ -162,7 +162,7 @@ extension PlayerCoordinator {
         case (K.tab, [.control]): cycleWinampWindows()
         case (K.f4, [.control]):
             // Close (hide) the equalizer or playlist editor that has the focus
-            if NSApp.keyWindow === eqWindow { handleToggleEqualizer() } else if NSApp.keyWindow === plWindow { handleTogglePlaylist() } else if NSApp.keyWindow === libraryWindow { hideLibraryWindow() } else if let video, NSApp.keyWindow === video.window { video.close() } else if let browser, NSApp.keyWindow === browser.window { browser.hide() } else { return false }
+            if NSApp.keyWindow === eqWindow { handleToggleEqualizer() } else if NSApp.keyWindow === plWindow { handleTogglePlaylist() } else if NSApp.keyWindow === libraryWindow { hideLibraryWindow() } else if NSApp.keyWindow === albumArtWindow { hideAlbumArtWindow() } else if let video, NSApp.keyWindow === video.window { video.close() } else if let browser, NSApp.keyWindow === browser.window { browser.hide() } else { return false }
         default:
             // ⌥F: jump to the main menu
             guard mods == [.option], keyCode == 3 /* F */ else { return false }
@@ -174,7 +174,7 @@ extension PlayerCoordinator {
     
     /// ⌃Tab: next visible Winamp window (main → equalizer → playlist).
     func cycleWinampWindows() {
-        let windows = [mainWindow, eqWindow, plWindow, libraryWindow, video?.window, browser?.window].compactMap { $0 }.filter(\.isVisible)
+        let windows = [mainWindow, eqWindow, plWindow, libraryWindow, albumArtWindow, video?.window, browser?.window].compactMap { $0 }.filter(\.isVisible)
         guard !windows.isEmpty else { return }
         let current = windows.firstIndex { $0 === NSApp.keyWindow } ?? -1
         windows[(current + 1) % windows.count].makeKeyAndOrderFront(nil)

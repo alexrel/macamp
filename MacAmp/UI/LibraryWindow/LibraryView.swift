@@ -262,8 +262,6 @@ struct ArtistAlbumPage: View {
     let items: [MediaLibraryItem]
     @State private var artist: String?
     @State private var album: String?
-    @State private var panesHeight = CGFloat(PersistenceManager.shared.state.libraryPanesHeight)
-    @State private var artistFraction = CGFloat(PersistenceManager.shared.state.libraryArtistFraction)
 
     private struct Group: Identifiable { let id: String; let name: String; let albums: Int; let tracks: Int }
 
@@ -282,34 +280,19 @@ struct ArtistAlbumPage: View {
             }
         let tracks = album.map { byAlbum[$0] ?? [] } ?? artistItems
         VStack(spacing: 0) {
-            GeometryReader { geo in
-                HStack(spacing: 0) {
-                    MediaListView(rows: artists, columns: [("Artist", 150, .leading, { $0.name }), ("Albums", 46, .trailing, { String($0.albums) }),
-                                                            ("Tracks", 46, .trailing, { String($0.tracks) })],
-                                  selection: Binding(get: { [artist ?? "*"] }, set: { artist = $0.first == "*" ? nil : $0.first; album = nil }),
-                                  autosave: "AudioArtists", defaultSort: "Artist", pinsFirstRow: true) { _, shift in
-                        LibraryActions.doubleClick(tracks.map(\.track), shift: shift)
-                    }
-                    .frame(width: max(60, (geo.size.width - 4) * artistFraction))
-                    PaneDivider(vertical: true) { delta in
-                        artistFraction = min(0.85, max(0.15, artistFraction + delta / max(1, geo.size.width - 4)))
-                    } onEnd: {
-                        PersistenceManager.shared.state.libraryArtistFraction = Double(artistFraction)
-                        PersistenceManager.shared.scheduleSave()
-                    }
-                    MediaListView(rows: albums, columns: [("Album", 170, .leading, { $0.name }), ("Tracks", 46, .trailing, { String($0.tracks) })],
-                                  selection: Binding(get: { [album ?? "*"] }, set: { album = $0.first == "*" ? nil : $0.first }),
-                                  autosave: "AudioAlbums", defaultSort: "Album", pinsFirstRow: true) { _, shift in
-                        LibraryActions.doubleClick(tracks.map(\.track), shift: shift)
-                    }
+            ArtistAlbumPanes {
+                MediaListView(rows: artists, columns: [("Artist", 150, .leading, { $0.name }), ("Albums", 46, .trailing, { String($0.albums) }),
+                                                        ("Tracks", 46, .trailing, { String($0.tracks) })],
+                              selection: Binding(get: { [artist ?? "*"] }, set: { artist = $0.first == "*" ? nil : $0.first; album = nil }),
+                              autosave: "AudioArtists", defaultSort: "Artist", pinsFirstRow: true) { _, shift in
+                    LibraryActions.doubleClick(tracks.map(\.track), shift: shift)
                 }
-            }
-            .frame(height: panesHeight)
-            PaneDivider(vertical: false) { delta in
-                panesHeight = min(400, max(40, panesHeight + delta))
-            } onEnd: {
-                PersistenceManager.shared.state.libraryPanesHeight = Double(panesHeight)
-                PersistenceManager.shared.scheduleSave()
+            } albums: {
+                MediaListView(rows: albums, columns: [("Album", 170, .leading, { $0.name }), ("Tracks", 46, .trailing, { String($0.tracks) })],
+                              selection: Binding(get: { [album ?? "*"] }, set: { album = $0.first == "*" ? nil : $0.first }),
+                              autosave: "AudioAlbums", defaultSort: "Album", pinsFirstRow: true) { _, shift in
+                    LibraryActions.doubleClick(tracks.map(\.track), shift: shift)
+                }
             }
             MediaListPage(items: tracks)
         }
@@ -490,32 +473,11 @@ struct SubsonicPage: View {
     @State private var songs: [SubsonicSong] = []
     @State private var search = ""
     @State private var status = ""
-    @State private var panesHeight = CGFloat(PersistenceManager.shared.state.libraryPanesHeight)
-    @State private var artistFraction = CGFloat(PersistenceManager.shared.state.libraryArtistFraction)
 
     var body: some View {
         let theme = GenexTheme.current
         VStack(spacing: 0) {
-            GeometryReader { geo in
-                HStack(spacing: 0) {
-                    artistPane
-                    .frame(width: max(60, (geo.size.width - 4) * artistFraction))
-                    PaneDivider(vertical: true) { delta in
-                        artistFraction = min(0.85, max(0.15, artistFraction + delta / max(1, geo.size.width - 4)))
-                    } onEnd: {
-                        PersistenceManager.shared.state.libraryArtistFraction = Double(artistFraction)
-                        PersistenceManager.shared.scheduleSave()
-                    }
-                    albumPane
-                }
-            }
-            .frame(height: panesHeight)
-            PaneDivider(vertical: false) { delta in
-                panesHeight = min(400, max(40, panesHeight + delta))
-            } onEnd: {
-                PersistenceManager.shared.state.libraryPanesHeight = Double(panesHeight)
-                PersistenceManager.shared.scheduleSave()
-            }
+            ArtistAlbumPanes { artistPane } albums: { albumPane }
             // As in Audio (2.95): the search box sits under the panes, over the tracks it fills
             HStack(spacing: 4) {
                 SearchBar(text: $search).onSubmit { runSearch() }
@@ -611,7 +573,48 @@ struct SubsonicPage: View {
 }
 
 /// gen_ml's draggable divider between two panes (skinneddivider.cpp): a thin gap with the resize cursor
+/// How far the Library's pane dividers go (Audio and Subsonic pages)
+private enum PaneLimits {
+    static let artistFractions: ClosedRange<CGFloat> = 0.15...0.85
+    static let heights: ClosedRange<CGFloat> = 40...400
+    static let minArtistWidth: CGFloat = 60
+}
+
+/// 2.95's Audio layout, shared by the Audio and Subsonic pages: Artist | Album panes, both dividers dragged and remembered
+struct ArtistAlbumPanes<Artists: View, Albums: View>: View {
+    @ViewBuilder let artists: Artists
+    @ViewBuilder let albums: Albums
+    @State private var height = CGFloat(PersistenceManager.shared.state.libraryPanesHeight)
+    @State private var artistFraction = CGFloat(PersistenceManager.shared.state.libraryArtistFraction)
+
+    var body: some View {
+        VStack(spacing: 0) {
+            GeometryReader { geo in
+                let room = max(1, geo.size.width - PaneDivider.thickness)
+                HStack(spacing: 0) {
+                    artists.frame(width: max(PaneLimits.minArtistWidth, room * artistFraction))
+                    PaneDivider(vertical: true) { delta in
+                        artistFraction = min(PaneLimits.artistFractions.upperBound, max(PaneLimits.artistFractions.lowerBound, artistFraction + delta / room))
+                    } onEnd: {
+                        PersistenceManager.shared.state.libraryArtistFraction = Double(artistFraction)
+                        PersistenceManager.shared.scheduleSave()
+                    }
+                    albums
+                }
+            }
+            .frame(height: height)
+            PaneDivider(vertical: false) { delta in
+                height = min(PaneLimits.heights.upperBound, max(PaneLimits.heights.lowerBound, height + delta))
+            } onEnd: {
+                PersistenceManager.shared.state.libraryPanesHeight = Double(height)
+                PersistenceManager.shared.scheduleSave()
+            }
+        }
+    }
+}
+
 struct PaneDivider: View {
+    static let thickness: CGFloat = 4
     /// true: between a left and a right pane
     let vertical: Bool
     let onDrag: (CGFloat) -> Void
@@ -621,7 +624,7 @@ struct PaneDivider: View {
     var body: some View {
         Rectangle()
             .fill(Color.clear)
-            .frame(width: vertical ? 4 : nil, height: vertical ? nil : 4)
+            .frame(width: vertical ? Self.thickness : nil, height: vertical ? nil : Self.thickness)
             .contentShape(Rectangle())
             .onHover { inside in
                 if inside { (vertical ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push() } else { NSCursor.pop() }

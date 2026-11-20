@@ -234,25 +234,112 @@ func libraryTests() {
         let left = try FileManager.default.contentsOfDirectory(atPath: prune.path).sorted()
         assertEqual(left, ["c0.bin", "c2.bin"], "Over the limit: older files removed, the newest and the playing one kept")
     }
+
+    testGroup("Last.fm Scrobbler: signature, Last.fm's rule, queue") {
+        assertEqual(LastFM.signature(["api_key": "K", "method": "auth.getSession", "token": "T"], secret: "S"),
+                    "a9b7c596842f7f7bf14e3f42ba211de8", "md5 of sorted name+value pairs, then the secret")
+        assertTrue(Scrobbler.threshold(for: 30) == nil, "30 s and shorter never count")
+        assertEqual(Scrobbler.threshold(for: 100), 50, "Half of the track...")
+        assertEqual(Scrobbler.threshold(for: 600), 240, "...or 4 minutes, whichever comes first")
+
+        var reply = #"{"scrobbles":{"@attr":{"accepted":1,"ignored":0}}}"#
+        let server = try TestHTTPServer { _ in ("application/json", Data(reply.utf8)) }
+        defer { server.stop() }
+        let saved = (LastFM.apiURL, LastFM.apiKey, LastFM.sharedSecret)
+        LastFM.apiURL = URL(string: "http://127.0.0.1:\(server.port)/2.0/")!
+        LastFM.apiKey = "K"; LastFM.sharedSecret = "S"
+        defer { (LastFM.apiURL, LastFM.apiKey, LastFM.sharedSecret) = saved }
+        let state = PersistenceManager.shared
+        let scrobbler = Scrobbler.shared
+        var clock = Date(timeIntervalSince1970: 1_000)
+        scrobbler.now = { clock }
+        defer { scrobbler.now = Date.init; scrobbler.disconnect(); scrobbler.setEnabled(false); state.state.lastFMQueue = [] }
+        state.state.lastFMQueue = []
+        LocalSecret.write("SK", for: LastFM.sessionSecretName)
+        scrobbler.setEnabled(true)
+        func waitForQueue(_ count: Int) -> Bool { spinRunLoop(until: { state.state.lastFMQueue.count == count }, timeout: 5) }
+        func scrobbleRequests() -> [String] { server.requests.filter { $0.contains("method=track.scrobble") } }
+
+        scrobbler.trackStarted(artist: "Artist", title: "Song & Co", duration: 100)
+        scrobbler.playbackChanged(playing: true)
+        clock += 30; scrobbler.playbackChanged(playing: false)
+        clock += 500; scrobbler.playbackChanged(playing: true)  // paused time doesn't count
+        clock += 15; scrobbler.checkPlayed()
+        assertTrue(state.state.lastFMQueue.isEmpty && scrobbleRequests().isEmpty, "45 of 50 s played: not yet")
+        clock += 5; scrobbler.checkPlayed()
+        assertTrue(spinRunLoop(until: { !scrobbleRequests().isEmpty }, timeout: 5) && waitForQueue(0), "50 s played: scrobbled and sent")
+        let sent = scrobbleRequests()[0]
+        assertTrue(sent.hasPrefix("POST ") && sent.contains("artist%5B0%5D=Artist") && sent.contains("track%5B0%5D=Song%20%26%20Co")
+                   && sent.contains("timestamp%5B0%5D=1000") && sent.contains("sk=SK") && sent.contains("api_sig="),
+                   "POST with the track, its start time and the session, signed")
+        assertTrue(server.requests.contains { $0.contains("method=track.updateNowPlaying") }, "Now Playing went out when the track started")
+        clock += 100; scrobbler.checkPlayed()
+        assertEqual(scrobbleRequests().count, 1, "A track counts once")
+
+        scrobbler.trackStarted(artist: "Artist", title: "Jingle", duration: 20)
+        scrobbler.playbackChanged(playing: true)
+        clock += 20; scrobbler.checkPlayed()
+        assertTrue(state.state.lastFMQueue.isEmpty, "Tracks of 30 s or less are skipped")
+        assertEqual(scrobbler.status, "Not scrobbled: 30 seconds or shorter", "The plug-in page says why")
+        scrobbler.trackStarted(artist: "", title: "Song [F5Tb8BGwmgk]", duration: 189)
+        assertEqual(scrobbler.status, "Not scrobbled: “Song [F5Tb8BGwmgk]” has no artist or title tag")
+        scrobbler.trackStarted(artist: "Station", title: "Show", duration: 0, isStream: true)
+        assertEqual(scrobbler.status, "Not scrobbled: radio isn't scrobbled")
+
+        reply = #"{"error":11,"message":"Service Offline"}"#
+        scrobbler.trackStarted(artist: "Artist", title: "Later", duration: 300)
+        assertEqual(scrobbler.status, "", "A track that counts clears the reason")
+        scrobbler.playbackChanged(playing: true)
+        clock += 150; scrobbler.checkPlayed()
+        assertTrue(spinRunLoop(until: { scrobbleRequests().count == 2 }, timeout: 5), "Tried to send")
+        assertTrue(spinRunLoop(until: { scrobbler.status.contains("Service Offline") }, timeout: 5) && state.state.lastFMQueue.count == 1,
+                   "Last.fm down: the scrobble waits in the queue")
+
+        reply = #"{"error":9,"message":"Invalid session key"}"#
+        _ = awaitValue { await scrobbler.flush(); return true }
+        assertTrue(!scrobbler.isConnected && state.state.lastFMQueue.count == 1, "Session revoked: disconnected, scrobble kept for later")
+    }
+
 }
 
-/// A tiny HTTP/1.0 server for client tests: answers each request by its path
+/// A tiny HTTP/1.0 server for client tests: answers each request by its path and keeps every request whole
+/// (headers and body) for checks
 final class TestHTTPServer {
     let listener: NWListener
     private let queue = DispatchQueue(label: "test.http")
+    private let lock = NSLock()
+    private var received: [String] = []
+    var requests: [String] { lock.withLock { received } }
     var port: UInt16 { listener.port?.rawValue ?? 0 }
 
     init(answer: @escaping (String) -> (String, Data)) throws {
         listener = try NWListener(using: .tcp, on: .any)
-        listener.newConnectionHandler = { [queue] conn in
+        listener.newConnectionHandler = { [queue, lock] conn in
             conn.start(queue: queue)
-            conn.receive(minimumIncompleteLength: 1, maximumLength: 8192) { data, _, _, _ in
-                let line = String(data: data ?? Data(), encoding: .utf8)?.components(separatedBy: "\r\n").first ?? ""
+            var buffer = Data()
+            func reply() {
+                let text = String(decoding: buffer, as: UTF8.self)
+                lock.withLock { self.received.append(text) }
+                let line = text.components(separatedBy: "\r\n").first ?? ""
                 let path = line.split(separator: " ").dropFirst().first.map(String.init) ?? ""
                 let (type, body) = answer(path)
                 let header = "HTTP/1.0 200 OK\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\n\r\n"
                 conn.send(content: Data(header.utf8) + body, completion: .contentProcessed { _ in conn.cancel() })
             }
+            // A POST body may come after the headers in a packet of its own
+            func read() {
+                conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, done, _ in
+                    buffer += data ?? Data()
+                    let text = String(decoding: buffer, as: UTF8.self)
+                    if let end = text.range(of: "\r\n\r\n") {
+                        let length = text.components(separatedBy: "\r\n").first { $0.lowercased().hasPrefix("content-length:") }
+                            .flatMap { Int($0.split(separator: ":")[1].trimmingCharacters(in: .whitespaces)) } ?? 0
+                        if text[end.upperBound...].utf8.count >= length || done { return reply() }
+                    } else if done { return reply() }
+                    read()
+                }
+            }
+            read()
         }
         let ready = DispatchSemaphore(value: 0)
         listener.stateUpdateHandler = { state in if case .ready = state { ready.signal() } }

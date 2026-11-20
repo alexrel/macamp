@@ -89,6 +89,8 @@ public struct TrackItem: Codable, Identifiable, Equatable {
     /// AudioToolbox estimated duration (fastest & most resilient for MP3/AAC/VBR), then AVFoundation, then the PCM length.
     public static func resolveDuration(from url: URL) async -> TimeInterval {
         if MIDIRenderer.isMIDI(url) { return MIDIRenderer.duration(of: url) }
+        // Modules, WMA, APE...: the plug-in knows the length without converting
+        if PluginConversion.needsConversion(url), let info = await PluginConversion.info(for: url), info.duration > 0 { return info.duration }
         let estimated = estimatedDuration(of: url)
         if estimated > 0 { return estimated }
         let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
@@ -139,8 +141,13 @@ public struct TrackItem: Codable, Identifiable, Equatable {
     public static func resolveArtistAndTitle(from url: URL) async -> (artist: String, title: String) {
         let fileBaseName = url.deletingPathExtension().lastPathComponent
         var artist = "", title = fileBaseName
+        if PluginConversion.needsConversion(url), let info = await PluginConversion.info(for: url), !info.title.isEmpty {
+            return (TextEncoding.repairCyrillic(info.artist), TextEncoding.repairCyrillic(info.title))
+        }
+        // A file a plug-in converted (module, WMA, APE...): its tags are in the converted copy, once played
+        let tagged = PluginConversion.needsConversion(url) ? (PluginConversion.cachedOutput(for: url) ?? url) : url
         // Common keys first, then raw ID3 / iTunes frames
-        for item in await MetadataValues.load(from: AVURLAsset(url: url), common: true) {
+        for item in await MetadataValues.load(from: AVURLAsset(url: tagged), common: true) {
             let isTitle = item.commonKey == .commonKeyTitle || item.key.contains("TIT2") || item.key.hasSuffix("©nam")
             let isArtist = item.commonKey == .commonKeyArtist || item.key.contains("TPE1") || item.key.hasSuffix("©ART")
             guard let value = item.string?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { continue }

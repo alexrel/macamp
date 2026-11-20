@@ -445,6 +445,20 @@ public struct AppState: Codable {
         get { isStudioVisibleStorage ?? false }
         set { isStudioVisibleStorage = newValue }
     }
+    /// Plug-ins ▸ General Purpose ▸ Last.fm Scrobbler (off by default), the connected account (its session key is a
+    /// LocalSecret) and scrobbles not sent yet (no network, Last.fm down)
+    public var lastFMEnabledStorage: Bool? = nil
+    public var lastFMEnabled: Bool { get { lastFMEnabledStorage ?? false } set { lastFMEnabledStorage = newValue } }
+    public var lastFMUserStorage: String? = nil
+    public var lastFMUser: String { get { lastFMUserStorage ?? "" } set { lastFMUserStorage = newValue } }
+    public var lastFMQueueStorage: [LastFMScrobble]? = nil
+    public var lastFMQueue: [LastFMScrobble] { get { lastFMQueueStorage ?? [] } set { lastFMQueueStorage = newValue } }
+
+    /// Plug-ins ▸ General Purpose ▸ Album Art (off by default) and whether its window was open
+    public var albumArtEnabledStorage: Bool? = nil
+    public var albumArtEnabled: Bool { get { albumArtEnabledStorage ?? false } set { albumArtEnabledStorage = newValue } }
+    public var isAlbumArtVisibleStorage: Bool? = nil
+    public var isAlbumArtVisible: Bool { get { isAlbumArtVisibleStorage ?? false } set { isAlbumArtVisibleStorage = newValue } }
     public var isLibraryVisibleStorage: Bool? = nil
     public var isLibraryVisible: Bool {
         get { isLibraryVisibleStorage ?? false }

@@ -15,6 +15,8 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
     private var doubleSizeItem: NSMenuItem?
     private var eqToggleItem: NSMenuItem?
     private var plToggleItem: NSMenuItem?
+    /// Shown only while the Album Art plug-in is on, as in the Winamp main menu
+    private var albumArtItem: NSMenuItem?
     private var repeatItem: NSMenuItem?
     private var shuffleItem: NSMenuItem?
     private var stopAfterCurrentItem: NSMenuItem?
@@ -286,6 +288,10 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
             item.target = coord
             winMenu.addItem(item)
         }
+        let artItem = NSMenuItem(title: PlayerCoordinator.albumArtTitle, action: #selector(PlayerCoordinator.handleToggleAlbumArt), keyEquivalent: "")
+        artItem.target = coord
+        winMenu.addItem(artItem)
+        self.albumArtItem = artItem
         
         let visStudioItem = NSMenuItem(title: "Retro Visualizer Studio", action: #selector(PlayerCoordinator.handleToggleVisualizerStudio), keyEquivalent: "k")
         visStudioItem.keyEquivalentModifierMask = [.control, .shift]
@@ -333,6 +339,7 @@ public final class MainMenuManager: NSObject, NSMenuDelegate {
         doubleSizeItem?.state = (WindowLayoutManager.shared.currentScale == 2.0) ? .on : .off
         eqToggleItem?.state = coord.mainView?.eqToggle.isOn == true ? .on : .off
         plToggleItem?.state = coord.mainView?.plToggle.isOn == true ? .on : .off
+        albumArtItem?.isHidden = !coord.persistence.state.albumArtEnabled
         repeatItem?.state = coord.playlist.isRepeat ? .on : .off
         shuffleItem?.state = coord.playlist.isShuffle ? .on : .off
         stopAfterCurrentItem?.state = coord.stopAfterCurrent ? .on : .off

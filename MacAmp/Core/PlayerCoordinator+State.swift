@@ -172,11 +172,15 @@ extension PlayerCoordinator {
         saveAuxFrame(video?.window, "video")
         saveAuxFrame(browser?.window, "browser")
         if let studio = visualizerStudioWindow {
-            persistence.state.isStudioVisible = studio.isVisible
+            persistence.state.isStudioVisible = isOpen(studio)
             if !studio.styleMask.contains(.fullScreen) { saveAuxFrame(studio, AppConstants.Window.studioFrameKey) }
         }
+        if let art = albumArtWindow {
+            persistence.state.isAlbumArtVisible = isOpen(art)
+            saveAuxFrame(art, Self.albumArtFrameKey)
+        }
         if let library = libraryWindow {
-            persistence.state.isLibraryVisible = library.isVisible
+            persistence.state.isLibraryVisible = isOpen(library)
             saveLibraryFrame()
         }
         persistence.state.isEqAuto = eqView.autoToggle.isOn

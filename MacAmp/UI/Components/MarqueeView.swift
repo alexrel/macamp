@@ -82,7 +82,10 @@ public class MarqueeView: WinampControlView {
     
     /// Shows a temporary status message (e.g. Volume, Balance, EQ, Seek) for `duration` seconds,
     /// then automatically reverts back to displaying the current track title.
-    public func showTemporaryMessage(_ message: String, duration: TimeInterval = 1.5) {
+    /// A short flash: the default for messages like "Stream Error"
+    public static let flashDuration: TimeInterval = 1.5
+
+    public func showTemporaryMessage(_ message: String, duration: TimeInterval = MarqueeView.flashDuration) {
         temporaryMessage = message
         currentDisplayText = message
         resetScroll()

@@ -22,12 +22,16 @@ macOS 14 Sonoma or later).
 - **10-band equalizer** with preamp, presets and auto-load by genre; DSP effects (pitch/tempo, reverb).
 - **Playlists:** M3U/M3U8, PLS, XSPF and CUE sheets, authentic shuffle/repeat, sort, Jump to File/Time, bookmarks.
 - **Internet radio:** SHOUTcast and Icecast streams with live titles.
-- **Audio CD:** play and rip to FLAC, ALAC, AAC, WAV or AIFF, with M3U/PLS playlists of the rip.
+- **Audio CD:** play and rip to FLAC, ALAC, AAC, WAV or AIFF (Ogg Vorbis and MP3 with the FFmpeg plug-in),
+  with M3U/PLS playlists of the rip.
 - **Media Library** with local media, playlists, Internet Radio and your Subsonic server (Navidrome, Gonic, Airsonic); **Minibrowser** and **Video** window.
 - **Visualizer:** spectrum and oscilloscope in the main window, full-screen Visualizer Studio, MilkDrop through projectM, What A Goom! 1.99.4, and Advanced Visualization Studio 2.81d with its editor.
 - **Track Info** with ID3 tag editing, Winamp-style Preferences, About, context menus and the 2.95 hotkeys
   (on any keyboard layout), global hotkeys and media keys.
-- **Plug-ins:** the optional FFmpeg plug-in plays MKV/WebM/AVI/WMV and WMA/APE/WavPack (see the release assets).
+- **Plug-ins:** the optional FFmpeg plug-in plays MKV/WebM/AVI/WMV and WMA/APE/WavPack, the Module plug-in
+  MOD/XM/S3M/IT tracker music (see the release assets);
+  Album Art (Plug-ins ▸ General Purpose, off by default) shows the track's cover in a docked window;
+  the Last.fm Scrobbler (same page, off by default) sends what you play to your Last.fm profile.
 
 ## What's new
 
@@ -89,9 +93,7 @@ macOS 14 Sonoma or later).
 
 Planned, in no fixed order:
 
-- MOD / XM / S3M / IT playback.
-- MP3 and Ogg Vorbis encoders for CD ripping.
-- Last.fm scrobbling, off by default.
+- A song lyrics window (synced lyrics highlighted line by line), off by default.
 
 Not planned: Winamp 3/5 "Modern" skins and a Linux or Windows version.
 

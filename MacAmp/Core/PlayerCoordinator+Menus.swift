@@ -201,6 +201,10 @@ extension PlayerCoordinator {
         menu.addItem(menuItem("Library", #selector(handleToggleLibrary), key: "l", mods: [.option], checked: libraryWindow?.isVisible ?? false))
         menu.addItem(menuItem("Minibrowser", #selector(handleToggleBrowser), key: "t", mods: [.option], checked: browser?.window.isVisible ?? false))
         menu.addItem(menuItem("Video", #selector(handleToggleVideo), key: "v", mods: [.option], checked: video?.window.isVisible ?? false))
+        // A General Purpose plug-in adds its window here, as gen_ml added the Library
+        if persistence.state.albumArtEnabled {
+            menu.addItem(menuItem(Self.albumArtTitle, #selector(handleToggleAlbumArt), checked: albumArtWindow?.isVisible ?? false))
+        }
         menu.addItem(.separator())
         menu.addItem(submenuItem("Options", buildOptionsMenu()))
         menu.addItem(submenuItem("Playback", buildPlaybackMenu()))

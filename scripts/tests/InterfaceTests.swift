@@ -655,4 +655,44 @@ func interfaceTests() {
         assertEqual(phases.max(), AboutBannerWarp.cycleFrames - 1, "The cycle runs to its last frame")
         assertEqual(phases.last, 0, "...and comes back to rest")
     }
+
+    testGroup("Album Art plug-in (General Purpose)") {
+        assertTrue(!AppState().albumArtEnabled, "Off by default, like any extra plug-in")
+        // Folder images: Winamp-era names, any case, folder.jpg before cover.png
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/albumart", isDirectory: true)
+        try? FileManager.default.removeItem(at: dir)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let png = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 4, pixelsHigh: 4, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                   isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!.representation(using: .png, properties: [:])!
+        let wav = try makeTestWAV(named: "albumart.wav", seconds: 0.2)
+        let track = dir.appendingPathComponent("01 Song.wav")
+        try FileManager.default.copyItem(at: wav, to: track)
+        assertTrue(awaitValue { await AlbumArt.imageData(for: track) } == nil, "No picture anywhere: none (the window shows 'No album art')")
+        try png.write(to: dir.appendingPathComponent("Cover.PNG"))
+        assertEqual(awaitValue { await AlbumArt.imageData(for: track) }, png as Data?, "cover.png found whatever its case")
+        let folder = png + Data([0]) // a different file
+        try folder.write(to: dir.appendingPathComponent("folder.jpg"))
+        assertEqual(awaitValue { await AlbumArt.imageData(for: track) }, folder as Data?, "folder.jpg comes before cover.png")
+        assertTrue(awaitValue { await AlbumArt.imageData(for: URL(string: "http://radio.example/stream")!) } == nil, "Radio has no cover")
+        assertEqual(awaitValue { await AlbumArt.imageData(for: track.withPlaybackRange(start: 1, end: 2)) }, folder as Data?, "A CUE track looks beside its album file")
+
+        // The window: shown only while the plug-in is on, switched off with it
+        let coordinator = PlayerCoordinator.shared
+        let state = PersistenceManager.shared.state
+        defer { PersistenceManager.shared.state.albumArtEnabled = state.albumArtEnabled; PersistenceManager.shared.state.isAlbumArtVisible = state.isAlbumArtVisible }
+        coordinator.setAlbumArtEnabled(false)
+        coordinator.showAlbumArtWindow()
+        assertTrue(coordinator.albumArtWindow?.isVisible != true, "Plug-in off: no window")
+        coordinator.setAlbumArtEnabled(true)
+        coordinator.showAlbumArtWindow()
+        assertTrue(coordinator.albumArtWindow?.isVisible == true && PersistenceManager.shared.state.isAlbumArtVisible, "Plug-in on: the window opens and is remembered")
+        assertTrue(coordinator.albumArtWindow?.contentView is GenWindowFrameView, "In the GEN frame, like the Library and the Studio")
+        // Minimizing the player takes it into the Dock too, and brings it back
+        coordinator.hideAuxWindowsForMinimize()
+        assertTrue(coordinator.albumArtWindow?.isVisible != true && coordinator.isOpen(coordinator.albumArtWindow), "Minimized with the player, still counted as open")
+        coordinator.restoreAuxWindowsAfterMinimize()
+        assertTrue(coordinator.albumArtWindow?.isVisible == true && coordinator.hiddenByMinimize.isEmpty, "Back with the player")
+        coordinator.setAlbumArtEnabled(false)
+        assertTrue(coordinator.albumArtWindow?.isVisible != true && !PersistenceManager.shared.state.albumArtEnabled, "Switching the plug-in off closes it")
+    }
 }

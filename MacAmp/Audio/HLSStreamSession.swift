@@ -71,7 +71,8 @@ public final class HLSStreamSession: RadioStreamSession {
                     next = first + offset + 1
                 }
                 if playlist.isEnded { break }
-                try await Task.sleep(nanoseconds: UInt64(max(1, playlist.targetDuration / 2) * 1_000_000_000))
+                // RFC 8216 §6.3.4: reload a live playlist after half its target duration
+                try await Task.sleep(for: .seconds(max(1, playlist.targetDuration / 2)))
                 playlist = HLSPlaylist.parse(try await text(media), base: media)
             }
             if !Task.isCancelled { onFinished?(nil) }

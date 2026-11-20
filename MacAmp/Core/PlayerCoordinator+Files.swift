@@ -169,8 +169,9 @@ extension PlayerCoordinator {
         // Formats only a plug-in plays, without that plug-in: say so instead of nothing happening
         let supported = AppConstants.Audio.supportedExtensions
         if let missing = paths.map({ URL(fileURLWithPath: $0).pathExtension.lowercased() })
-            .first(where: { PluginManager.ffmpegFormats.contains($0) && !supported.contains($0) }) {
-            mainView?.marquee.showTemporaryMessage("\(missing.uppercased()) files need the FFmpeg plug-in (Preferences ▸ Plug-ins ▸ Input)", duration: 5)
+            .first(where: { PluginManager.missingPlugin(for: $0) != nil && !supported.contains($0) }),
+           let plugin = PluginManager.missingPlugin(for: missing) {
+            mainView?.marquee.showTemporaryMessage("\(missing.uppercased()) files need the \(plugin) plug-in (Preferences ▸ Plug-ins ▸ Input)", duration: AppConstants.Marquee.noticeDuration)
         }
         let (batches, continuation) = AsyncStream.makeStream(of: [TrackItem].self)
         let scan = Task.detached(priority: .userInitiated) {
@@ -189,42 +190,49 @@ extension PlayerCoordinator {
     }
 
     /// Installing a plug-in runs its programs on this Mac, so it asks first (as Winamp's installers did)
+    static let installPluginTitle = "Install plug-in"
+
     func confirmAndInstallPlugin(_ path: String) {
         let url = URL(fileURLWithPath: path)
         // A preset pack only copies presets: nothing of it runs
         if let pack = PluginManager.presetPack(url), pack.milkdrop {
-            guard Win32Dialog.confirm(title: "Install plug-in",
+            guard Win32Dialog.confirm(title: Self.installPluginTitle,
                                       message: "Install \(pack.title)?\n\nThe presets go into the MilkDrop preset folder and show up in the MilkDrop window's right-click menu.",
                                       confirmTitle: "Install", cancelTitle: "Cancel") else { return }
-            mainView?.marquee.showTemporaryMessage("Installing MilkDrop presets...", duration: 4)
+            mainView?.marquee.showTemporaryMessage("Installing MilkDrop presets...", duration: AppConstants.Marquee.noticeDuration)
             let folders = pack.folders, target = MilkdropView.presetsFolder
             Task { // thousands of files: off the main thread
                 let count = await Task.detached { PluginManager.copyPresets(folders, extension: MilkdropView.fileExtension, into: target) }.value
-                mainView?.marquee.showTemporaryMessage("MilkDrop presets installed: \(count)", duration: 4)
+                mainView?.marquee.showTemporaryMessage("MilkDrop presets installed: \(count)", duration: AppConstants.Marquee.noticeDuration)
             }
             return
         }
         if let pack = PluginManager.presetPack(url) {
-            guard Win32Dialog.confirm(title: "Install plug-in",
+            guard Win32Dialog.confirm(title: Self.installPluginTitle,
                                       message: "Install \(pack.title)?\n\nThe presets go into the AVS preset folder and show up in the AVS window's right-click menu.",
                                       confirmTitle: "Install", cancelTitle: "Cancel") else { return }
             let count = AVSPresets.importPresets(from: pack.folders)
-            mainView?.marquee.showTemporaryMessage("AVS presets installed: \(count)", duration: 4)
+            mainView?.marquee.showTemporaryMessage("AVS presets installed: \(count)", duration: AppConstants.Marquee.noticeDuration)
             return
         }
         guard let plugin = PluginManager.read(url) else {
-            _ = Win32Dialog.confirm(title: "Install plug-in", message: "\(url.lastPathComponent) isn't a MacAmp plug-in.", confirmTitle: "OK", cancelTitle: "Cancel")
+            _ = Win32Dialog.confirm(title: Self.installPluginTitle, message: "\(url.lastPathComponent) isn't a MacAmp plug-in.", confirmTitle: "OK", cancelTitle: "Cancel")
             return
         }
         let formats = plugin.extensions.sorted().map { $0.uppercased() }.joined(separator: ", ")
-        guard Win32Dialog.confirm(title: "Install plug-in",
-                                  message: "Install \(plugin.title)?\n\nIt adds: \(formats).\n\nMacAmp will run the plug-in's programs to convert these files for playback.",
+        // An FFmpeg plug-in from 1.1 on also encodes: say so, it's why one would update it
+        let ripping = plugin.encoders.isEmpty ? ""
+            : "\nFor CD ripping and Disk Writer: " + DiskWriterFormat.allCases.filter { plugin.encoders.contains($0.fileExtension) }.map(\.title).joined(separator: ", ") + "."
+        guard Win32Dialog.confirm(title: Self.installPluginTitle,
+                                  message: "Install \(plugin.title)?\n\nIt adds: \(formats).\(ripping)\n\nMacAmp will run the plug-in's programs to convert these files for playback.",
                                   confirmTitle: "Install", cancelTitle: "Cancel") else { return }
         do {
             _ = try PluginManager.install(url)
-            mainView?.marquee.showTemporaryMessage("Plug-in installed: \(plugin.title)", duration: 4)
+            mainView?.marquee.showTemporaryMessage("Plug-in installed: \(plugin.title)", duration: AppConstants.Marquee.noticeDuration)
+            // Its files already in the playlist (0:00, file names) get their length and tags now, not after a restart
+            playlist.prefetchMetadata(for: playlist.tracks.filter { plugin.extensions.contains($0.url.pathExtension.lowercased()) }.map(\.id))
         } catch {
-            _ = Win32Dialog.confirm(title: "Install plug-in", message: "Couldn't install it: \(error.localizedDescription)", confirmTitle: "OK", cancelTitle: "Cancel")
+            _ = Win32Dialog.confirm(title: Self.installPluginTitle, message: "Couldn't install it: \(error.localizedDescription)", confirmTitle: "OK", cancelTitle: "Cancel")
         }
     }
 

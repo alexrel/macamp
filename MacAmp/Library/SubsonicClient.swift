@@ -1,6 +1,5 @@
 import Foundation
 import CryptoKit
-import IOKit
 
 /// Library ▸ Subsonic: a home music server (Navidrome, Gonic, Airsonic...) over the Subsonic API / OpenSubsonic.
 /// Off until a server is set in Preferences ▸ Media Library: no tree node, no requests.
@@ -52,6 +51,9 @@ public struct SubsonicError: LocalizedError, Equatable {
     public let code: Int
     public let message: String
     public var errorDescription: String? { message.isEmpty ? "Subsonic error \(code)" : message }
+    /// The API's codes MacAmp raises itself (subsonic.org/pages/api.jsp)
+    static let wrongCredentials = 40
+    static let notFound = 70
 }
 
 public enum Subsonic {
@@ -86,13 +88,16 @@ public enum Subsonic {
         return components.string ?? s
     }
 
+    /// A password given as hex ("enc:73657361…"), as Subsonic links may carry it
+    static let encodedPasswordPrefix = "enc:"
+
     /// User and password from a pasted link like "…/login.view?user=guest&password=guest" (or u= / p=, "enc:" hex)
     static func credentials(in text: String) -> (user: String, password: String)? {
         guard let items = URLComponents(string: text.trimmingCharacters(in: .whitespaces))?.queryItems else { return nil }
         func value(_ names: [String]) -> String? { items.first { names.contains($0.name) }?.value.flatMap { $0.isEmpty ? nil : $0 } }
         guard let user = value(["user", "u"]), var password = value(["password", "p"]) else { return nil }
-        if password.hasPrefix("enc:") {
-            let hex = Array(password.dropFirst(4))
+        if password.hasPrefix(encodedPasswordPrefix) {
+            let hex = Array(password.dropFirst(encodedPasswordPrefix.count))
             let bytes = stride(from: 0, to: hex.count - 1, by: 2).compactMap { UInt8(String(hex[$0...$0 + 1]), radix: 16) }
             password = String(decoding: bytes, as: UTF8.self)
         }
@@ -133,7 +138,7 @@ public enum Subsonic {
                     server: String = server, user: String = user, password: String? = nil) async throws -> Data {
         guard !MacAmpNetwork.isOffline else { throw MacAmpNetwork.offlineError }
         guard let password = password ?? savedPassword(server: server, user: user) else {
-            throw SubsonicError(code: 40, message: noPasswordMessage)
+            throw SubsonicError(code: SubsonicError.wrongCredentials, message: noPasswordMessage)
         }
         guard let url = requestURL(method, query, server: server, user: user, password: password) else {
             throw SubsonicError(code: 0, message: "Bad server address")
@@ -214,13 +219,13 @@ public enum Subsonic {
     /// The track as a local file: the original (`format=raw`, no transcoding) downloaded once into the cache.
     /// shortcut: playback starts after the whole file arrived, fine on a home network; stream progressively if slow links complain
     public static func localFile(for url: URL) async throws -> URL {
-        guard let id = songID(url), !id.isEmpty, let file = cacheFile(for: url) else { throw SubsonicError(code: 70, message: "Not a Subsonic track") }
+        guard let id = songID(url), !id.isEmpty, let file = cacheFile(for: url) else { throw SubsonicError(code: SubsonicError.notFound, message: "Not a Subsonic track") }
         if FileManager.default.fileExists(atPath: file.path) {
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: file.path)
             return file
         }
         guard isConfigured, let password = savedPassword(server: server, user: user) else {
-            throw SubsonicError(code: 40, message: "Subsonic server not set: Preferences ▸ Media Library")
+            throw SubsonicError(code: SubsonicError.wrongCredentials, message: "Subsonic server not set: Preferences ▸ Media Library")
         }
         return try await download(id: id, to: file, server: server, user: user, password: password)
     }
@@ -292,27 +297,13 @@ public enum Subsonic {
         }
     }
 
-    // MARK: Password (encrypted in the app's defaults, never in session.json)
+    // MARK: Password (LocalSecret: encrypted in the app's defaults, never in session.json)
 
-    /// Not the Keychain: an ad-hoc signed app changes its signature after every update or document icon change,
-    /// and the Keychain then asks the user again. shortcut: the key is this Mac's hardware UUID, so the stored value
-    /// is useless elsewhere but readable by anything running as this user; upgrade if MacAmp ever ships cert-signed.
     private static func passwordKey(server: String, user: String) -> String { "\(passwordDefaultsPrefix)\(user)@\(server)" }
     static let passwordDefaultsPrefix = "SubsonicPassword "
 
-    private static var machineKey: SymmetricKey {
-        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
-        defer { IOObjectRelease(service) }
-        let uuid = IORegistryEntryCreateCFProperty(service, "IOPlatformUUID" as CFString, kCFAllocatorDefault, 0)?
-            .takeRetainedValue() as? String ?? ""
-        return SymmetricKey(data: SHA256.hash(data: Data((uuid + clientName).utf8)))
-    }
-
     public static func savedPassword(server: String = server, user: String = user) -> String? {
-        guard let sealed = UserDefaults.standard.data(forKey: passwordKey(server: server, user: user)),
-              let box = try? AES.GCM.SealedBox(combined: sealed),
-              let data = try? AES.GCM.open(box, using: machineKey) else { return nil }
-        return String(data: data, encoding: .utf8)
+        LocalSecret.read(passwordKey(server: server, user: user))
     }
 
     static let noPasswordMessage = "No password: set it in Preferences ▸ Media Library ▸ Subsonic"
@@ -320,11 +311,7 @@ public enum Subsonic {
     /// Saves the password for this server and user; an empty one removes it
     @discardableResult
     public static func savePassword(_ password: String, server: String, user: String) -> Bool {
-        let key = passwordKey(server: normalized(server), user: user.trimmingCharacters(in: .whitespaces))
-        guard !password.isEmpty else { UserDefaults.standard.removeObject(forKey: key); return true }
-        guard let sealed = try? AES.GCM.seal(Data(password.utf8), using: machineKey).combined else { return false }
-        UserDefaults.standard.set(sealed, forKey: key)
-        return true
+        LocalSecret.write(password, for: passwordKey(server: normalized(server), user: user.trimmingCharacters(in: .whitespaces)))
     }
 }
 
