@@ -343,6 +343,8 @@ public enum AppConstants {
     public enum Audio {
         public static let bufferSize: UInt32 = 1024
         public static let defaultVolume: Double = 0.75
+        /// Volume up / down (↑ ↓, keypad 8 2, global hotkeys): 4 of Winamp's 255 (winamp.exe 2.95, commands 40058 / 40059)
+        public static let volumeStep: Double = 4.0 / 255
         /// Below this volume the visualizer no longer scales the signal back up (at zero there is nothing to scale)
         public static let visualizerVolumeFloor: Float = 0.001
         public static let defaultBalance: Double = 0.0 // -1.0 (Left) ... 0.0 (Center) ... +1.0 (Right)

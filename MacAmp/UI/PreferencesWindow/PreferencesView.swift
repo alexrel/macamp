@@ -323,7 +323,26 @@ public class PreferencesViewModel: ObservableObject {
         }
         
         refreshSkins()
+        watchSkinsFolder()
     }
+
+    /// The skins folder, watched while Preferences is open: a skin deleted from the menu or in Finder, or one installed
+    /// (dropped, downloaded, from a skin pack), is listed at once. The folder is read only when it changes.
+    private var skinsFolderWatch: DispatchSourceFileSystemObject?
+
+    private func watchSkinsFolder() {
+        skinsFolderWatch?.cancel()
+        skinsFolderWatch = nil
+        let fd = open(SkinManager.shared.skinsDirectory.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: .write, queue: .main)
+        source.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.refreshSkins() } }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        skinsFolderWatch = source
+    }
+
+    deinit { skinsFolderWatch?.cancel() }
     
     public func selectOutputDevice(uid: String?) {
         self.selectedAudioOutputDeviceUID = uid
@@ -336,8 +355,8 @@ public class PreferencesViewModel: ObservableObject {
         self.selectedAudioOutputDeviceUID = AudioDeviceManager.shared.selectedDeviceUID
     }
     
+    /// Reset effects: the values back to neutral; the plug-in stays selected, so its open Configure window keeps working
     public func resetDSP() {
-        self.isDspEnabled = false
         self.dspPitchSemitones = 0.0
         self.dspPlaybackRate = 1.0
         self.dspReverbMix = 0.0
@@ -380,6 +399,7 @@ public class PreferencesViewModel: ObservableObject {
         PersistenceManager.shared.state.skinsDirectoryPath = url.path
         PersistenceManager.shared.saveSession()
         refreshSkins()
+        watchSkinsFolder()
     }
 }
 
@@ -418,6 +438,8 @@ public struct PreferencesView: View {
     @ObservedObject public var viewModel: PreferencesViewModel
     @ObservedObject private var hotkeysController = GlobalHotkeysController.shared
     public var onClose: (() -> Void)?
+    /// Set: this view is a plug-in's Configure window, not the Preferences page tree
+    private var configuring: PluginConfig?
     
     private let availableFonts = ["Monaco", "Menlo", "Geneva", "SF Pro Display", "Courier New", "Helvetica"]
     private let availableFontSizes: [Double] = [8, 9, 10, 11, 12, 14]
@@ -426,8 +448,17 @@ public struct PreferencesView: View {
         self.viewModel = viewModel
         self.onClose = onClose
     }
+
+    init(viewModel: PreferencesViewModel, configuring: PluginConfig, onClose: @escaping () -> Void) {
+        self.init(viewModel: viewModel, onClose: onClose)
+        self.configuring = configuring
+    }
     
     public var body: some View {
+        if let configuring { configureBody(configuring) } else { pages }
+    }
+
+    private var pages: some View {
         HStack(spacing: 8) {
             // Left Column: Classic Win32 TreeView & Close Button
             VStack(alignment: .center, spacing: 6) {
@@ -444,6 +475,7 @@ public struct PreferencesView: View {
                     }
                     .padding(.vertical, 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlayScrollers()
                 }
                 .background(Color.white)
                 .win32Sunken()
@@ -458,9 +490,9 @@ public struct PreferencesView: View {
             .frame(width: 165)
             
             // Right Column: Options & Controls in Win32 GroupBoxes
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
                 ScrollView(.vertical, showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 5) {
                         switch viewModel.selectedTreeItem {
                         case .setup: SetupSection()
                         case .fileTypes: FileTypesSection()
@@ -475,17 +507,7 @@ public struct PreferencesView: View {
                         case .plugins: pluginsSection
                         case .input: inputSection
                         case .output: outputPluginSection
-                        case .visPlugin:
-                            VStack(alignment: .leading, spacing: 10) {
-                                visPluginSection
-                                if PersistenceManager.shared.state.avsPluginSelected {
-                                    avsSection
-                                } else if PersistenceManager.shared.state.goomPluginSelected {
-                                    goomSection
-                                } else {
-                                    milkdropSection
-                                }
-                            }
+                        case .visPlugin: visPluginSection
                         case .dsp: dspPluginSection
                         case .general: generalSection
                         case .skins: skinsSection
@@ -493,6 +515,7 @@ public struct PreferencesView: View {
                         }
                     }
                     .padding(.trailing, 6)
+                    .overlayScrollers()
                 }
                 
                 Spacer()
@@ -549,9 +572,9 @@ public struct PreferencesView: View {
     
     // MARK: - Options ▸ Display (docs/UI-screens/pref-options-display.png)
     private var displaySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             Win32GroupBox("Display options") {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Win32Checkbox("Always show Clutterbar", isOn: setting(\.alwaysShowClutterbar) { _ in
                         PlayerCoordinator.shared.mainView?.updateClutterbar()
                     })
@@ -608,7 +631,7 @@ public struct PreferencesView: View {
 
             // MacAmp additions (principle 5: a separate group below the classic options)
             Win32GroupBox("MacAmp") {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Win32Checkbox("Always On Top (⌃A)", isOn: $viewModel.isAlwaysOnTop)
                     Win32Checkbox("Scroll the song title when it is wider than the display", isOn: $viewModel.isMarqueeScrollEnabled)
                     Win32Checkbox("Zero-pad numbers in Playlist (e.g. '01.')", isOn: $viewModel.playlistZeroPadding)
@@ -640,9 +663,9 @@ public struct PreferencesView: View {
     
     // MARK: - Section: Visualization
     private var visualizationSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             Win32GroupBox("Visualization Mode") {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Win32RadioButton("Spectrum analyzer", isSelected: viewModel.visualizerMode == .spectrum) {
                         viewModel.visualizerMode = .spectrum
                     }
@@ -671,7 +694,7 @@ public struct PreferencesView: View {
             }
             
             Win32GroupBox("Analyzer Options") {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     visOptionRow("Style:", Win32ComboBox(selection: $viewModel.visualizerOptions.analyzerStyle,
                                                          options: AnalyzerStyle.allCases.map { (value: $0, title: $0.title) }, width: 130))
                     visOptionRow("Bands:", Win32ComboBox(selection: $viewModel.visualizerOptions.bands,
@@ -708,9 +731,9 @@ public struct PreferencesView: View {
     
     // MARK: - Section: Global Hotkeys
     private var hotkeysSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             Win32GroupBox("Global Hotkeys") {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 5) {
                     Win32Checkbox("Enable Global Hotkeys", isOn: $viewModel.isGlobalHotkeysEnabled)
                     
                     Text("Control playback from any application when MacAmp is in background:")
@@ -757,9 +780,9 @@ public struct PreferencesView: View {
     
     // MARK: - Options (docs/UI-screens/pref-options.png)
     private var optionsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             Win32GroupBox("Options") {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Win32Checkbox("Convert %20 to space in titles", isOn: setting(\.convertPercent20) { _ in
                         PlayerCoordinator.shared.refreshAllViews()
                     })
@@ -782,7 +805,7 @@ public struct PreferencesView: View {
             
             // MacAmp additions
             Win32GroupBox("MacAmp: playback") {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text("Fade out on Pause/Stop:").font(.system(size: 11))
                         Spacer()
@@ -801,7 +824,7 @@ public struct PreferencesView: View {
             }
             
             Win32GroupBox("MacAmp: playlists and equalizer") {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Win32Checkbox("Save playlists with paths relative to the playlist file", isOn: $viewModel.savePlaylistRelativePaths)
                     Win32Checkbox("Auto-load EQ preset by the track's genre", isOn: $viewModel.autoGenreEQ)
                 }
@@ -812,7 +835,7 @@ public struct PreferencesView: View {
     // MARK: - Options ▸ Shuffle
     private var shuffleSection: some View {
         Win32GroupBox("Shuffle options") {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 5) {
                 Win32GroupBox("Shuffle morph rate") {
                     VStack(alignment: .leading, spacing: 4) {
                         Win32Slider(value: Binding(
@@ -839,7 +862,7 @@ public struct PreferencesView: View {
     // MARK: - Video (docs/UI-screens/pref-options-video.png)
     private var videoSection: some View {
         Win32GroupBox("Video options") {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 Win32Checkbox("Maintain video aspect ratio", isOn: setting(\.videoKeepAspect) { _ in PlayerCoordinator.shared.video?.applyOptions() })
                 Win32Checkbox("Auto open video window", isOn: setting(\.videoAutoOpen))
                 Win32Checkbox("Auto resize video window to video dimensions", isOn: setting(\.videoAutoResize))
@@ -855,9 +878,9 @@ public struct PreferencesView: View {
     // MARK: - CD Ripping (Library ▸ Devices ▸ CD ▸ Extract)
     private var cdRippingSection: some View {
         let state = PersistenceManager.shared.state
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 5) {
             Win32GroupBox("Output File") {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text("Folder:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
                         Text(state.cdRipFolder.path)
@@ -920,14 +943,14 @@ public struct PreferencesView: View {
               }
             }
             Win32GroupBox("Tags / Library") {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Win32Checkbox("Write tags (all but WAV / AIFF), with the comment \"Extracted by MacAmp\"", isOn: setting(\.cdRipWriteTags))
                     Win32Checkbox("Add ripped files to the Media Library", isOn: setting(\.cdRipAddToLibrary))
                     note("Track names come from MusicBrainz (CDDB is gone). To rip: Media Library (⌥L) ▸ Devices ▸ CD ▸ Extract; playing a CD doesn't rip it.")
                 }
             }
             Win32GroupBox("Playlist") {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     note("(Playlists will only be generated when an entire CD is extracted)")
                     Win32Checkbox("Generate M3U playlist of extracted tracks", isOn: setting(\.cdRipM3U))
                     Win32Checkbox("Use extended M3U playlist format", isOn: setting(\.cdRipExtendedM3U))
@@ -960,7 +983,7 @@ public struct PreferencesView: View {
     }
 
     private var libraryGeneralTab: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text("Action on doubleclick/enter:").font(.system(size: 11)).foregroundColor(Win32Colors.text).fixedSize()
                 Win32RadioButton("Play", isSelected: !PersistenceManager.shared.state.libraryDoubleClickEnqueues) { setLibrary(\.libraryDoubleClickEnqueues, false) }
@@ -984,7 +1007,7 @@ public struct PreferencesView: View {
             Win32Checkbox("Open library to Video view on video/TV button click", isOn: setting(\.libraryTVButtonOpensVideo))
             // MacAmp's own (principle: new things in their own group at the bottom)
             Win32GroupBox("Library folders") {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Win32Checkbox("Rescan library folders at startup", isOn: setting(\.libraryRescanOnStart))
                     HStack(spacing: 6) {
                         Win32Button("Add directory to library...", width: nil) { LibraryActions.addDirectory() }
@@ -998,7 +1021,7 @@ public struct PreferencesView: View {
     }
 
     private var libraryRadioTab: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Text("Max. streams to fetch:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
                 Win32NumberField(value: Binding(
@@ -1027,7 +1050,7 @@ public struct PreferencesView: View {
     // MARK: - Plug-ins (docs/UI-screens/pref-plugins*.png). MacAmp's plug-ins are built in.
     private var pluginsSection: some View {
         Win32GroupBox("Plug-in settings") {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 Win32Checkbox("Auto execute visualization plug-in on play", isOn: setting(\.autoStartVisPlugin))
                 note("MacAmp's plug-ins are built in: decoders (Input), audio output, the visualizer studio, effects (DSP) and global hotkeys. Each has its page below.")
             }
@@ -1048,71 +1071,148 @@ public struct PreferencesView: View {
     
     private var inputSection: some View {
         // Built-in decoders, then installed plug-ins (Plug-ins folder)
-        let plugins = PluginManager.converters.map { (name: $0.title, formats: $0.extensions.sorted().map { $0.uppercased() }.joined(separator: ", ") + " (converted once for playback)") }
+        let plugins = PluginManager.converters.map { converter in
+            (name: converter.title,
+             formats: converter.extensions.sorted().map { $0.uppercased() }.joined(separator: ", ") + " (converted once for playback)"
+                + ((try? String(contentsOf: converter.bundle.appendingPathComponent("Contents/Resources/SOURCE.txt"), encoding: .utf8))
+                    .flatMap { $0.split(separator: "\n").first }.map { "\n\n" + $0 } ?? ""))
+        }
         let all = PreferencesView.inputPlugins + plugins
+        let selected = all[min(selectedInput, all.count - 1)]
         return Win32GroupBox("Input plug-ins") {
-            VStack(alignment: .leading, spacing: 6) {
-                PluginListBox(rows: all.map(\.name), selection: $selectedInput)
-                note("Formats: " + all[min(selectedInput, all.count - 1)].formats)
-                HStack(spacing: 8) {
-                    if plugins.isEmpty { note("MKV, WebM, AVI, WMV, WMA, APE, WavPack and more: the FFmpeg plug-in. MOD, XM, S3M, IT: the Module plug-in.") }
-                    Spacer()
-                    Button("Get plug-ins") { NSWorkspace.shared.open(AppConstants.App.pluginsPage) }
-                        .buttonStyle(.link).font(.system(size: 11))
+            VStack(alignment: .leading, spacing: 4) {
+                PluginListBox(rows: all.map(\.name), selection: $selectedInput, height: nil)
+                if plugins.isEmpty { note("MKV, WebM, AVI, WMV, WMA, APE, WavPack and more: the FFmpeg plug-in. MOD, XM, S3M, IT: the Module plug-in. NSF, SPC, GBS, VGM: the Chiptune plug-in.") }
+                pluginButtons {
+                    Win32Button("Configure") {}.disabled(true) // MacAmp's decoders have nothing to set
+                    Win32Button("About") { showAbout(selected.name, "Formats: " + selected.formats) }
                 }
             }
+            .frame(height: Self.fullPageHeight)
         }
     }
-    
+
+    /// The row under a plug-in list, as in 2.95: its buttons on the left, Get plug-ins on the right
+    private func pluginButtons<Buttons: View>(@ViewBuilder _ buttons: () -> Buttons) -> some View {
+        HStack(spacing: 6) {
+            buttons()
+            Spacer()
+            Button("Get plug-ins") { NSWorkspace.shared.open(AppConstants.App.pluginsPage) }
+                .buttonStyle(.link).font(.system(size: 11))
+        }
+    }
+
+    /// What a plug-in's Configure window shows: the settings group of that plug-in
+    enum PluginConfig { case coreAudio, diskWriter, studio, goom, avs, dsp, hotkeys, albumArt, lastFM }
+
+    private func showConfigure(_ config: PluginConfig, title: String) { Self.showConfigure(config, title: title, viewModel: viewModel) }
+
+    static func showConfigure(_ config: PluginConfig, title: String, viewModel: PreferencesViewModel) {
+        guard let prefs = PreferencesWindow.sharedController?.window as? PreferencesWindow else { return }
+        prefs.showPluginDialog(title: title, PreferencesView(viewModel: viewModel, configuring: config) { [weak prefs] in prefs?.closePluginDialog() })
+    }
+
+    static var visPlugins: [String] {
+        ["MacAmp Retro Visualizer Studio \(AppConstants.App.version) [vis_studio]", "What A Goom! v1.99.4", "\(AVSView.productName) [vis_avs]"]
+    }
+
+    /// The selected visualization plug-in's Configure window (also the main menu's Configure plug-in)
+    static func configureVisPlugin(viewModel: PreferencesViewModel) {
+        let state = PersistenceManager.shared.state
+        let current = state.avsPluginSelected ? 2 : state.goomPluginSelected ? 1 : 0
+        showConfigure([.studio, .goom, .avs][current], title: visPlugins[current] + " configuration", viewModel: viewModel)
+    }
+
+    private func showAbout(_ name: String, _ text: String) {
+        guard let prefs = PreferencesWindow.sharedController?.window as? PreferencesWindow else { return }
+        prefs.showPluginDialog(title: "About", PluginAboutView(name: name, text: text) { [weak prefs] in prefs?.closePluginDialog() })
+    }
+
+    /// A Configure window: the plug-in's settings, then Close (they apply at once, as before)
+    private func configureBody(_ config: PluginConfig) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            switch config {
+            case .coreAudio: outputSection
+            case .diskWriter: diskWriterSection
+            case .studio: milkdropSection
+            case .goom: goomSection
+            case .avs:
+                avsSection
+                Win32Button("AVS Editor...", width: 100) { PlayerCoordinator.shared.handleConfigureVisPlugin() }
+            case .dsp: dspSection
+            case .hotkeys: hotkeysSection
+            case .albumArt: albumArtSection
+            case .lastFM: LastFMPrefsGroup()
+            }
+            HStack {
+                Spacer()
+                Win32Button("Close", isDefault: true) { onClose?() }
+            }
+        }
+        .padding(10)
+        .frame(width: 400)
+        .background(Win32Colors.dialogBg)
+    }
+
     private var outputPluginSection: some View {
         let state = PersistenceManager.shared.state
-        return VStack(alignment: .leading, spacing: 10) {
-            Win32GroupBox("Output plug-ins (current plug-in is selected)") {
-                PluginListBox(rows: ["MacAmp Core Audio output \(AppConstants.App.version) [out_coreaudio]",
-                                     "MacAmp Disk Writer \(AppConstants.App.version) [out_disk]"],
+        let rows = ["MacAmp Core Audio output \(AppConstants.App.version) [out_coreaudio]", "MacAmp Disk Writer \(AppConstants.App.version) [out_disk]"]
+        let current = state.diskWriterEnabled ? 1 : 0
+        return Win32GroupBox("Output plug-ins (current plug-in is selected)") {
+            VStack(alignment: .leading, spacing: 4) {
+                PluginListBox(rows: rows,
                               selection: Binding(
-                                get: { state.diskWriterEnabled ? 1 : 0 },
+                                get: { current },
                                 set: { index in
                                     viewModel.objectWillChange.send()
                                     PersistenceManager.shared.state.diskWriterEnabled = index == 1
                                     PersistenceManager.shared.scheduleSave()
-                                }), height: 40)
-            }
-            if state.diskWriterEnabled {
-                Win32GroupBox("Disk Writer") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        note("Play writes the playlist, from the selected track to the end, into audio files instead of playing it. Stop cancels.")
-                        HStack(spacing: 6) {
-                            Text("Folder:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
-                            Text(state.diskWriterFolder.path)
-                                .font(.system(size: 11))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .padding(.horizontal, 4)
-                                .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
-                                .background(Color.white)
-                                .win32Sunken()
-                            Win32Button("Browse...", width: 76) { chooseDiskWriterFolder() }
-                        }
-                        HStack(spacing: 6) {
-                            Text("Format:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
-                            Win32ComboBox(selection: Binding(
-                                get: { PersistenceManager.shared.state.diskWriterFormat },
-                                set: { format in
-                                    viewModel.objectWillChange.send()
-                                    PersistenceManager.shared.state.diskWriterFormat = format
-                                    PersistenceManager.shared.scheduleSave()
-                                }), options: DiskWriterFormat.available.map { (value: $0, title: $0.title) }, width: 190)
-                            Spacer()
-                        }
+                                }), height: nil)
+                pluginButtons {
+                    Win32Button("Configure") { showConfigure(current == 1 ? .diskWriter : .coreAudio, title: rows[current] + " configuration") }
+                    Win32Button("About") {
+                        showAbout(rows[current], current == 1
+                            ? "Play writes the playlist, from the selected track to the end, into audio files (WAV, AIFF, FLAC, ALAC, AAC; Ogg Vorbis and MP3 with the FFmpeg plug-in) instead of playing it."
+                            : "Sound through Core Audio: the device chosen in Configure, or the one macOS uses.")
                     }
                 }
-            } else {
-                outputSection
+            }
+            .frame(height: Self.fullPageHeight)
+        }
+    }
+
+    private var diskWriterSection: some View {
+        let state = PersistenceManager.shared.state
+        return Win32GroupBox("Disk Writer") {
+            VStack(alignment: .leading, spacing: 5) {
+                note("Play writes the playlist, from the selected track to the end, into audio files instead of playing it. Stop cancels.")
+                HStack(spacing: 6) {
+                    Text("Folder:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
+                    Text(state.diskWriterFolder.path)
+                        .font(.system(size: 11))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .padding(.horizontal, 4)
+                        .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
+                        .background(Color.white)
+                        .win32Sunken()
+                    Win32Button("Browse...", width: 76) { chooseDiskWriterFolder() }
+                }
+                HStack(spacing: 6) {
+                    Text("Format:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
+                    Win32ComboBox(selection: Binding(
+                        get: { PersistenceManager.shared.state.diskWriterFormat },
+                        set: { format in
+                            viewModel.objectWillChange.send()
+                            PersistenceManager.shared.state.diskWriterFormat = format
+                            PersistenceManager.shared.scheduleSave()
+                        }), options: DiskWriterFormat.available.map { (value: $0, title: $0.title) }, width: 190)
+                    Spacer()
+                }
             }
         }
     }
-    
+
     private func chooseDiskWriterFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -1127,31 +1227,29 @@ public struct PreferencesView: View {
     }
     
     private var visPluginSection: some View {
-        Win32GroupBox("Visualization plug-ins") {
-            VStack(alignment: .leading, spacing: 8) {
-                let goom = setting(\.goomPluginSelected)
-                let avs = setting(\.avsPluginSelected)
-                PluginListBox(rows: ["MacAmp Retro Visualizer Studio \(AppConstants.App.version) [vis_studio]", "What A Goom! v1.99.4",
-                                     "\(AVSView.productName) [vis_avs]"],
-                              selection: Binding(get: { avs.wrappedValue ? 2 : goom.wrappedValue ? 1 : 0 },
-                                                 set: { goom.wrappedValue = $0 == 1; avs.wrappedValue = $0 == 2 }))
-                HStack(spacing: 6) {
-                    Win32Button("Start", width: 70) {
-                        PlayerCoordinator.shared.startVisualizerStudio()
-                    }
-                    Win32Button("Stop", width: 70) {
+        let goom = setting(\.goomPluginSelected)
+        let avs = setting(\.avsPluginSelected)
+        let rows = Self.visPlugins
+        let current = avs.wrappedValue ? 2 : goom.wrappedValue ? 1 : 0
+        return Win32GroupBox("Visualization plug-ins") {
+            VStack(alignment: .leading, spacing: 4) {
+                PluginListBox(rows: rows, selection: Binding(get: { current }, set: { goom.wrappedValue = $0 == 1; avs.wrappedValue = $0 == 2 }), height: nil)
+                pluginButtons {
+                    Win32Button("Start") { PlayerCoordinator.shared.startVisualizerStudio() }
+                    Win32Button("Stop") {
                         if PlayerCoordinator.shared.visualizerStudioWindow?.isVisible == true { PlayerCoordinator.shared.toggleVisualizerStudio() }
                     }
-                    Win32Button("Configure", width: 80) { PlayerCoordinator.shared.handleConfigureVisPlugin() }
+                    Win32Button("Configure") { Self.configureVisPlugin(viewModel: viewModel) }
                 }
             }
+            .frame(height: Self.fullPageHeight)
         }
     }
 
     /// Modern, so it sits in its own group at the bottom of the page (not in Winamp 2.95)
     private var milkdropSection: some View {
         Win32GroupBox("Milkdrop (modern)") {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text("In every Studio mode: right-click for presets, , / . previous / next preset, Space the next mode, F or ⌥Return full screen, Esc close. MilkDrop lists its presets by folder, with Find Preset. Get presets: projectM's Cream of the Crop (9,795 presets); open it with MacAmp to install.")
                     .font(.system(size: 11)).foregroundColor(Win32Colors.text)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1178,7 +1276,7 @@ public struct PreferencesView: View {
     /// AVS 2.6.1 Settings ▸ Presets/Hotkeys, and the presets folder (Winamp's Plugins\avs)
     private var avsSection: some View {
         Win32GroupBox("Advanced Visualization Studio") {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Win32Checkbox("Randomly switch presets every", isOn: setting(\.avsRandomSwitch))
                     Win32NumberField(value: setting(\.avsRandomSeconds))
@@ -1202,7 +1300,7 @@ public struct PreferencesView: View {
 
     private var goomSection: some View {
         Win32GroupBox("What A Goom!") {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 goomResolution("Width", setting(\.goomOptions.width), range: GoomOptions.widths)
                 goomResolution("Height", setting(\.goomOptions.height), range: GoomOptions.heights)
                 Win32Checkbox("CinemaScope", isOn: setting(\.goomOptions.cinemascope))
@@ -1237,34 +1335,39 @@ public struct PreferencesView: View {
     }
     
     private var dspPluginSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Win32GroupBox("DSP/Effect plug-in") {
-                PluginListBox(rows: ["(none)", "MacAmp DSP Effects \(AppConstants.App.version) [dsp_effects]"],
-                              selection: Binding(get: { viewModel.isDspEnabled ? 1 : 0 }, set: { viewModel.isDspEnabled = $0 == 1 }))
+        let rows = ["(none)", "MacAmp DSP Effects \(AppConstants.App.version) [dsp_effects]"]
+        return Win32GroupBox("DSP/Effect plug-in") {
+            VStack(alignment: .leading, spacing: 4) {
+                PluginListBox(rows: rows, selection: Binding(get: { viewModel.isDspEnabled ? 1 : 0 }, set: { viewModel.isDspEnabled = $0 == 1 }), height: nil)
+                pluginButtons {
+                    Win32Button("Configure") { showConfigure(.dsp, title: rows[1] + " configuration") }.disabled(!viewModel.isDspEnabled)
+                }
             }
-            if viewModel.isDspEnabled { dspSection }
+            .frame(height: Self.fullPageHeight)
         }
     }
-    
+
     private var generalSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Win32GroupBox("General purpose plug-ins (loaded at startup)") {
-                PluginListBox(rows: ["MacAmp Global Hotkeys \(AppConstants.App.version) [gen_hotkeys]",
-                                     "MacAmp Album Art \(AppConstants.App.version) [gen_albumart]",
-                                     "MacAmp Last.fm Scrobbler \(AppConstants.App.version) [gen_audioscrobbler]"], selection: $generalPlugin)
+        let rows = ["MacAmp Global Hotkeys \(AppConstants.App.version) [gen_hotkeys]",
+                    "MacAmp Album Art \(AppConstants.App.version) [gen_albumart]",
+                    "MacAmp Last.fm Scrobbler \(AppConstants.App.version) [gen_audioscrobbler]"]
+        return Win32GroupBox("General purpose plug-ins (loaded at startup)") {
+            VStack(alignment: .leading, spacing: 4) {
+                PluginListBox(rows: rows, selection: $generalPlugin, height: nil)
+                pluginButtons {
+                    Win32Button("Configure") {
+                        showConfigure([.hotkeys, .albumArt, .lastFM][min(generalPlugin, 2)], title: rows[min(generalPlugin, 2)] + " configuration")
+                    }
+                }
             }
-            switch generalPlugin {
-            case 0: hotkeysSection
-            case 1: albumArtSection
-            default: LastFMPrefsGroup()
-            }
+            .frame(height: Self.fullPageHeight)
         }
     }
-    
+
     /// Album Art: off by default; on, it adds "Album Art" to the main menu
     private var albumArtSection: some View {
         Win32GroupBox("Album Art") {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 Win32Checkbox("Enable Album Art (adds Album Art to the main menu)", isOn: Binding(
                     get: { PersistenceManager.shared.state.albumArtEnabled },
                     set: { enabled in
@@ -1278,14 +1381,14 @@ public struct PreferencesView: View {
 
     // MARK: - Section: Audio Output Devices
     private var outputSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             Win32GroupBox("Audio Output Device") {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text("Select where MacAmp routes sound (Bluetooth, HDMI, USB DAC, or Built-in):")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                     
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
                         // System Default option
                         let isDefaultSelected = (viewModel.selectedAudioOutputDeviceUID == nil)
                         let defaultName = AudioDeviceManager.shared.defaultDevice?.name ?? "Internal Speakers"
@@ -1361,14 +1464,14 @@ public struct PreferencesView: View {
     
     // MARK: - Section: DSP Effects
     private var dspSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Spacer()
                 Win32Button("Reset effects", width: 110, height: 21) { viewModel.resetDSP() }
             }
             
             Win32GroupBox("Pitch & Speed (TimePitch)") {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
                     // Pitch Shift
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
@@ -1403,7 +1506,7 @@ public struct PreferencesView: View {
             }
             
             Win32GroupBox("Reverb & Spatial Acoustics") {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
                     // Reverb Mix
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
@@ -1448,17 +1551,23 @@ public struct PreferencesView: View {
     
     // MARK: - Section 6: Skins
     // MARK: - Skins (docs/UI-screens/pref-skins.png)
+    /// Inside a group box that fills the page (Input plug-ins, Skins), as in 2.95: the list takes what the rest leaves,
+    /// only it scrolls, and both pages end level with the tree
+    private static let fullPageHeight: CGFloat = 358
+
     private var skinsSection: some View {
         Win32GroupBox("Skins") {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         skinRow(AppConstants.Skins.baseTitle, url: nil)
                         if let hd = SkinManager.shared.baseHDSkinURL { skinRow(AppConstants.Skins.baseHDTitle, url: hd) }
                         ForEach(viewModel.installedSkins, id: \.self) { url in skinRow(SkinManager.listName(for: url), url: url) }
                     }
+                    .padding(2) // the same inset as the plug-in lists
+                    .overlayScrollers()
                 }
-                .frame(height: 150)
+                .frame(maxHeight: .infinity)
                 .background(Color.white)
                 .win32Sunken()
                 ScrollView {
@@ -1468,6 +1577,7 @@ public struct PreferencesView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(3)
                         .textSelection(.enabled)
+                        .overlayScrollers()
                 }
                 .frame(height: 64)
                 .background(Win32Colors.dialogBg)
@@ -1484,6 +1594,7 @@ public struct PreferencesView: View {
                         .font(.system(size: 11))
                 }
             }
+            .frame(height: Self.fullPageHeight)
         }
         .task(id: viewModel.selectedSkinURL) {
             let url = viewModel.selectedSkinURL
@@ -1493,15 +1604,18 @@ public struct PreferencesView: View {
 
     private func skinRow(_ title: String, url: URL?) -> some View {
         let selected = viewModel.selectedSkinURL?.path == url?.path
-        return Text(title)
-            .font(.system(size: 11))
-            .foregroundColor(selected ? .white : Win32Colors.text)
-            .lineLimit(1)
-            .padding(.horizontal, 3)
-            .frame(maxWidth: .infinity, minHeight: 15, alignment: .leading)
-            .background(selected ? Win32Colors.selectionHighlight : Color.clear)
-            .contentShape(Rectangle())
-            .onTapGesture { viewModel.selectSkin(url: url) }
+        // A button, as PluginListBox's rows: it takes the first click on an inactive Preferences
+        return Button { viewModel.selectSkin(url: url) } label: {
+            Text(title)
+                .font(.system(size: 11))
+                .foregroundColor(selected ? .white : Win32Colors.text)
+                .lineLimit(1)
+                .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity, minHeight: 15, alignment: .leading)
+                .background(selected ? Win32Colors.selectionHighlight : Color.clear)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -1530,6 +1644,7 @@ private struct BookmarksSection: View {
                         }
                     }
                     .padding(2)
+                    .overlayScrollers()
                 }
                 .frame(maxWidth: .infinity, minHeight: 260, maxHeight: 260)
                 .background(Color.white)
@@ -1554,7 +1669,7 @@ private struct BookmarksSection: View {
             .foregroundColor(isOn ? .white : Win32Colors.text)
             .padding(.horizontal, 4)
             .frame(maxWidth: .infinity, minHeight: 15, alignment: .leading)
-            .background(isOn ? Win32Colors.selectionBlue : Color.clear)
+            .background(isOn ? Win32Colors.selectionHighlight : Color.clear)
             .contentShape(Rectangle())
             .help(bookmark.url.isFileURL ? bookmark.url.path : bookmark.url.absoluteString)
             .onTapGesture(count: 2) { PlayerCoordinator.shared.openBookmarks([bookmark], enqueue: false) }
@@ -1593,7 +1708,7 @@ private struct FileTypesSection: View {
     var body: some View {
         Win32GroupBox("File type setup") {
             HStack(alignment: .top, spacing: 8) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 5) {
                     Win32GroupBox("Associated extensions") {
                         HStack(alignment: .top, spacing: 6) {
                             extensionList
@@ -1610,7 +1725,7 @@ private struct FileTypesSection: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 5) {
                     iconBox("File icon", kind: .audio)
                     iconBox("Playlist icon", kind: .playlist)
                     if let error = icons.lastError {
@@ -1655,7 +1770,7 @@ private struct FileTypesSection: View {
                             .foregroundColor(isOn ? .white : Win32Colors.text)
                             .padding(.horizontal, 4)
                             .frame(maxWidth: .infinity, minHeight: 15, alignment: .leading)
-                            .background(isOn ? Win32Colors.selectionBlue : Color.clear)
+                            .background(isOn ? Win32Colors.selectionHighlight : Color.clear)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -1663,6 +1778,7 @@ private struct FileTypesSection: View {
                 }
             }
             .padding(2)
+            .overlayScrollers()
         }
         // Tall enough for every extension (15 pt rows + padding), so the list doesn't scroll
         .frame(width: 84, height: CGFloat(manager.entries.count) * 15 + 6)
@@ -1717,7 +1833,7 @@ private struct AgentSection: View {
 
     var body: some View {
         Win32GroupBox("Agent") {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 Win32Checkbox("Open MacAmp at login", isOn: Binding(
                     get: { openAtLogin },
                     set: { newValue in
@@ -1755,30 +1871,64 @@ private struct AgentSection: View {
 private struct PluginListBox: View {
     let rows: [String]
     @Binding var selection: Int
-    /// The box's own height (a frame from outside would squeeze it and let the rows spill over the group title)
-    var height: CGFloat = 120
+    /// The box's own height (a frame from outside would squeeze it and let the rows spill over the group title);
+    /// nil: what a fixed-height page leaves it
+    var height: CGFloat? = 120
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(rows.indices, id: \.self) { index in
                     let isOn = index == selection
-                    Text(rows[index])
-                        .font(.system(size: 11))
-                        .lineLimit(1)
-                        .foregroundColor(isOn ? .white : Win32Colors.text)
-                        .padding(.horizontal, 4)
-                        .frame(maxWidth: .infinity, minHeight: 15, alignment: .leading)
-                        .background(isOn ? Win32Colors.selectionBlue : Color.clear)
-                        .contentShape(Rectangle())
-                        .onTapGesture { selection = index }
+                    // A button, as the tree's rows: a tap gesture lost the first click while Preferences wasn't the
+                    // active window (after a click on the player or a closed About / Configure)
+                    Button { selection = index } label: {
+                        Text(rows[index])
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                            .foregroundColor(isOn ? .white : Win32Colors.text)
+                            .padding(.horizontal, 4)
+                            .frame(maxWidth: .infinity, minHeight: 15, alignment: .leading)
+                            .background(isOn ? Win32Colors.selectionHighlight : Color.clear)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(2)
+            .overlayScrollers()
         }
         .frame(height: height)
+        .frame(maxHeight: height == nil ? .infinity : nil)
         .background(Color.white)
         .win32Sunken()
+    }
+}
+
+/// A plug-in's About: the text, OK below, on the dialog grey. One size for every plug-in.
+private struct PluginAboutView: View {
+    let name: String
+    let text: String
+    let close: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(name)
+                Text(text).fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.system(size: 11))
+            .foregroundColor(Win32Colors.text)
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            HStack {
+                Spacer()
+                Win32Button("OK", isDefault: true, action: close)
+            }
+            .padding(10)
+        }
+        .frame(width: 360, height: 200)
+        .background(Win32Colors.dialogBg)
     }
 }
 
@@ -1790,9 +1940,9 @@ private struct SetupSection: View {
 
     var body: some View {
         Win32GroupBox("MacAmp setup") {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
                 Win32GroupBox("Internet settings") {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Win32RadioButton("Use the system Internet connection", isSelected: !offline) { setOffline(false) }
                         Win32RadioButton("No Internet connection available", isSelected: offline) { setOffline(true) }
                         Win32GroupBox("HTTP proxy: 'Server:Port' (blank for none)") {
@@ -1880,7 +2030,7 @@ struct SubsonicPrefsGroup: View {
 
     var body: some View {
         Win32GroupBox("Subsonic server (Navidrome, Gonic, Airsonic...)") {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 field("Server:", Win32TextField("http://localhost:4533", text: $server))
                     .onChange(of: server) { _, text in
                         // A pasted login link: user and password go to their boxes, the address keeps the server only
@@ -1962,7 +2112,7 @@ struct LastFMPrefsGroup: View {
 
     var body: some View {
         Win32GroupBox("Last.fm Scrobbler") {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 Win32Checkbox("Enable scrobbling to Last.fm", isOn: Binding(
                     get: { scrobbler.isEnabled }, set: { scrobbler.setEnabled($0) }))
                 Text(account)

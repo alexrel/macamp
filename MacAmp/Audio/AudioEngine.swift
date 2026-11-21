@@ -391,6 +391,7 @@ public class AudioEngine {
     private func rewireDSPChain(timePitch: Bool, reverb: Bool) {
         guard timePitch != wiredTimePitch || reverb != wiredReverb else { return }
         let wasRunning = engine.isRunning
+        let resumeAt = status == .playing && !isStreaming && audioFile != nil ? currentTime : nil
         if wasRunning { engine.pause() }
         engine.disconnectNodeOutput(eqNode)
         engine.disconnectNodeOutput(timePitchNode)
@@ -405,6 +406,11 @@ public class AudioEngine {
         wiredTimePitch = timePitch
         wiredReverb = reverb
         if wasRunning { ensureEngineRunning() }
+        // Reconnecting drops what the players had scheduled and leaves them silent: the sound died after the buffered
+        // second though the time kept running (Pitch shift moved off 0 while playing). A file is scheduled again from
+        // where it was; a station's node starts over and plays again once the next 0.75 s have come in.
+        if let resumeAt { seek(to: resumeAt) }
+        if isStreamDecodedInEngine && status == .playing { resetStreamNode() }
     }
     
     /// Applies persisted DSP settings (called once at startup).
@@ -959,7 +965,8 @@ public class AudioEngine {
 
     /// Position of the file player node, in seconds of the file's timeline.
     private func nodePlaybackTime() -> TimeInterval? {
-        guard let nodeTime = playerNode.lastRenderTime,
+        // playerTime(forNodeTime:) throws on a render time with neither clock valid (the engine has not rendered yet)
+        guard let nodeTime = playerNode.lastRenderTime, nodeTime.isSampleTimeValid || nodeTime.isHostTimeValid,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime),
               playerTime.sampleRate > 0 else {
             return nil

@@ -216,7 +216,6 @@ extension PlayerCoordinator {
         persistence.state.interfaceScale = scale
         setScale(persistence.state.scaleFactor)
         visualizerStudioWindow?.updateInterfaceScale()
-        NSApp.windows.forEach { $0.updateDialogScale(scale.multiplier) }
     }
     
     // MARK: - Window Masking & Transparency

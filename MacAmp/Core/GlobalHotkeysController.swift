@@ -50,8 +50,8 @@ public final class GlobalHotkeysController: ObservableObject {
             key("Previous Track", "←", kVK_LeftArrow) { coord().handlePrev() },
             key("Next Track", "B", kVK_ANSI_B) { coord().handleNext() },
             key("Next Track", "→", kVK_RightArrow) { coord().handleNext() },
-            key("Volume Up", "↑", kVK_UpArrow) { coord().increaseVolume(by: 0.05) },
-            key("Volume Down", "↓", kVK_DownArrow) { coord().decreaseVolume(by: 0.05) },
+            key("Volume Up", "↑", kVK_UpArrow) { coord().increaseVolume() },
+            key("Volume Down", "↓", kVK_DownArrow) { coord().decreaseVolume() },
             key("Toggle Mute", "M", kVK_ANSI_M) { coord().toggleMute() }
         ]
     }()

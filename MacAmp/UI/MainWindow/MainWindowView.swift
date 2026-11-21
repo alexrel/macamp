@@ -496,6 +496,41 @@ public class MainWindowView: WinampControlView {
     /// The lightning bolt at the bottom right (MAIN.BMP 253,91 13 × 15): the Library, or About (Library prefs)
     static let lightningBolt = NSRect(x: 253, y: 91, width: 13, height: 15)
 
+    /// The wheel over the main window, as winamp.exe 2.95 does it (WM_MOUSEWHEEL at 0x41dc5f): a notch sends Volume up /
+    /// down twice, 4 of 255 each; a fast turn gives several notches at once, so it speeds up; with the middle button held
+    /// a notch seeks 5 seconds instead. Wheel away is louder / forward whatever the Mac's scroll direction.
+    public override func scrollWheel(with event: NSEvent) {
+        let away = event.isDirectionInvertedFromDevice ? -event.scrollingDeltaY : event.scrollingDeltaY
+        let notches: Int
+        if event.hasPreciseScrollingDeltas {
+            // A trackpad's small deltas add up to notches
+            if event.phase.contains(.began) { pendingVolumeNotches = 0 }
+            pendingVolumeNotches += away / Self.pointsPerNotch
+            notches = Int(pendingVolumeNotches)
+            pendingVolumeNotches -= CGFloat(notches)
+        } else {
+            // A mouse wheel: macOS reports a slow notch as ~0.1 line and a fast turn as several lines, Windows as
+            // one 120 and several; a notch is never lost
+            notches = away == 0 ? 0 : (away > 0 ? 1 : -1) * max(1, Int(abs(away).rounded()))
+        }
+        let coordinator = PlayerCoordinator.shared
+        for _ in 0..<abs(notches) {
+            if NSEvent.pressedMouseButtons & Self.middleButton != 0 {
+                if notches > 0 { coordinator.handleForward5Seconds() } else { coordinator.handleBack5Seconds() }
+            } else if notches > 0 {
+                coordinator.increaseVolume(by: Self.volumePerNotch)
+            } else {
+                coordinator.decreaseVolume(by: Self.volumePerNotch)
+            }
+        }
+    }
+    private var pendingVolumeNotches: CGFloat = 0
+    /// Trackpad points that make one wheel notch
+    private static let pointsPerNotch: CGFloat = 12
+    /// A notch sends Volume up / down twice
+    static let volumePerNotch = 2 * AppConstants.Audio.volumeStep
+    private static let middleButton = 1 << 2
+
     public override func mouseDown(with event: NSEvent) {
         if !isShadeMode, MainWindowView.lightningBolt.contains(convert(event.locationInWindow, from: nil)) {
             PlayerCoordinator.shared.handleLightningBolt()

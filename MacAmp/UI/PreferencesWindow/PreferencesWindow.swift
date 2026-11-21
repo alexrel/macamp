@@ -3,6 +3,46 @@ import SwiftUI
 
 public class PreferencesWindow: NSWindow {
     public static var sharedController: PreferencesWindowController?
+
+    /// A plug-in's Configure / About window: Preferences waits for it, as a Win32 owner waits for its dialog.
+    /// A click or a key on Preferences brings it back instead (one such window at a time, never a pile of them).
+    private(set) var pluginDialog: NSWindow?
+
+    override public func sendEvent(_ event: NSEvent) {
+        if let dialog = pluginDialog, dialog.isVisible,
+           [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown].contains(event.type) {
+            NSSound.beep()
+            dialog.makeKeyAndOrderFront(nil)
+            return
+        }
+        super.sendEvent(event)
+    }
+
+    /// Opens `content` as the plug-in dialog `title`, beside Preferences (over it when the screen has no room)
+    func showPluginDialog<Content: View>(title: String, _ content: Content) {
+        pluginDialog?.close()
+        let dialog = PluginDialogWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        dialog.title = title
+        dialog.isReleasedWhenClosed = false
+        dialog.installScaledDialog(content)
+        dialog.level = level
+        let visible = (screen ?? NSScreen.main)?.visibleFrame ?? frame
+        var origin = NSPoint(x: frame.maxX + 4, y: frame.maxY - dialog.frame.height)
+        if origin.x + dialog.frame.width > visible.maxX { origin = NSPoint(x: frame.midX - dialog.frame.width / 2, y: frame.midY - dialog.frame.height / 2) }
+        dialog.setFrameOrigin(origin)
+        addChildWindow(dialog, ordered: .above) // moves and hides with Preferences
+        pluginDialog = dialog
+        dialog.onClose = { [weak self, weak dialog] in
+            guard let self, let dialog, self.pluginDialog === dialog else { return }
+            self.removeChildWindow(dialog)
+            self.pluginDialog = nil
+            self.makeKeyAndOrderFront(nil)
+        }
+        dialog.makeKeyAndOrderFront(nil)
+    }
+
+    func closePluginDialog() { pluginDialog?.close() }
+
     
     /// ⌃P / ⌘,: the window as it was, or the Setup page the first time.
     public static func show() {
@@ -43,7 +83,7 @@ public class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         vm.selectedTreeItem = initialTreeItem
         self.viewModel = vm
         
-        let window = NSWindow(
+        let window = PreferencesWindow(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 440),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
@@ -73,6 +113,8 @@ public class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     }
     
     public var selectedTreeItem: PrefTreeItem { viewModel.selectedTreeItem }
+
+    public func configureVisPlugin() { PreferencesView.configureVisPlugin(viewModel: viewModel) }
     
     public func selectTreeItem(_ item: PrefTreeItem) {
         viewModel.selectedTreeItem = item
@@ -81,5 +123,16 @@ public class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     
     public func windowWillClose(_ notification: Notification) {
         PreferencesWindow.sharedController = nil
+    }
+}
+
+/// Esc closes it, as Cancel / Close in a Win32 dialog
+private final class PluginDialogWindow: NSWindow {
+    var onClose: (() -> Void)?
+    override func cancelOperation(_ sender: Any?) { close() }
+    override func close() {
+        super.close()
+        onClose?()
+        onClose = nil
     }
 }

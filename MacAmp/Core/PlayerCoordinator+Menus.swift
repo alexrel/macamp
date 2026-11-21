@@ -461,6 +461,7 @@ extension PlayerCoordinator {
         // AVS: the Winamp AVS Editor, on a running AVS window as in 2.95
         guard persistence.state.avsPluginSelected else {
             PreferencesWindow.show(treeItem: .visPlugin)
+            PreferencesWindow.sharedController?.configureVisPlugin()
             return
         }
         if visualizerStudioWindow?.isVisible != true { startVisualizerStudio() }
@@ -566,7 +567,7 @@ extension PlayerCoordinator {
     }
     
     
-    @objc public func increaseVolume(by delta: Double = 0.05) {
+    @objc public func increaseVolume(by delta: Double = AppConstants.Audio.volumeStep) {
         let newVol = min(1.0, audioEngine.volume + delta)
         audioEngine.setVolume(newVol)
         mainView.volumeSlider.value = newVol
@@ -575,7 +576,7 @@ extension PlayerCoordinator {
         mainView.needsDisplay = true
     }
     
-    @objc public func decreaseVolume(by delta: Double = 0.05) {
+    @objc public func decreaseVolume(by delta: Double = AppConstants.Audio.volumeStep) {
         let newVol = max(0.0, audioEngine.volume - delta)
         audioEngine.setVolume(newVol)
         mainView.volumeSlider.value = newVol

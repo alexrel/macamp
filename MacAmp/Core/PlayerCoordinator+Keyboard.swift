@@ -29,10 +29,10 @@ extension PlayerCoordinator {
             }
             return true
         case AppConstants.KeyCodes.upArrow: // Volume up 5%
-            increaseVolume(by: 0.05)
+            increaseVolume()
             return true
         case AppConstants.KeyCodes.downArrow: // Volume down 5%
-            decreaseVolume(by: 0.05)
+            decreaseVolume()
             return true
         case AppConstants.KeyCodes.returnKey: // Play selected or current track
             if let cur = playlist.currentTrack ?? playlist.tracks.first {
@@ -147,8 +147,8 @@ extension PlayerCoordinator {
             case (K.keypad3, []): handleTenTracksForward()
             case (K.keypad7, []): handleBack5Seconds()
             case (K.keypad9, []): handleForward5Seconds()
-            case (K.keypad8, []): increaseVolume(by: 0.05)
-            case (K.keypad2, []): decreaseVolume(by: 0.05)
+            case (K.keypad8, []): increaseVolume()
+            case (K.keypad2, []): decreaseVolume()
             case (K.keypad0, []): openFileDialog()
             case (K.keypad0, [.control]): openURLDialog()
             case (K.keypadDecimal, []): showJumpToFileWindow()

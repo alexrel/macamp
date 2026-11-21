@@ -19,7 +19,11 @@ extension NSWindow {
         if scaled.logicalSize.width <= 0 || scaled.logicalSize.height <= 0 { scaled.logicalSize = contentRect(forFrameRect: frame).size }
         scaled.frame.size = scaled.logicalSize
         contentView = scaled
-        updateDialogScale(PersistenceManager.shared.state.interfaceScale.multiplier)
+        // Title-bar buttons a dialog can't use are left out, not shown greyed (a fixed size: no zoom)
+        if !styleMask.contains(.miniaturizable) { standardWindowButton(.miniaturizeButton)?.isHidden = true }
+        if !styleMask.contains(.resizable) { standardWindowButton(.zoomButton)?.isHidden = true }
+        // Dialogs keep the system size like Winamp's (Double Size never touched them); macOS scales their text itself
+        updateDialogScale(1)
     }
 
     func updateDialogScale(_ requestedScale: CGFloat) {

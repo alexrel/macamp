@@ -192,7 +192,7 @@ private struct JumpTrackRowView: View {
         }
         .padding(.horizontal, 6)
         .frame(height: 19)
-        .background(isSelected ? Win32Colors.selectionBlue : Color.clear)
+        .background(isSelected ? Win32Colors.selectionHighlight : Color.clear)
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
             onDoubleClick()

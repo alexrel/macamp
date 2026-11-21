@@ -323,6 +323,30 @@ func audioTests() {
         assertTrue(engine.fadeGain <= 0.0001, "With 0 ms fade the pause is immediate")
     }
 
+    testGroup("DSP: moving Pitch shift keeps the sound playing") {
+        let engine = AudioEngine.shared
+        defer { engine.stop(); engine.setDspEnabled(false); engine.resetDSP(); engine.onVisualizerFrame = nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/dsp-live.wav")
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try writeTestTone(to: url, seconds: 8)
+        engine.isAnalysisEnabled = true
+        engine.setDspEnabled(true)
+        _ = try loadSync(engine, url)
+        engine.play()
+        var spectrum: [Float] = [], waveform: [Float] = []
+        var loudest: Float = 0
+        engine.onVisualizerFrame = { frame in frame.read(spectrum: &spectrum, waveform: &waveform); loudest = max(loudest, waveform.map(abs).max() ?? 0) }
+        @MainActor func heard() -> Float { loudest = 0; _ = spinRunLoop(until: { false }, timeout: 0.4); return loudest }
+        assertTrue(heard() > 0.01, "Playing: the tone reaches the output")
+        for semitones in [2.0, 3.0, 0.0, -1.0] {
+            engine.setPitchSemitones(semitones) // 0 → ±: TimePitch wired into the chain while playing, and out again
+            assertTrue(heard() > 0.01, "Still heard after Pitch shift \(semitones)")
+        }
+        engine.setReverbMix(30)
+        assertTrue(heard() > 0.01, "Still heard after Reverb comes in")
+        assertTrue(engine.currentTime > 2, "Playing on from where it was, not from the start (\(engine.currentTime))")
+    }
+
     // 17. Resource usage gating (§1)
     testGroup("CPU Gating: Visualizer Tap, Marquee Timer, Analyzer") {
         let engine = AudioEngine.shared
@@ -484,6 +508,32 @@ func audioTests() {
         server.stop()
         assertTrue(spinRunLoop(until: { engine.status == .stopped }, timeout: 15), "Engine gives up after the reconnect attempts")
         assertTrue(events.contains("Stream lost"), "User sees 'Stream lost' (events: \(events))")
+    }
+
+    testGroup("DSP: changing effects keeps internet radio playing") {
+        let engine = AudioEngine.shared
+        let adts = try makeTestADTS(seconds: 20)
+        let server = try TestRadioServer(audio: adts, metaInt: 4096, title: "DSP - Live")
+        var level: Float = 0
+        engine.isAnalysisEnabled = true
+        engine.onVisualizerFrame = { frame in
+            var s = [Float](repeating: 0, count: 19), w = [Float](repeating: 0, count: 76)
+            frame.read(spectrum: &s, waveform: &w)
+            level = max(level, w.map(abs).max() ?? 0)
+        }
+        defer { engine.stop(); server.stop(); engine.onVisualizerFrame = nil; engine.setDspEnabled(false); engine.resetDSP() }
+        engine.setDspEnabled(true)
+        _ = try loadSync(engine, URL(string: "http://127.0.0.1:\(server.port)/stream")!)
+        engine.play()
+        assertTrue(spinRunLoop(until: { level > 0.0001 }, timeout: 5), "The station plays")
+        @MainActor func heard() -> Bool { level = 0; return spinRunLoop(until: { level > 0.0001 }, timeout: 3) }
+        engine.setPitchSemitones(2) // TimePitch wired in while the station plays
+        _ = spinRunLoop(until: { false }, timeout: 1.2) // past what was queued before
+        assertTrue(heard(), "Still heard after Pitch shift moves off 0")
+        engine.setDspEnabled(false) // and wired out again
+        _ = spinRunLoop(until: { false }, timeout: 1.2)
+        assertTrue(heard(), "Still heard after DSP is switched off")
+        assertEqual(engine.status, .playing, "Still playing, no Stop / Play needed")
     }
 
     testGroup("Internet Radio over HLS (playlists, MPEG-TS, packed AAC) through the engine") {

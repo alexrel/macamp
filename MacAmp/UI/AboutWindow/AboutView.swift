@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 public enum AboutTab: String, CaseIterable, Identifiable {
-    case winamp = "Winamp"
+    case winamp = "MacAmp"
     case credits = "Credits"
     case shortcuts = "Keyboard shortcuts"
     case history = "Version history"

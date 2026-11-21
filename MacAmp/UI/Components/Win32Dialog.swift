@@ -112,7 +112,7 @@ public enum Win32Dialog {
                                     .truncationMode(.middle)
                                     .padding(.horizontal, 6)
                                     .frame(maxWidth: .infinity, minHeight: 17, alignment: .leading)
-                                    .background(isSelected ? Win32Colors.selectionBlue : Color.clear)
+                                    .background(isSelected ? Win32Colors.selectionHighlight : Color.clear)
                                     .contentShape(Rectangle())
                                     .onTapGesture(count: 2) { model.selected = index; finish(true) }
                                     .onTapGesture { model.selected = index }

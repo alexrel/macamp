@@ -1629,8 +1629,11 @@ public class PlaylistWindowView: WinampControlView {
             pendingScrollRows -= CGFloat(rows)
             if rows != 0 { scroll(to: scrollOffset + rows) }
         } else if event.deltaY != 0 {
+            // A mouse wheel (no precise deltas; a trackpad and Magic Mouse have them) goes the way it turns, as in Windows:
+            // away is up the list even with macOS natural scrolling, which the trackpad above keeps
+            let away = event.isDirectionInvertedFromDevice ? -event.deltaY : event.deltaY
             pendingScrollRows = 0
-            scroll(to: scrollOffset + (event.deltaY > 0 ? -1 : 1))
+            scroll(to: scrollOffset + (away > 0 ? -1 : 1))
         }
     }
     

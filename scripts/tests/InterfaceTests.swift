@@ -462,6 +462,190 @@ func interfaceTests() {
         PersistenceManager.shared.state.skinsDirectoryPath = previous
     }
 
+    testGroup("Mouse wheel over the main window: volume (2.95)") {
+        let c = PlayerCoordinator.shared
+        if c.mainView == nil { c.start() }
+        let before = c.audioEngine.volume
+        defer { c.audioEngine.setVolume(before); c.mainView.volumeSlider.value = before }
+        c.audioEngine.setVolume(0.5)
+        @MainActor func wheel(_ lines: Double) {
+            let cg = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: lines > 0 ? 1 : -1, wheel2: 0, wheel3: 0)!
+            cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: lines) // a slow notch: a fraction of a line
+            c.mainView.scrollWheel(with: NSEvent(cgEvent: cg)!)
+        }
+        let notch = MainWindowView.volumePerNotch
+        assertTrue(abs(notch - 8.0 / 255) < 1e-9, "A notch: Volume up twice, 4 of 255 each (winamp.exe)")
+        c.increaseVolume()
+        assertTrue(abs(c.audioEngine.volume - (0.5 + 4.0 / 255)) < 0.001, "↑ / keypad 8 / hotkey: 4 of 255, as Winamp's Volume up")
+        c.audioEngine.setVolume(0.5)
+        wheel(1); wheel(1)
+        assertTrue(abs(c.audioEngine.volume - (0.5 + 2 * notch)) < 0.001, "Two notches away: two notches louder (\(c.audioEngine.volume))")
+        assertTrue(abs(c.mainView.volumeSlider.value - c.audioEngine.volume) < 0.001, "The volume slider follows")
+        wheel(-0.1)
+        assertTrue(abs(c.audioEngine.volume - (0.5 + notch)) < 0.001, "A slow notch back: a notch at once, not after ten (\(c.audioEngine.volume))")
+        wheel(3)
+        assertTrue(abs(c.audioEngine.volume - (0.5 + 4 * notch)) < 0.001, "A fast turn (3 lines): three notches, as Winamp speeds up (\(c.audioEngine.volume))")
+    }
+
+    testGroup("Preferences scroll bars: shown only while scrolling, with a mouse too") {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 120, height: 100), styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = NSHostingView(rootView: ScrollView { Text("long").frame(height: 500).overlayScrollers() }.frame(width: 120, height: 100))
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        _ = spinRunLoop(until: { false }, timeout: 0.3)
+        func scrollViews(_ view: NSView) -> [NSScrollView] { (view as? NSScrollView).map { [$0] } ?? [] + view.subviews.flatMap(scrollViews) }
+        let scroll = window.contentView.flatMap { scrollViews($0).first }
+        assertEqual(scroll?.scrollerStyle, .overlay, "Overlay bars, as with a trackpad")
+        scroll?.scrollerStyle = .legacy // what macOS sets when a mouse is connected
+        NotificationCenter.default.post(name: NSScroller.preferredScrollerStyleDidChangeNotification, object: nil)
+        _ = spinRunLoop(until: { scroll?.scrollerStyle == .overlay }, timeout: 1)
+        assertEqual(scroll?.scrollerStyle, .overlay, "Back to overlay bars after macOS switches the style")
+    }
+
+    testGroup("Skin windows redraw at a new screen scale (HD lines don't ripple)") {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 275, height: 116), styleMask: [.borderless], backing: .buffered, defer: false)
+        let view = WinampControlView(frame: NSRect(x: 0, y: 0, width: 275, height: 116))
+        window.contentView = view
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        window.display()
+        assertEqual(view.layerContentsRedrawPolicy, .duringViewResize, "A new size is drawn, not the old picture stretched")
+        view.layer?.contentsScale = 1 // drawn before the window reached a Retina screen
+        view.viewDidChangeBackingProperties()
+        assertTrue(view.layer?.needsDisplay() == true, "Drawn again at the new scale")
+        assertEqual(view.layer?.contentsScale, window.backingScaleFactor, "At the screen's scale")
+    }
+
+    testGroup("Tiled skin bars: the last tile is cut, not squeezed") {
+        // A 4 × 1 tile of four colours drawn over 6 px: the 2 px left over show its first two columns
+        let colors: [UInt32] = [0xFF0000FF, 0xFF00FF00, 0xFFFF0000, 0xFFFFFFFF] // R, G, B, W (RGBA little-endian)
+        var tilePixels = colors
+        let space = CGColorSpaceCreateDeviceRGB()
+        let info = CGImageAlphaInfo.premultipliedLast.rawValue
+        let tile = tilePixels.withUnsafeMutableBytes {
+            CGContext(data: $0.baseAddress, width: 4, height: 1, bitsPerComponent: 8, bytesPerRow: 16, space: space, bitmapInfo: info)!.makeImage()!
+        }
+        var out = [UInt32](repeating: 0, count: 6)
+        out.withUnsafeMutableBytes {
+            let ctx = CGContext(data: $0.baseAddress, width: 6, height: 1, bitsPerComponent: 8, bytesPerRow: 24, space: space, bitmapInfo: info)!
+            ctx.interpolationQuality = .none
+            ctx.drawTiledHorizontal(image: tile, from: 0, to: 6, y: 0, width: 4, height: 1)
+        }
+        assertEqual(Array(out[4...5]), Array(colors[0...1]), "Left over: the tile's first columns")
+        var column = [UInt32](repeating: 0, count: 6)
+        let tall = tilePixels.withUnsafeMutableBytes { // the same colours as a 1 × 4 tile, top to bottom
+            CGContext(data: $0.baseAddress, width: 1, height: 4, bitsPerComponent: 8, bytesPerRow: 4, space: space, bitmapInfo: info)!.makeImage()!
+        }
+        column.withUnsafeMutableBytes {
+            let ctx = CGContext(data: $0.baseAddress, width: 1, height: 6, bitsPerComponent: 8, bytesPerRow: 4, space: space, bitmapInfo: info)!
+            ctx.interpolationQuality = .none
+            ctx.translateBy(x: 0, y: 6); ctx.scaleBy(x: 1, y: -1) // flipped, as the skin views are
+            ctx.drawTiledVertical(image: tall, x: 0, from: 0, to: 6, width: 1, height: 4)
+        }
+        assertEqual(Array(column[4...5]), Array(colors[0...1]), "Down the side too: the tile's top rows")
+
+        // An HD sprite drawn smaller than its pixels is averaged (nearest pixel rippled at 150%); a classic one drawn
+        // larger keeps its sharp pixels
+        @MainActor func draw(_ pixels: [UInt32], into width: Int) -> [UInt32] {
+            var src = pixels
+            let image = src.withUnsafeMutableBytes {
+                CGContext(data: $0.baseAddress, width: pixels.count, height: 1, bitsPerComponent: 8, bytesPerRow: 4 * pixels.count,
+                          space: space, bitmapInfo: info)!.makeImage()!
+            }
+            var out = [UInt32](repeating: 0, count: width)
+            out.withUnsafeMutableBytes {
+                let ctx = CGContext(data: $0.baseAddress, width: width, height: 1, bitsPerComponent: 8, bytesPerRow: 4 * width, space: space, bitmapInfo: info)!
+                ctx.interpolationQuality = .none
+                ctx.drawSkinImage(image, in: CGRect(x: 0, y: 0, width: width, height: 1))
+            }
+            return out
+        }
+        let black: UInt32 = 0xFF000000, white: UInt32 = 0xFFFFFFFF
+        let shrunk = draw([black, white, black, white], into: 2)
+        assertTrue(shrunk.allSatisfy { $0 != black && $0 != white }, "4 px into 2: averaged to grey, not every other pixel")
+        assertEqual(draw([colors[0], colors[1]], into: 4), [colors[0], colors[0], colors[1], colors[1]], "Classic 1× sprite: sharp pixels")
+    }
+
+    testGroup("DSP Configure: Reset effects keeps the plug-in on") {
+        let vm = PreferencesViewModel()
+        let saved = vm.isDspEnabled
+        defer { vm.resetDSP(); vm.isDspEnabled = saved }
+        vm.isDspEnabled = true
+        vm.dspPitchSemitones = 3
+        vm.dspReverbMix = 40
+        vm.resetDSP()
+        assertTrue(vm.dspPitchSemitones == 0 && vm.dspReverbMix == 0 && vm.dspPlaybackRate == 1, "Effects back to neutral")
+        assertTrue(vm.isDspEnabled && PersistenceManager.shared.state.isDspEnabled, "The plug-in stays selected (not switched to (none))")
+    }
+
+    testGroup("Preferences ▸ Plug-ins: Configure / About wait like Win32 dialogs") {
+        PreferencesWindow.show(treeItem: .output)
+        defer { PreferencesWindow.sharedController?.close() }
+        guard let prefs = PreferencesWindow.sharedController?.window as? PreferencesWindow else { assertTrue(false, "Preferences opened"); return }
+        let view = PreferencesView(viewModel: PreferencesViewModel(), onClose: nil)
+        prefs.showPluginDialog(title: "About", Text("one"))
+        let first = prefs.pluginDialog
+        prefs.showPluginDialog(title: "Configure", view)
+        let second = prefs.pluginDialog
+        assertTrue(first?.isVisible == false && second?.isVisible == true, "One plug-in window at a time")
+        assertTrue(prefs.childWindows?.contains { $0 === second } == true, "It moves and hides with Preferences")
+        assertTrue(second.map { $0.frame.minX >= prefs.frame.maxX || prefs.frame.contains(NSPoint(x: $0.frame.midX, y: $0.frame.midY)) } ?? false,
+                   "Beside Preferences, or over it")
+        // A click on Preferences doesn't reach it while the plug-in window is open
+        final class Probe: NSView {
+            var clicked = false
+            override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true } // the window needn't be key in a test
+            override func mouseDown(with event: NSEvent) { clicked = true }
+        }
+        let probe = Probe(frame: NSRect(x: 0, y: 0, width: 50, height: 50))
+        prefs.contentView?.addSubview(probe)
+        let click = { NSEvent.mouseEvent(with: .leftMouseDown, location: NSPoint(x: 10, y: 10), modifierFlags: [], timestamp: 0,
+                                         windowNumber: prefs.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)! }
+        prefs.sendEvent(click())
+        assertTrue(!probe.clicked && second?.isVisible == true, "Preferences waits for the plug-in window")
+        second?.close()
+        assertTrue(prefs.pluginDialog == nil && prefs.childWindows?.isEmpty != false, "Closed: Preferences works again")
+        prefs.sendEvent(click())
+        assertTrue(probe.clicked, "Clicks reach Preferences again")
+        probe.removeFromSuperview()
+
+        // A list row takes the first click though Preferences isn't the active window (a tap gesture lost it)
+        if PlayerCoordinator.shared.mainView == nil { PlayerCoordinator.shared.start() }
+        let diskWriter = PersistenceManager.shared.state.diskWriterEnabled
+        defer { PersistenceManager.shared.state.diskWriterEnabled = diskWriter }
+        @MainActor func clickRow(_ row: Int) {
+            let y = prefs.contentView!.frame.height - (41 + 15 * CGFloat(row)) // the list's first row is 41 pt down
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                prefs.sendEvent(NSEvent.mouseEvent(with: type, location: NSPoint(x: 250, y: y), modifierFlags: [],
+                                                   timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: prefs.windowNumber,
+                                                   context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!)
+            }
+            _ = spinRunLoop(until: { false }, timeout: 0.3)
+        }
+        prefs.orderFront(nil)
+        _ = spinRunLoop(until: { false }, timeout: 0.8) // drawn, so SwiftUI has its buttons in place
+        assertTrue(!prefs.isKeyWindow, "Preferences inactive, as after a click on the player")
+        clickRow(1)
+        assertTrue(PersistenceManager.shared.state.diskWriterEnabled, "First click on Disk Writer selects it")
+        clickRow(0)
+        assertTrue(!PersistenceManager.shared.state.diskWriterEnabled, "And Core Audio back")
+    }
+
+    testGroup("Preferences ▸ Skins follows the skins folder while open") {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/skins-watch-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let previous = PersistenceManager.shared.state.skinsDirectoryPath
+        PersistenceManager.shared.state.skinsDirectoryPath = dir.path
+        defer { PersistenceManager.shared.state.skinsDirectoryPath = previous; try? FileManager.default.removeItem(at: dir) }
+        let vm = PreferencesViewModel()
+        assertTrue(vm.installedSkins.isEmpty, "Empty folder, no skins")
+        let skin = dir.appendingPathComponent("Fresh.wsz")
+        try Data("PK".utf8).write(to: skin) // a skin dropped in, downloaded or copied in Finder
+        assertTrue(spinRunLoop(until: { vm.installedSkins.map(\.lastPathComponent) == ["Fresh.wsz"] }, timeout: 2), "A new skin is listed at once")
+        try FileManager.default.removeItem(at: skin) // deleted from the menu or in Finder
+        assertTrue(spinRunLoop(until: { vm.installedSkins.isEmpty }, timeout: 2), "A deleted skin leaves the list at once")
+    }
+
     testGroup("About: Keyboard shortcuts tab") {
         let all = AboutShortcuts.sections.flatMap(\.rows)
         assertEqual(AboutShortcuts.sections.count, 7, "2.95 sections plus Library and Video")

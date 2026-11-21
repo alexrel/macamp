@@ -9,7 +9,8 @@ public enum Win32Colors {
     public static let borderShadow = Color(red: 128/255, green: 128/255, blue: 128/255) // #808080
     public static let borderDark = Color(red: 64/255, green: 64/255, blue: 64/255) // #404040
     public static let selectionBlue = Color(red: 10/255, green: 36/255, blue: 106/255) // #0A246A
-    public static let selectionHighlight = Color(red: 49/255, green: 106/255, blue: 197/255) // #316AC5
+    /// The selected row in every list (tree, plug-ins, skins, dialogs): the accent colour macOS highlights menu items with
+    public static let selectionHighlight = Color(nsColor: .controlAccentColor)
     public static let text = Color.black
     public static let textDisabled = Color(red: 128/255, green: 128/255, blue: 128/255)
 }
@@ -196,9 +197,9 @@ public struct Win32GroupBox<Content: View>: View {
             // GroupBox Content
             // Win32 group boxes leave a clear gap between the caption and the first control
             content
-                .padding(.horizontal, 10)
-                .padding(.top, 22)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 8)
+                .padding(.top, 17)
+                .padding(.bottom, 7)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -842,4 +843,32 @@ public struct Win32Slider: View {
         .frame(height: thumbHeight)
         .opacity(isEnabled ? 1 : 0.6)
     }
+}
+
+// MARK: - Scroll bars that show only while scrolling
+/// With a mouse connected and "Show scroll bars: automatically", macOS keeps every scroll bar on screen; this puts the
+/// enclosing scroll view back to the trackpad's overlay bars, shown only while scrolling. Put it on the content inside
+/// the ScrollView. macOS resets the style when the pointing device changes, so it is set again then.
+private struct OverlayScrollers: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Probe() }
+    func updateNSView(_ nsView: NSView, context: Context) { (nsView as? Probe)?.apply() }
+
+    final class Probe: NSView {
+        private var observer: NSObjectProtocol?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            apply()
+            observer = observer ?? NotificationCenter.default.addObserver(forName: NSScroller.preferredScrollerStyleDidChangeNotification,
+                                                                          object: nil, queue: .main) { [weak self] _ in
+                // After AppKit has set the scroll views to the new style
+                DispatchQueue.main.async { self?.apply() }
+            }
+        }
+        func apply() { enclosingScrollView?.scrollerStyle = .overlay }
+        deinit { observer.map(NotificationCenter.default.removeObserver) }
+    }
+}
+
+public extension View {
+    func overlayScrollers() -> some View { background(OverlayScrollers()) }
 }

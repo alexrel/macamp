@@ -37,7 +37,7 @@ public class AboutWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "About Winamp"
+        window.title = "About MacAmp" // the menu item says MacAmp...; MacAmp is based on Winamp 2.95, not Winamp
         window.isReleasedWhenClosed = false
         window.center()
         

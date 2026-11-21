@@ -185,6 +185,12 @@ func windowTests() {
         }
         lib.orderOut(nil)
         WindowLayoutManager.shared.unregister(id: .library)
+
+        // Dialogs (Preferences, About, Track Info, Jump to…) stay at the system size, like Winamp's under Double Size
+        persistence.state.interfaceScale = .extraLarge
+        let dialog = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.titled], backing: .buffered, defer: false)
+        dialog.installScaledDialog(Color.clear, size: NSSize(width: 320, height: 175))
+        assertEqual(dialog.contentRect(forFrameRect: dialog.frame).size, NSSize(width: 320, height: 175), "Dialog at its own size at 200%")
         persistence.state.interfaceScale = .standard
 
         persistence.state.interfaceScale = .large
