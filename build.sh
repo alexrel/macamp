@@ -21,8 +21,8 @@ BUILD_DIR="build"
 DERIVED_DATA="DerivedData"
 DEBUG_APP="$DERIVED_DATA/Build/Products/Debug/$APP_NAME.app"
 RELEASE_APP="$DERIVED_DATA/Build/Products/Release/$APP_NAME.app"
-# Named after the app's own version (CFBundleShortVersionString), set once the Release build exists
-DMG_PATH=""
+# No version in the name: the site links releases/latest/download/MacAmp.dmg (the version is inside the app)
+DMG_PATH="$BUILD_DIR/$APP_NAME.dmg"
 # DMG window (Finder points, from the top left): the app on the left, an arrow, the Applications link on the right
 DMG_WINDOW_LEFT=200
 DMG_WINDOW_TOP=120
@@ -173,7 +173,6 @@ build_dmg() {
     # Published builds stay ad-hoc unless asked: a certificate signature shows the Apple ID's e-mail to anyone
     MACAMP_SIGN_IDENTITY="${MACAMP_SIGN_IDENTITY:--}" build_release
     
-    DMG_PATH="$BUILD_DIR/${APP_NAME}-$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$RELEASE_APP/Contents/Info.plist").dmg"
     log_step "Creating DMG package"
     mkdir -p "$BUILD_DIR"
     

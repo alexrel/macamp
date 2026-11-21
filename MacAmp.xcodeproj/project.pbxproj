@@ -984,7 +984,7 @@
 					"$(SRCROOT)/build/goom",
 					"$(SRCROOT)/build/avs",
 				);
-				MARKETING_VERSION = 0.11;
+				MARKETING_VERSION = 0.12;
 				PRODUCT_BUNDLE_IDENTIFIER = alexrel.MacAmp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -1020,7 +1020,7 @@
 					"$(SRCROOT)/build/goom",
 					"$(SRCROOT)/build/avs",
 				);
-				MARKETING_VERSION = 0.11;
+				MARKETING_VERSION = 0.12;
 				PRODUCT_BUNDLE_IDENTIFIER = alexrel.MacAmp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

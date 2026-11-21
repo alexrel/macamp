@@ -35,6 +35,24 @@ macOS 14 Sonoma or later).
 
 ## What's new
 
+### 0.12
+
+- **Subsonic:** your own music server (Navidrome, Gonic, Airsonic) as a Media Library section: artists, albums and
+  server search; tracks download as they play, so seeking, the equalizer and the visualizer work as with local files.
+- **Plug-ins:** Album Art shows the playing track's cover in a docked window; the Last.fm Scrobbler sends what you
+  play to your profile, with an offline queue; both are General Purpose plug-ins, off by default. The Module
+  plug-in plays MOD/XM/S3M/IT tracker music, and plug-in formats show their length and tags as soon as they're added.
+- **CD ripping and Disk Writer** to Ogg Vorbis and MP3, tags included, with the FFmpeg plug-in 1.1.
+- **HD skins:** `.msz` skins drawn at four times the pixels, with `<Base Skin HD>` built in next to `<Base Skin>`.
+- **Internet radio:** HLS stations play through the player with the equalizer and visualizer.
+- **Title marquee** loops with `***` and scrolls while paused or stopped, as in Winamp 2.95.
+- **Chiptune plug-in:** game console music (NSF, SPC, GBS, VGM and more); a soundtrack file lists each song as its
+  own playlist entry, with its real length.
+- **Plug-in pages as in Winamp 2.95:** full-height lists with Configure and About; settings open in their own window,
+  and Preferences waits for it.
+- **Mouse wheel** over the main window sets the volume in Winamp's steps (faster as you spin it); with the middle
+  button held it seeks 5 seconds.
+
 ### 0.11
 
 - **Visualizer Studio:** Space moves through its four groups: MacAmp's own visualizations (now with a scrolling
