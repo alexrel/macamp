@@ -4,7 +4,7 @@ import CryptoKit
 /// MacAmp plug-ins, Winamp's in_*.dll as separate programs: ~/Library/Application Support/MacAmp/Plug-ins/*.macampplugin.
 /// MacAmp can't load unsigned code into itself, and a codec that crashes takes only its own process down.
 /// One kind so far, "converter": turns a file MacAmp can't read into one it plays as usual. in_ffmpeg brings ffmpeg and
-/// ffprobe (MP4 or FLAC out); in_mod brings its own renderer named by MacAmpPluginRenderer (`<tool> <in> <out.wav>`).
+/// ffprobe (MP4 or FLAC out); in_mod and in_gme bring their own renderer named by MacAmpPluginRenderer (`<tool> <in> <out.wav>`).
 enum PluginManager {
     struct Converter {
         let bundle: URL
@@ -15,6 +15,8 @@ enum PluginManager {
         var renderer: URL?
         /// Formats its ffmpeg can write (MacAmpPluginEncoders: "ogg", "mp3"), for CD Ripping and Disk Writer
         var encoders: Set<String> = []
+        /// Formats holding several songs (MacAmpPluginTrackExtensions: NSF, GBS...), listed as one entry per song
+        var trackExtensions: Set<String> = []
         var ffmpeg: URL { bundle.appendingPathComponent("Contents/MacOS/ffmpeg") }
         var ffprobe: URL { bundle.appendingPathComponent("Contents/MacOS/ffprobe") }
         var extensions: Set<String> { audioExtensions.union(videoExtensions) }
@@ -27,9 +29,12 @@ enum PluginManager {
     static let moduleFormats: Set<String> = ["mod", "xm", "s3m", "it", "mptm", "mtm", "669", "stm", "ult", "med", "okt", "far",
                                              "amf", "dmf", "psm", "umx"]
 
+    /// Game console music the Chiptune plug-in (in_gme, Game_Music_Emu) adds
+    static let chiptuneFormats: Set<String> = ["nsf", "nsfe", "spc", "gbs", "vgm", "vgz", "gym", "hes", "kss", "ay", "sap"]
+
     /// The plug-in a format needs, for "install the ... plug-in" when it's missing
     static func missingPlugin(for ext: String) -> String? {
-        ffmpegFormats.contains(ext) ? "FFmpeg" : moduleFormats.contains(ext) ? "Module" : nil
+        ffmpegFormats.contains(ext) ? "FFmpeg" : moduleFormats.contains(ext) ? "Module" : chiptuneFormats.contains(ext) ? "Chiptune" : nil
     }
 
     static var folder: URL {
@@ -78,7 +83,8 @@ enum PluginManager {
                                   audioExtensions: Set((info["MacAmpPluginAudioExtensions"] as? [String] ?? []).map { $0.lowercased() }),
                                   videoExtensions: Set((info["MacAmpPluginVideoExtensions"] as? [String] ?? []).map { $0.lowercased() }),
                                   renderer: renderer,
-                                  encoders: Set((info["MacAmpPluginEncoders"] as? [String] ?? []).map { $0.lowercased() }))
+                                  encoders: Set((info["MacAmpPluginEncoders"] as? [String] ?? []).map { $0.lowercased() }),
+                                  trackExtensions: Set((info["MacAmpPluginTrackExtensions"] as? [String] ?? []).map { $0.lowercased() }))
         let tools = renderer.map { [$0] } ?? [converter.ffmpeg, converter.ffprobe]
         guard tools.allSatisfy({ FileManager.default.isExecutableFile(atPath: $0.path) }) else { return nil }
         return converter
@@ -190,7 +196,8 @@ enum PluginConversion {
 
     static func cacheKey(_ url: URL) -> String {
         let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-        let stamp = "\(url.standardizedFileURL.path)|\(values?.contentModificationDate?.timeIntervalSince1970 ?? 0)|\(values?.fileSize ?? 0)"
+        let song = url.song.map { "|track=\($0)" } ?? "" // nothing added for other files: their cache stays valid
+        let stamp = "\(url.standardizedFileURL.path)|\(values?.contentModificationDate?.timeIntervalSince1970 ?? 0)|\(values?.fileSize ?? 0)\(song)"
         return Insecure.MD5.hash(data: Data(stamp.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
@@ -314,6 +321,16 @@ enum PluginConversion {
         let duration: TimeInterval
         let artist: String
         let title: String
+        /// Songs in the file (the renderer's "tracks=" line)
+        var tracks = 1
+    }
+
+    /// A file holding several songs as one URL per song (file#track=N); any other file as it is
+    static func songs(of url: URL) async -> [URL] {
+        guard url.song == nil, let converter = PluginManager.converter(for: url),
+              converter.trackExtensions.contains(url.pathExtension.lowercased()),
+              let count = await info(for: url)?.tracks, count > 1 else { return [url] }
+        return (1...count).map { url.withSong($0) }
     }
 
     /// Asked once per file (a playlist reads length and tags separately, often at the same time). A plug-in without
@@ -328,14 +345,15 @@ enum PluginConversion {
     private static func readInfo(_ url: URL, with converter: PluginManager.Converter) async -> Info? {
         if let renderer = converter.renderer {
             // "--info" first: an older renderer then fails on it as a file name instead of writing over `url`
-            guard let data = try? await run(renderer, ["--info", url.path]) else { return nil }
+            guard let data = try? await run(renderer, ["--info"] + songArguments(url) + [url.path]) else { return nil }
             var fields: [String: String] = [:]
             for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
                 guard let eq = line.firstIndex(of: "=") else { continue }
                 fields[String(line[..<eq])] = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
             }
             guard let duration = fields["duration"].flatMap(Double.init) else { return nil }
-            return Info(duration: duration, artist: fields["artist"] ?? "", title: fields["title"] ?? "")
+            return Info(duration: duration, artist: fields["artist"] ?? "", title: fields["title"] ?? "",
+                        tracks: fields["tracks"].flatMap { Int($0) } ?? 1)
         }
         guard let probe = try? await probe(url, with: converter) else { return nil }
         // Tag names vary by format (title, TITLE, Title)
@@ -358,6 +376,9 @@ enum PluginConversion {
         func clear() { lock.lock(); tasks = [:]; lock.unlock() }
     }
 
+    /// "--track N" for one song of a file (in_gme); nothing otherwise, so in_mod's renderer gets what it always got
+    private static func songArguments(_ url: URL) -> [String] { url.song.map { ["--track", "\($0)"] } ?? [] }
+
     /// What a renderer prints before each progress fraction (scripts/in_mod/openmpt-render.c)
     static let rendererProgress = "progress="
 
@@ -370,7 +391,7 @@ enum PluginConversion {
         let partial = output.deletingPathExtension().appendingPathExtension("partial.wav")
         try? FileManager.default.removeItem(at: partial)
         do {
-            _ = try await run(tool, [url.path, partial.path]) { line in
+            _ = try await run(tool, songArguments(url) + [url.path, partial.path]) { line in
                 guard line.hasPrefix(rendererProgress), let fraction = Double(line.dropFirst(rendererProgress.count)) else { return }
                 Task { @MainActor in onProgress?(url, min(1, max(0, fraction))) }
             }
@@ -460,4 +481,21 @@ enum PluginConversion {
         func append(_ chunk: Data) { lock.lock(); storage.append(chunk); lock.unlock() }
         var data: Data { lock.lock(); defer { lock.unlock() }; return storage }
     }
+}
+
+/// One song of a file that holds several (NSF, GBS...), as a fragment on the file URL: `game.nsf#track=3` (from 1).
+/// Like a CUE track's `#t=`, every song keeps its own URL in the playlist, the session and bookmarks.
+extension URL {
+    var song: Int? {
+        guard isFileURL, let fragment, fragment.hasPrefix(Self.songFragment), let n = Int(fragment.dropFirst(Self.songFragment.count)), n > 0 else { return nil }
+        return n
+    }
+
+    func withSong(_ n: Int) -> URL {
+        var components = URLComponents(url: self, resolvingAgainstBaseURL: false)
+        components?.fragment = Self.songFragment + String(n)
+        return components?.url ?? self
+    }
+
+    private static let songFragment = "track="
 }

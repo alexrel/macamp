@@ -217,6 +217,49 @@ func pluginTests() {
         assertTrue(failure.hasPrefix("Not a module libopenmpt can play"), "Junk with a module extension: libopenmpt's refusal shown (\(failure))")
     }
 
+    testGroup("in_gme plug-in: a song per entry (needs scripts/build_chiptune_plugin.sh)") {
+        assertEqual(PluginManager.missingPlugin(for: "nsf"), "Chiptune", "NSF without the plug-in: the marquee names it")
+        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let built = cwd.appendingPathComponent("build/plugins/MacAmp Chiptune.macampplugin")
+        // libgme's own test files (a Game Boy tune as NSF, a Mega Drive VGZ), not copied into the repository
+        let source = cwd.appendingPathComponent("build/chiptune-plugin/src-0.6.5")
+        guard FileManager.default.fileExists(atPath: built.path), FileManager.default.fileExists(atPath: source.path) else {
+            print("  (skipped: plug-in not built)"); return
+        }
+        _ = try PluginManager.install(built)
+        defer { try? FileManager.default.removeItem(at: PluginManager.folder.appendingPathComponent(built.lastPathComponent)); PluginManager.reload() }
+        assertTrue(AppConstants.Audio.supportedExtensions.isSuperset(of: ["nsf", "spc", "gbs", "vgm", "vgz"]), "Chiptune formats playable")
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macamp-tests/gme-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // The same tune with its header saying 3 songs (byte 6 of an NSF): a soundtrack file
+        var nsf = try Data(contentsOf: source.appendingPathComponent("test.nsf"))
+        nsf[6] = 3
+        let soundtrack = dir.appendingPathComponent("game.nsf")
+        try nsf.write(to: soundtrack)
+        try FileManager.default.copyItem(at: source.appendingPathComponent("test.vgz"), to: dir.appendingPathComponent("song.vgz"))
+
+        let added = awaitValue { await PlayerCoordinator.scanPaths([soundtrack.path, dir.appendingPathComponent("song.vgz").path]).tracks }
+        assertEqual(added.map { $0.url.fragment ?? "" }, ["track=1", "track=2", "track=3", ""], "Each song of the NSF its own entry, the VGZ one")
+        assertEqual(added.dropLast().map(\.title), ["Tetris (GB) #1", "Tetris (GB) #2", "Tetris (GB) #3"], "Numbered after the game")
+        assertTrue(added.last?.title == "Blast Processing Power" && added.last?.artist == "Ivan YO", "VGM tags (\(String(describing: added.last)))")
+        let folder = awaitValue { await PlayerCoordinator.scanPaths([dir.path]).tracks }
+        assertEqual(folder.count, 4, "A folder lists the songs too")
+
+        let second = awaitValue { try? await PluginConversion.convert(added[1].url) }
+        let third = awaitValue { try? await PluginConversion.convert(added[2].url) }
+        assertTrue(second != nil && third != nil && second != third, "Each song rendered and cached on its own")
+        let file = second.flatMap { try? AVAudioFile(forReading: $0) }
+        assertTrue(file.map { abs(Double($0.length) / $0.fileFormat.sampleRate - 158) < 0.5 && $0.fileFormat.channelCount == 2 } ?? false,
+                   "No length in the file: 2:30 and an 8 s fade")
+        let played = try loadSync(AudioEngine.shared, added[2].url)
+        AudioEngine.shared.stop()
+        assertTrue(played.title == "Tetris (GB) #3" && abs(played.duration - 158) < 0.5, "Playing song 3 (\(played.title), \(played.duration))")
+        // An NSF knows no lengths: the playlist's is measured, so it doesn't change once the song plays (2:38 for all)
+        assertTrue(abs(added[2].duration - played.duration) < 0.05, "Playlist length = played length (\(added[2].duration), \(played.duration))")
+    }
+
     testGroup("in_ffmpeg plug-in on real files (needs scripts/build_ffmpeg_plugin.sh)") {
         let built = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("build/plugins/MacAmp FFmpeg.macampplugin")
         guard FileManager.default.fileExists(atPath: built.path) else { print("  (skipped: plug-in not built)"); return }

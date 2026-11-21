@@ -91,6 +91,14 @@ public enum PlaylistIO {
         if entry.contains("://") {
             return URL(string: entry) ?? URL(fileURLWithPath: entry)
         }
+        // MacAmp's own "#t=start,end" (a CUE track) or "#track=N" (a song of an NSF) after the path; a "#" that is
+        // part of a file name ("Song #1.mp3") stays in it: it isn't one of those
+        if let hash = entry.lastIndex(of: "#") {
+            let file = resolveEntry(String(entry[..<hash]), baseURL: baseURL)
+            var components = URLComponents(url: file, resolvingAgainstBaseURL: false)
+            components?.fragment = String(entry[entry.index(after: hash)...])
+            if let part = components?.url, part.playbackRange != nil || part.song != nil { return part }
+        }
         let path = entry.replacingOccurrences(of: "\\", with: "/")
         /// Absolute ("/Users/..."), home-relative ("~/Music/...") or relative to the playlist's folder
         /// ("song.mp3", "mp3/song.mp3", "../Other/song.mp3"); "." and ".." are resolved.
@@ -197,14 +205,16 @@ public enum PlaylistIO {
     
     /// Playlist entry location: file path for local files, full URL for streams
     /// With `relativeTo`, files inside the playlist's folder are written relative to it; others stay absolute.
+    /// A CUE track or a song of an NSF keeps its "#t=…" / "#track=N" (other players see a file that doesn't exist).
     private static func location(of track: TrackItem, relativeTo folder: URL?) -> String {
         guard track.url.isFileURL else { return track.url.absoluteString }
-        let path = track.url.standardizedFileURL.path
+        var path = track.url.standardizedFileURL.path
         if let folder {
             let prefix = folder.standardizedFileURL.path + "/"
-            if path.hasPrefix(prefix) { return String(path.dropFirst(prefix.count)) }
+            if path.hasPrefix(prefix) { path = String(path.dropFirst(prefix.count)) }
         }
-        return path
+        let part = track.url.playbackRange != nil || track.url.song != nil
+        return path + (part ? track.url.fragment.map { "#" + $0 } ?? "" : "")
     }
     
     // MARK: - Save M3U

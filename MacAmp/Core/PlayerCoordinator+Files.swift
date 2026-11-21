@@ -286,7 +286,7 @@ extension PlayerCoordinator {
                     await flush()
                     await scanFolder(url, recursive: recursive, found: found)
                 } else if audioExtensions.contains(ext) {
-                    loose.append(TrackItem.entry(url: url))
+                    loose += await PluginConversion.songs(of: url).map { TrackItem.entry(url: $0) } // an NSF: one per song
                 }
             }
         }
@@ -316,7 +316,7 @@ extension PlayerCoordinator {
                 // CUE tracks are read now: prefetch would give them the album file's tags and length
                 entries += await TrackItem.resolveAll(CueSheet.parse(content: sheet.1, baseURL: folder))
             } else if audioExtensions.contains(item.pathExtension.lowercased()), !covered.contains(item.standardizedFileURL) {
-                entries.append(TrackItem.entry(url: item))
+                entries += await PluginConversion.songs(of: item).map { TrackItem.entry(url: $0) }
             }
         }
         if !entries.isEmpty { found(entries) }

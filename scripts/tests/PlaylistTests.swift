@@ -390,6 +390,7 @@ func playlistTests() {
 
         // Saving with relative paths: files under the playlist's folder relative, others absolute; round-trips
         let saveTracks = [song, near, far].map { TrackItem(url: $0, title: $0.lastPathComponent) } + [TrackItem(url: URL(string: "http://radio.example.com/stream")!, title: "r")]
+            + [song.withSong(2), near.withPlaybackRange(start: 12, end: 30.5)].map { TrackItem(url: $0, title: "part") } // NSF song, CUE track
         for ext in ["m3u", "pls"] {
             let out = music.appendingPathComponent("relative.\(ext)")
             try PlaylistIO.save(tracks: saveTracks, to: out, relativePaths: true)
@@ -399,6 +400,8 @@ func playlistTests() {
             assertTrue(text.contains("http://radio.example.com/stream"), "\(ext): stream URL unchanged")
             let entries = awaitValue { await PlaylistIO.loadEntries(from: out) }
             assertEqual(entries.map { $0.url.standardizedFileURL.path }.prefix(3).map { $0 }, [song, near, far].map { $0.standardizedFileURL.path }, "\(ext): relative playlist loads back")
+            assertEqual(entries.suffix(2).map { $0.url.fragment }, ["track=2", "t=12.000,30.500"], "\(ext): a song of a file and a CUE track keep their part")
+            assertEqual(entries.first?.url.fragment, nil, "\(ext): a '#' in a file name stays in the name")
         }
         try PlaylistIO.save(tracks: saveTracks, to: music.appendingPathComponent("absolute.m3u"))
         assertTrue(try String(contentsOf: music.appendingPathComponent("absolute.m3u"), encoding: .utf8).contains(near.standardizedFileURL.path), "Absolute paths by default")
