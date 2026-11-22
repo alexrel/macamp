@@ -11,6 +11,13 @@ macOS 14 Sonoma or later).
 
 <p align="center"><img src=".github/screenshot.webp" width="400" alt="MacAmp main window, equalizer and playlist docked together"></p>
 
+### Not just the skin
+
+Skins are the easy part. MacAmp follows Winamp 2.95 inside too: Preferences with its category tree, the File info box
+with ID3v1 and ID3v2 side by side, the Media Library and the About box with the llama.
+
+<p align="center"><img src=".github/readme/inside.webp" width="820" alt="Preferences ▸ Plug-ins ▸ Input, the MPEG file info box with ID3v1 and ID3v2 side by side, the Media Library with Subsonic, and About MacAmp with the Winamp llama"></p>
+
 ## Features
 
 - **Main window, Equalizer and Playlist Editor** with magnetic docking, shade modes and Double Size (2x);
