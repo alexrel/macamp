@@ -42,6 +42,13 @@ with ID3v1 and ID3v2 side by side, the Media Library and the About box with the 
 
 ## What's new
 
+### 0.12.1
+
+- **Playback:** keeps playing across display sleep, wake and audio output device changes, and recovers if Core Audio drops a segment callback while the screen is off.
+- **Cache:** one shared limit (256 MB – 4 GB, 1 GB by default) and a Clear cache button in Preferences ▸ Setup for converted plug-in files and cached Subsonic tracks.
+- **Preferences:** all Win32 dialogs keep their light palette in macOS Dark Mode; Options ▸ Display fits without scrolling (with `Song title font` offering only sizes that visibly fit the 12 px display); Bookmarks matches Winamp 2.95 with full-height list and bottom buttons; plug-in Configure window titles no longer truncate.
+- **Playlist:** opens at startup whenever the `PL` button is lit even if the Equalizer is closed; `REM ▸ REM MISC ▸ Physically remove selected file(s)…` moves selected local files to the Trash.
+
 ### 0.12
 
 - **Subsonic:** your own music server (Navidrome, Gonic, Airsonic) as a Media Library section: artists, albums and
