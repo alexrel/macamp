@@ -179,7 +179,8 @@ func audioTests() {
         assertTrue(success, "AudioEngine setOutputDevice(nil) should succeed")
 
         // Post route change notification to verify resilience
-        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: nil)
+        NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: engine.engine)
+        _ = spinRunLoop(until: { false }, timeout: 0.1)
         assertEqual(engine.status, .stopped, "Engine remains in valid stopped state after route notification")
 
         // 5. Preferences View Model & Tree Item integration
@@ -254,6 +255,55 @@ func audioTests() {
             assertTrue(false, "Superseded load must not succeed")
         }
         assertEqual(engine.currentMetadata?.url, shortURL, "Latest load wins")
+    }
+
+    testGroup("Playback Survives an Audio Engine Configuration Change") {
+        let audio = AudioEngine.shared
+        let original = audio.onPlaybackFinished
+        let savedCrossfade = audio.crossfadeDuration
+        defer { audio.onPlaybackFinished = original; audio.crossfadeDuration = savedCrossfade; audio.stop() }
+        var finishes = 0
+        audio.crossfadeDuration = 0
+        audio.onPlaybackFinished = { finishes += 1 }
+        let url = try makeTestWAV(named: "route-change.wav", seconds: 2.5)
+        _ = try loadSync(audio, url)
+        audio.play()
+        assertTrue(spinRunLoop(until: { audio.currentTime > 0.5 }, timeout: 2), "Playback has started")
+
+        let hardwareEngine = audio.engine
+        hardwareEngine.stop()
+        DispatchQueue.global().async {
+            NotificationCenter.default.post(name: .AVAudioEngineConfigurationChange, object: hardwareEngine)
+        }
+        assertTrue(spinRunLoop(until: { audio.isEngineRunning }, timeout: 1), "Output change restarts the engine")
+        assertEqual(finishes, 0, "The discarded audio does not count as a track end")
+        assertTrue(audio.currentTime > 0.25, "The interrupted track resumes near its saved position")
+        assertTrue(spinRunLoop(until: { finishes == 1 }, timeout: 3), "The resumed track finishes naturally")
+        assertEqual(audio.status, .stopped)
+    }
+
+    testGroup("Stalled Output and Display Wake Recover Playback") {
+        let audio = AudioEngine.shared
+        let original = audio.onPlaybackFinished
+        let savedCrossfade = audio.crossfadeDuration
+        defer { audio.onPlaybackFinished = original; audio.crossfadeDuration = savedCrossfade; audio.stop() }
+        var finishes = 0
+        audio.crossfadeDuration = 0
+        audio.onPlaybackFinished = { finishes += 1 }
+        let url = try makeTestWAV(named: "stall-recovery.wav", seconds: 2.2)
+        _ = try loadSync(audio, url)
+        audio.play()
+        assertTrue(spinRunLoop(until: { audio.currentTime > 0.3 }, timeout: 2), "Playback has started")
+
+        // Stopped engine with no configuration notification: stall detector restarts it
+        audio.engine.stop()
+        assertTrue(spinRunLoop(until: { audio.isEngineRunning }, timeout: 2.5), "Stall detector restarts a stopped engine")
+
+        // Display wake notification restarts a stopped engine without waiting for the stall timer
+        audio.engine.stop()
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
+        assertTrue(spinRunLoop(until: { audio.isEngineRunning }, timeout: 1), "Display wake restarts the engine")
+        assertTrue(spinRunLoop(until: { finishes == 1 }, timeout: 3), "Recovered track finishes naturally")
     }
 
     // 16. Fade-out / fade-in (§4)
@@ -807,6 +857,21 @@ func audioTests() {
         assertTrue(spinRunLoop(until: { finished == 1 }, timeout: 6), "MIDI plays to the end")
         let item = awaitValue { await TrackItem.create(from: mid) }
         assertTrue(abs(item.duration - meta.duration) < 0.05, "Playlist and time display show the same MIDI length")
+    }
+
+    testGroup("Restore the Playlist Window With EQ Hidden") {
+        let state = PersistenceManager.shared.state
+        let coordinator = PlayerCoordinator.shared
+        PersistenceManager.shared.state.isEqWindowVisible = false
+        PersistenceManager.shared.state.isPlaylistVisible = true
+        coordinator.start()
+        defer {
+            coordinator.mainView.eqToggle.isOn = state.isEqWindowVisible
+            coordinator.mainView.plToggle.isOn = state.isPlaylistVisible
+        }
+        assertTrue(coordinator.mainView.plToggle.isOn && coordinator.plWindow.isVisible, "PL opens at launch with its toggle lit")
+        assertTrue(PersistenceManager.shared.state.isPlaylistVisible && !coordinator.eqWindow.isVisible,
+                   "Restoring EQ does not clear the saved PL toggle")
     }
 
     testGroup("Disk Writer (out_disk)") {

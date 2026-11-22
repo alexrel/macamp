@@ -355,12 +355,10 @@ extension PlayerCoordinator {
     
     @objc public func handleToggleEqualizer() {
         mainView.eqToggle.isOn.toggle()
-        mainView.eqToggle.onChanged?(mainView.eqToggle.isOn)
     }
     
     @objc public func handleTogglePlaylist() {
         mainView.plToggle.isOn.toggle()
-        mainView.plToggle.onChanged?(mainView.plToggle.isOn)
     }
     
     @objc public func handleResetBaseSkin() {

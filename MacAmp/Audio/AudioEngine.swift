@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import AVFoundation
 import os
 
@@ -36,7 +37,7 @@ public class AudioEngine {
     public static let shared = AudioEngine()
 
     // AVFoundation Engine
-    private let engine = AVAudioEngine()
+    let engine = AVAudioEngine()
     /// File player for the current track. Crossfading swaps it with `spareNode`, which then plays the
     /// end of the previous track while it fades out.
     private var playerNode = AVAudioPlayerNode()
@@ -68,10 +69,27 @@ public class AudioEngine {
     private var loadGeneration: Int = 0
     /// The scheduled segment finished while a pause fade-out was in progress; resume must advance instead.
     private var finishedWhilePaused = false
+    private var playbackActivity: NSObjectProtocol?
+    private var activeLoads: Int = 0
+    private var isAdvancingTrack = false
+    private var stalledRecoveryAttempts = 0
+
+    private func updatePlaybackActivity() {
+        let shouldHold = status == .playing || activeLoads > 0 || isAdvancingTrack
+        if shouldHold {
+            if playbackActivity == nil {
+                playbackActivity = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "MacAmp playback")
+            }
+        } else if let playbackActivity {
+            ProcessInfo.processInfo.endActivity(playbackActivity)
+            self.playbackActivity = nil
+        }
+    }
 
     public private(set) var status: PlayerStatus = .stopped {
         didSet {
             if oldValue != status {
+                updatePlaybackActivity()
                 updateAnalysisTap()
                 onStatusUpdate?(status)
             }
@@ -97,7 +115,7 @@ public class AudioEngine {
     /// Read the frame with `frame.read(spectrum:waveform:)`.
     public var onVisualizerFrame: ((VisualizerFrameBuffer) -> Void)?
     public var onMetadataUpdate: ((_ artist: String, _ title: String, _ bitrate: Int?, _ sampleRate: Int?) -> Void)?
-    /// Short user-facing stream status messages ("Buffering...", "Reconnecting (1/3)...", "Stream lost").
+    /// Short user-facing messages for buffering, reconnects and audio output errors.
     public var onStreamEvent: ((String) -> Void)?
 
     /// When false (visualizer off, windows hidden/minimized) the spectrum tap is removed entirely.
@@ -158,6 +176,7 @@ public class AudioEngine {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         currentSecurityScopedURL?.stopAccessingSecurityScopedResource()
     }
 
@@ -168,37 +187,52 @@ public class AudioEngine {
             name: .AVAudioEngineConfigurationChange,
             object: engine
         )
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        workspaceCenter.addObserver(
+            self,
+            selector: #selector(handleSystemOrDisplayWake(_:)),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+        workspaceCenter.addObserver(
+            self,
+            selector: #selector(handleSystemOrDisplayWake(_:)),
+            name: NSWorkspace.screensDidWakeNotification,
+            object: nil
+        )
     }
 
     @objc private func handleEngineConfigurationChange(_ notification: Notification) {
-        print("AudioEngine: Received AVAudioEngineConfigurationChangeNotification (Hardware route / device change)")
-
-        let wasPlaying = (status == .playing)
-        let savedTime = currentTime
-
-        // Refresh available audio devices in manager
-        AudioDeviceManager.shared.refreshDevices()
-
-        // Re-apply targeted device if configured, or default
-        if let targetID = AudioDeviceManager.shared.activeOutputDeviceID(), let audioUnit = engine.outputNode.audioUnit {
-            var devID = targetID
-            AudioUnitSetProperty(
-                audioUnit,
-                kAudioOutputUnitProperty_CurrentDevice,
-                kAudioUnitScope_Global,
-                0,
-                &devID,
-                UInt32(MemoryLayout<AudioDeviceID>.size)
-            )
-            currentOutputDeviceID = devID
+        // AVFoundation stops the engine and posts this from its own internal queue.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.engine.isRunning else { return }
+            let savedTime = self.currentTrackTime
+            let devices = AudioDeviceManager.shared
+            devices.refreshDevices()
+            _ = self.applyOutputDevice(devices.activeOutputDeviceID())
+            self.restoreAfterOutputChange(at: savedTime)
+            print("AudioEngine: Audio configuration changed, playback is \(self.status)")
         }
-        silenceIfTestRun()
+    }
 
+    @objc private func handleSystemOrDisplayWake(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.status == .playing, !self.engine.isRunning else { return }
+            self.stalledRecoveryAttempts = 0
+            let savedTime = self.currentTrackTime
+            let devices = AudioDeviceManager.shared
+            devices.refreshDevices()
+            _ = self.applyOutputDevice(devices.activeOutputDeviceID(), force: true)
+            self.restoreAfterOutputChange(at: savedTime)
+        }
+    }
+
+    private func restoreAfterOutputChange(at savedTime: TimeInterval) {
         reinstallMixerTap()
-
-        if wasPlaying {
-            ensureEngineRunning()
+        if status == .playing {
             resumeAfterRouteChange(at: savedTime)
+        } else if status == .paused, audioFile != nil {
+            preparePaused(at: savedTime)
         }
     }
 
@@ -334,12 +368,33 @@ public class AudioEngine {
         if engine.isRunning { return true }
         do {
             try engine.start()
-            silenceIfTestRun()
-            return true
         } catch {
-            print("AudioEngine: Failed to start AVAudioEngine: \(error)")
-            return false
+            engine.stop()
+            let devices = AudioDeviceManager.shared
+            devices.refreshDevices()
+            _ = applyOutputDevice(devices.activeOutputDeviceID(), force: true)
+            reinstallMixerTap()
+            engine.prepare()
+            do {
+                try engine.start()
+                print("AudioEngine: Engine restarted after refreshing the output device")
+            } catch {
+                // Sample rate or channel layout may have changed while sleeping; reset the graph state and retry once.
+                engine.reset()
+                _ = applyOutputDevice(devices.activeOutputDeviceID(), force: true)
+                reinstallMixerTap()
+                engine.prepare()
+                do {
+                    try engine.start()
+                    print("AudioEngine: Engine restarted after reset")
+                } catch {
+                    print("AudioEngine: Could not restart AVAudioEngine: \(error)")
+                    return false
+                }
+            }
         }
+        silenceIfTestRun()
+        return true
     }
     
     /// Pauses the audio I/O while nothing is audible, so a paused/stopped player uses 0% CPU.
@@ -488,6 +543,13 @@ public class AudioEngine {
     // MARK: - Track Loading
     @MainActor
     public func load(url: URL) async throws -> TrackMetadata {
+        stalledRecoveryAttempts = 0
+        activeLoads += 1
+        updatePlaybackActivity()
+        defer {
+            activeLoads -= 1
+            updatePlaybackActivity()
+        }
         loadGeneration += 1
         let loadToken = loadGeneration
         // A Subsonic track plays from its downloaded file; the old track keeps playing while it arrives
@@ -745,7 +807,11 @@ public class AudioEngine {
 
     private func startStreamNodeIfReady() {
         guard status == .playing, !isStreamNodeStarted, streamBufferedSeconds >= AudioEngine.streamPrebufferSeconds else { return }
-        ensureEngineRunning()
+        guard ensureEngineRunning() else {
+            stopInternal(fade: false)
+            onStreamEvent?("Audio output unavailable")
+            return
+        }
         streamNode.play()
         isStreamNodeStarted = true
         fadeInFromSilence()
@@ -815,6 +881,7 @@ public class AudioEngine {
 
     // MARK: - Playback Control
     public func play() {
+        stalledRecoveryAttempts = 0
         if isStreaming {
             if status == .playing { return }
             status = .playing
@@ -839,7 +906,10 @@ public class AudioEngine {
 
         // Resuming from pause: unpause the node (or, if the pause fade is still running, just cancel it)
         if status == .paused {
-            ensureEngineRunning()
+            guard ensureEngineRunning() else {
+                onStreamEvent?("Audio output unavailable")
+                return
+            }
             status = .playing
             if finishedWhilePaused {
                 finishedWhilePaused = false
@@ -857,12 +927,16 @@ public class AudioEngine {
         finishedWhilePaused = false
 
         playerNode.stop()
-        ensureEngineRunning()
 
         let startFrame = rangeStartFrame + AVAudioFramePosition(max(0, min(currentTrackTime, fileDuration)) * sampleRate)
         let frameCount = AVAudioFrameCount(max(0, rangeEndFrame - startFrame))
         guard frameCount > 0 else {
             handlePlaybackCompletion()
+            return
+        }
+        guard ensureEngineRunning() else {
+            preparePaused(at: currentTrackTime)
+            onStreamEvent?("Audio output unavailable")
             return
         }
 
@@ -892,7 +966,8 @@ public class AudioEngine {
         // (otherwise short files "finish" immediately and long ones lose their tail).
         playerNode.scheduleSegment(file, startingFrame: startFrame, frameCount: frames, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             DispatchQueue.main.async {
-                guard let self = self, self.playbackGeneration == gen else { return }
+                // An output change can stop the engine and deliver this callback for unplayed audio.
+                guard let self, self.playbackGeneration == gen, self.engine.isRunning else { return }
                 self.handlePlaybackCompletion()
             }
         }
@@ -963,8 +1038,8 @@ public class AudioEngine {
         return nodePlaybackTime() ?? currentTrackTime
     }
 
-    /// Position of the file player node, in seconds of the file's timeline.
-    private func nodePlaybackTime() -> TimeInterval? {
+    /// Position of the file player node, in seconds of the file's timeline (unclamped).
+    private func rawNodePlaybackTime() -> TimeInterval? {
         // playerTime(forNodeTime:) throws on a render time with neither clock valid (the engine has not rendered yet)
         guard let nodeTime = playerNode.lastRenderTime, nodeTime.isSampleTimeValid || nodeTime.isHostTimeValid,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime),
@@ -973,7 +1048,12 @@ public class AudioEngine {
         }
         // playerTime counts in the node's output rate, which can differ from the file's rate (44.1k file on a 48k device)
         let played = Double(playerTime.sampleTime) / playerTime.sampleRate
-        let calculated = Double(startFrameOffset - rangeStartFrame) / sampleRate + played
+        return Double(startFrameOffset - rangeStartFrame) / sampleRate + played
+    }
+
+    /// Position of the file player node, in seconds of the file's timeline.
+    private func nodePlaybackTime() -> TimeInterval? {
+        guard let calculated = rawNodePlaybackTime() else { return nil }
         return max(0, min(calculated, fileDuration))
     }
 
@@ -994,6 +1074,7 @@ public class AudioEngine {
     /// - Parameter duration: fade length; defaults to the "Fade out on Pause/Stop" preference.
     private func stopInternal(fade shouldFade: Bool, duration: TimeInterval? = nil) {
         let wasPlaying = (status == .playing)
+        stalledRecoveryAttempts = 0
         crossfadeArmed = false
         cutCrossfade()
         playbackGeneration += 1
@@ -1058,13 +1139,17 @@ public class AudioEngine {
         let frameCount = AVAudioFrameCount(max(0, rangeEndFrame - targetFrame))
         startFrameOffset = targetFrame
 
+        if status == .playing, frameCount > 0, !ensureEngineRunning() {
+            preparePaused(at: clampedTime)
+            onStreamEvent?("Audio output unavailable")
+            return
+        }
         if frameCount > 0 {
             scheduleFileSegment(file, from: targetFrame, frames: frameCount, generation: gen)
         }
 
         if status == .playing {
             if frameCount > 0 {
-                ensureEngineRunning()
                 playerNode.play()
                 fade(to: 1.0, duration: AudioEngine.fadeInDuration)
                 startTimer()
@@ -1115,8 +1200,13 @@ public class AudioEngine {
             return
         }
         if status == .playing {
+            isAdvancingTrack = true
             stopInternal(fade: false)
             onPlaybackFinished?()
+            DispatchQueue.main.async { [weak self] in
+                self?.isAdvancingTrack = false
+                self?.updatePlaybackActivity()
+            }
         } else if status == .paused {
             // Track reached its end during the pause fade-out; advance when the user resumes
             finishedWhilePaused = true
@@ -1125,9 +1215,31 @@ public class AudioEngine {
 
     private func startTimer() {
         playbackTimer?.invalidate()
+        var lastSampleTime: AVAudioFramePosition?
+        var stalledTicks = 0
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             guard self.status == .playing else { return }
+            let scheduledEnd = self.sampleRate > 0 ? Double(self.rangeEndFrame - self.rangeStartFrame) / self.sampleRate : self.fileDuration
+            let endThreshold = max(self.fileDuration, scheduledEnd) + 0.35
+            if let raw = self.rawNodePlaybackTime(), max(self.fileDuration, scheduledEnd) > 0, raw >= endThreshold {
+                self.handlePlaybackCompletion()
+                return
+            }
+            let renderTime = self.playerNode.lastRenderTime
+            let sampleTime: AVAudioFramePosition? = (renderTime?.isSampleTimeValid == true) ? renderTime?.sampleTime : nil
+            if sampleTime == nil || sampleTime == lastSampleTime {
+                stalledTicks += 1
+                if stalledTicks >= 15 {
+                    stalledTicks = 0
+                    self.recoverStalledOutput()
+                    return
+                }
+            } else {
+                lastSampleTime = sampleTime
+                stalledTicks = 0
+                self.stalledRecoveryAttempts = 0
+            }
             let cur = self.currentTime
             self.currentTrackTime = cur
             self.onTimeUpdate?(cur)
@@ -1136,6 +1248,22 @@ public class AudioEngine {
         timer.tolerance = 0.02 // lets macOS coalesce wakeups
         RunLoop.main.add(timer, forMode: .common)
         playbackTimer = timer
+    }
+
+    private func recoverStalledOutput() {
+        let savedTime = currentTrackTime
+        if stalledRecoveryAttempts >= 2 {
+            stalledRecoveryAttempts = 0
+            preparePaused(at: savedTime)
+            onStreamEvent?("Audio output unavailable")
+            return
+        }
+        stalledRecoveryAttempts += 1
+        if engine.isRunning { engine.stop() }
+        let devices = AudioDeviceManager.shared
+        devices.refreshDevices()
+        _ = applyOutputDevice(devices.activeOutputDeviceID(), force: true)
+        restoreAfterOutputChange(at: savedTime)
     }
 
     // MARK: - Crossfade
@@ -1298,37 +1426,34 @@ public class AudioEngine {
     // MARK: - Output Device Selection & Routing
     @discardableResult
     public func setOutputDevice(deviceID: AudioDeviceID?) -> Bool {
-        guard let audioUnit = engine.outputNode.audioUnit else { return false }
+        stalledRecoveryAttempts = 0
+        let savedTime = currentTime
+        guard let changed = applyOutputDevice(deviceID) else { return false }
+        if changed { restoreAfterOutputChange(at: savedTime) }
+        return true
+    }
+
+    /// Returns whether the HAL route changed, or nil if the requested route could not be applied.
+    private func applyOutputDevice(_ deviceID: AudioDeviceID?, force: Bool = false) -> Bool? {
+        guard let audioUnit = engine.outputNode.audioUnit else { return nil }
         // "System Default" = the device macOS uses right now (device 0 would mean no output at all);
         // AudioDeviceManager calls this again when the macOS default changes
         var devID: AudioDeviceID = deviceID ?? AudioDeviceManager.systemDefaultOutputDeviceID()
-        guard devID != 0 else { return false }
-        let err = AudioUnitSetProperty(
-            audioUnit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &devID,
-            UInt32(MemoryLayout<AudioDeviceID>.size)
-        )
-        guard err == noErr else {
-            print("AudioEngine: AudioUnitSetProperty failed for device \(devID), status: \(err)")
-            return false
+        guard devID != 0 else { return nil }
+        var currentID: AudioDeviceID = 0
+        let deviceIDSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var size = deviceIDSize
+        let read = AudioUnitGetProperty(audioUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &currentID, &size)
+        let changed = read != noErr || currentID != devID
+        if force || changed {
+            let err = AudioUnitSetProperty(audioUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &devID, deviceIDSize)
+            guard err == noErr else {
+                print("AudioEngine: AudioUnitSetProperty failed for device \(devID), status: \(err)")
+                return nil
+            }
         }
-
         currentOutputDeviceID = deviceID
         silenceIfTestRun()
-
-        let wasPlaying = (status == .playing)
-        let savedTime = currentTime
-
-        reinstallMixerTap()
-
-        if wasPlaying {
-            ensureEngineRunning()
-            resumeAfterRouteChange(at: savedTime)
-        }
-
-        return true
+        return changed
     }
 }

@@ -66,51 +66,47 @@ extension PlayerCoordinator {
             do {
                 let meta = try await audioEngine.load(url: track.url)
                 self.videoTrackLoaded(track.url)
-                await MainActor.run {
-                    if let idx = self.playlist.tracks.firstIndex(where: { $0.id == track.id }) {
-                        self.playlist.currentIndex = idx
-                        self.showCurrentTrackInPlaylist()
-                        self.persistence.state.lastPlayedTrackIndex = idx
-                        self.persistence.state.lastPlayedTrackURL = track.url.absoluteString
-                        self.persistence.state.lastPlayedTrackTime = 0.0
-                        self.persistence.saveSession()
-                    }
-                    let (artist, title) = self.trackTags(meta, for: track)
-                    self.playlist.updateTrack(url: track.url, duration: meta.duration, artist: artist, title: title)
-                    self.mainView.marquee.text = TrackItem.displayName(artist: artist, title: title)
-                    self.mainView.marquee.resetScroll()
-                    self.mainView.timeDisplay.totalDuration = meta.duration
-                    self.mainView.timeDisplay.status = .playing
-                    Scrobbler.shared.trackStarted(artist: artist, title: title, duration: meta.duration,
-                                                   isStream: !track.url.isFileURL && track.url.scheme != Subsonic.scheme)
-                    self.audioEngine.play()
-                    // A crossfade keeps the engine "playing", so no status change would start the scrobble clock
-                    Scrobbler.shared.playbackChanged(playing: self.audioEngine.status == .playing)
-                    // Preferences ▸ Plug-ins ▸ "Auto execute visualization plug-in on play"
-                    if self.persistence.state.autoStartVisPlugin && self.visualizerStudioWindow?.isVisible != true {
-                        self.toggleVisualizerStudio()
-                    }
-                    self.mainView.needsDisplay = true
-                    self.plView.needsDisplay = true
-                    MediaKeyController.shared.updateNowPlayingInfo()
-                    StatusBarManager.shared.updateStatus()
-                    self.refreshAlbumArt()
-                    
-                    if self.persistence.state.isEqAuto {
-                        self.applyAutoEQ(for: track.url)
-                    }
+                if let idx = self.playlist.tracks.firstIndex(where: { $0.id == track.id }) {
+                    self.playlist.currentIndex = idx
+                    self.showCurrentTrackInPlaylist()
+                    self.persistence.state.lastPlayedTrackIndex = idx
+                    self.persistence.state.lastPlayedTrackURL = track.url.absoluteString
+                    self.persistence.state.lastPlayedTrackTime = 0.0
+                    self.persistence.saveSession()
+                }
+                let (artist, title) = self.trackTags(meta, for: track)
+                self.playlist.updateTrack(url: track.url, duration: meta.duration, artist: artist, title: title)
+                self.mainView.marquee.text = TrackItem.displayName(artist: artist, title: title)
+                self.mainView.marquee.resetScroll()
+                self.mainView.timeDisplay.totalDuration = meta.duration
+                Scrobbler.shared.trackStarted(artist: artist, title: title, duration: meta.duration,
+                                               isStream: !track.url.isFileURL && track.url.scheme != Subsonic.scheme)
+                self.audioEngine.play()
+                self.mainView.timeDisplay.status = self.audioEngine.status
+                // A crossfade keeps the engine "playing", so no status change would start the scrobble clock
+                Scrobbler.shared.playbackChanged(playing: self.audioEngine.status == .playing)
+                // Preferences ▸ Plug-ins ▸ "Auto execute visualization plug-in on play"
+                if self.persistence.state.autoStartVisPlugin && self.visualizerStudioWindow?.isVisible != true {
+                    self.toggleVisualizerStudio()
+                }
+                self.mainView.needsDisplay = true
+                self.plView.needsDisplay = true
+                MediaKeyController.shared.updateNowPlayingInfo()
+                StatusBarManager.shared.updateStatus()
+                self.refreshAlbumArt()
+
+                if self.persistence.state.isEqAuto {
+                    self.applyAutoEQ(for: track.url)
                 }
             } catch is CancellationError {
                 // Superseded by a newer load (e.g. rapid Next presses) — nothing to report.
             } catch {
                 print("Failed to load track \(track.url): \(error)")
-                await MainActor.run {
-                    let offline = (error as? URLError)?.code == .notConnectedToInternet && MacAmpNetwork.isOffline
-                    let message = offline ? "Internet disabled (Preferences > Setup)"
-                        : error is SubsonicError ? "Subsonic: \(error.localizedDescription)"
-                        : track.url.isFileURL ? "Cannot open file" : "Stream Error"
-                    self.mainView.marquee.showTemporaryMessage(message, duration: error is SubsonicError ? AppConstants.Marquee.noticeDuration : MarqueeView.flashDuration)
-                }
+                let offline = (error as? URLError)?.code == .notConnectedToInternet && MacAmpNetwork.isOffline
+                let message = offline ? "Internet disabled (Preferences > Setup)"
+                    : error is SubsonicError ? "Subsonic: \(error.localizedDescription)"
+                    : track.url.isFileURL ? "Cannot open file" : "Stream Error"
+                self.mainView.marquee.showTemporaryMessage(message, duration: error is SubsonicError ? AppConstants.Marquee.noticeDuration : MarqueeView.flashDuration)
             }
         }
     }

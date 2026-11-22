@@ -9,6 +9,20 @@ import CGoom
 @testable import MacAmp
 
 func playlistTests() {
+    testGroup("Only Whole Local Files Can Be Moved to Trash") {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("Track #1.mp3")
+        try Data().write(to: file)
+        assertTrue(PlaylistModel.canTrashFile(file), "A whole local track is eligible")
+        assertTrue(!PlaylistModel.canTrashFile(folder), "Directories are never eligible")
+        assertTrue(!PlaylistModel.canTrashFile(file.withPlaybackRange(start: 1, end: 2)), "A CUE track is part of a shared file")
+        let chiptune = URL(string: file.absoluteString + "#track=1")!
+        assertTrue(!PlaylistModel.canTrashFile(chiptune), "A chiptune track is part of a shared file")
+        assertTrue(!PlaylistModel.canTrashFile(URL(string: "https://example.com/stream")!), "Remote URLs are never eligible")
+    }
+
     testGroup("Large playlist scrolling and duration totals") {
         let playlist = PlaylistModel()
         let url = URL(fileURLWithPath: "/tmp/macamp-long-playlist.mp3")
@@ -712,8 +726,13 @@ func playlistTests() {
         pl.add(tracks: added)
         let saved = spinRunLoop(until: { PersistenceManager.shared.loadPlaylist().map(\.id) == added.map(\.id) }, timeout: AppConstants.Playlist.autosaveDelay + 3)
         assertTrue(saved, "Added tracks reach playlist.json without quitting")
+        let untouched = PlaylistModel()
+        untouched.autosaves = true
+        untouched.flushAutosave()
+        assertEqual(PersistenceManager.shared.loadPlaylist().map(\.id), added.map(\.id), "An empty model that never changed can't overwrite the saved playlist")
         pl.clear()
-        assertTrue(spinRunLoop(until: { PersistenceManager.shared.loadPlaylist().isEmpty }, timeout: AppConstants.Playlist.autosaveDelay + 3), "So does clearing")
+        pl.flushAutosave()
+        assertTrue(PersistenceManager.shared.loadPlaylist().isEmpty, "An explicit clear still saves when quitting before the timer fires")
         pl.autosaves = false
     }
 }

@@ -684,6 +684,9 @@ public class PlaylistWindowView: WinampControlView {
         menu.autoenablesItems = false
         menu.addItem(createMenuItem(title: "Remove Dead Files", action: #selector(handleRemoveDeadFiles)))
         menu.addItem(createMenuItem(title: "Remove Duplicates", action: #selector(handleRemoveDuplicates)))
+        let trash = createMenuItem(title: "Physically remove selected file(s)…", action: #selector(handleTrashSelectedFiles))
+        trash.isEnabled = !selectedFilesForTrash.isEmpty
+        menu.addItem(trash)
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: 0), in: button)
     }
     
@@ -808,6 +811,55 @@ public class PlaylistWindowView: WinampControlView {
         let removed = playlist.removeDuplicates()
         PlayerCoordinator.shared.mainView.marquee.showTemporaryMessage("Removed \(removed) duplicate(s)")
         needsDisplay = true
+    }
+
+    private var selectedFilesForTrash: Set<URL> {
+        Set(playlist.selectedIndices.filter { playlist.tracks.indices.contains($0) }
+            .map { playlist.tracks[$0].url }.filter(PlaylistModel.canTrashFile)
+            .map { URL(fileURLWithPath: $0.path) })
+    }
+
+    @objc private func handleTrashSelectedFiles() {
+        let files = selectedFilesForTrash
+        guard let first = files.first else { return }
+        let title = "Move to Trash"
+        let subject = files.count == 1 ? "“\(first.lastPathComponent)”" : "\(files.count) selected files"
+        guard Win32Dialog.confirm(title: title, message: "Move \(subject) to the Trash?",
+                                  confirmTitle: title) else { return }
+
+        var trashed = Set<URL>()
+        var errors: [String] = []
+        for url in files {
+            let file = URL(fileURLWithPath: url.path)
+            do {
+                guard PlaylistModel.canTrashFile(file) else { throw CocoaError(.fileReadUnknown) }
+                try FileManager.default.trashItem(at: file, resultingItemURL: nil)
+                trashed.insert(url)
+            } catch {
+                let message = "\(url.lastPathComponent): \(error.localizedDescription)"
+                print("PlaylistWindowView: Move to Trash failed: \(message)")
+                errors.append(message)
+            }
+        }
+
+        let coordinator = PlayerCoordinator.shared
+        if coordinator.audioEngine.status != .stopped,
+           let url = coordinator.audioEngine.currentMetadata?.url, url.isFileURL, trashed.contains(URL(fileURLWithPath: url.path)) {
+            coordinator.handleStop()
+        }
+        let selectedIDs = Set(playlist.selectedIndices.filter { playlist.tracks.indices.contains($0) }
+            .map { playlist.tracks[$0].id })
+        let removed = playlist.tracks.indices.filter { index in
+            let url = playlist.tracks[index].url
+            return url.isFileURL && trashed.contains(URL(fileURLWithPath: url.path))
+        }
+        for index in removed.reversed() { playlist.remove(at: index) }
+        playlist.selectedIndices = Set(playlist.tracks.indices.filter { selectedIDs.contains(playlist.tracks[$0].id) })
+        clampScrollOffset()
+        needsDisplay = true
+        if let error = errors.first {
+            Win32Dialog.inform(title: title, message: "Could not move \(errors.count) file(s) to the Trash.\n\n\(error)")
+        }
     }
     
     @objc private func handleScrollToCurrentTrack() {

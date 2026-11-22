@@ -185,20 +185,7 @@ public struct TrackItem: Codable, Identifiable, Equatable {
     }
     
     public func formattedTitle(with index: Int) -> String {
-        let state = PersistenceManager.shared.state
-        var prefix = ""
-        if state.showNumbersInPlaylist {
-            if state.playlistZeroPadding {
-                prefix = String(format: "%02d. ", index)
-            } else {
-                prefix = "\(index). "
-            }
-        }
-        var name = displayName
-        if state.playlistShowExtensions && !url.pathExtension.isEmpty {
-            name += ".\(url.pathExtension)"
-        }
-        return prefix + name
+        PersistenceManager.shared.state.showNumbersInPlaylist ? "\(index). \(displayName)" : displayName
     }
 }
 
@@ -221,10 +208,15 @@ public class PlaylistModel: ObservableObject {
         guard autosaves, !autosaveScheduled else { return }
         autosaveScheduled = true
         DispatchQueue.main.asyncAfter(deadline: .now() + AppConstants.Playlist.autosaveDelay) { [weak self] in
-            guard let self else { return }
-            self.autosaveScheduled = false
-            PersistenceManager.shared.savePlaylist(self.tracks)
+            self?.flushAutosave()
         }
+    }
+
+    func flushAutosave() {
+        // An untouched playlist might be empty because reading the saved file failed.
+        guard autosaveScheduled else { return }
+        autosaveScheduled = false
+        PersistenceManager.shared.savePlaylist(tracks)
     }
     @Published public var currentIndex: Int? = nil {
         didSet {
@@ -400,7 +392,7 @@ public class PlaylistModel: ObservableObject {
             let old = tracks[idx]
             tracks[idx] = TrackItem(id: old.id, url: old.url, title: meta.title, artist: meta.artist, duration: old.duration)
         }
-        PersistenceManager.shared.savePlaylist(tracks)
+        flushAutosave()
     }
     
     public func setTrack(at index: Int, _ track: TrackItem) {
@@ -462,6 +454,12 @@ public class PlaylistModel: ObservableObject {
         }
         selectedIndices.removeAll()
     }
+
+    static func canTrashFile(_ url: URL) -> Bool {
+        // A CUE or chiptune entry names only one track in a shared file.
+        guard url.isFileURL, url.fragment == nil else { return false }
+        return (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+    }
     
     public func crop() {
         guard !selectedIndices.isEmpty else { return }
@@ -520,7 +518,7 @@ public class PlaylistModel: ObservableObject {
         }
         
         syncShuffleOrder()
-        PersistenceManager.shared.savePlaylist(tracks)
+        flushAutosave()
     }
     
     // MARK: - Selection

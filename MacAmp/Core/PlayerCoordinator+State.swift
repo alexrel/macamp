@@ -147,7 +147,7 @@ extension PlayerCoordinator {
         }
         
         saveWindowLayout()
-        persistence.savePlaylist(playlist.tracks)
+        playlist.flushAutosave()
         persistence.saveSession()
     }
     
@@ -167,8 +167,6 @@ extension PlayerCoordinator {
         persistence.state.isMainWindowShade = mainView.isShadeMode
         persistence.state.isEqWindowShade = eqView.isShadeMode
         persistence.state.isPlaylistShade = plView.isShadeMode
-        persistence.state.isEqWindowVisible = eq.isVisible
-        persistence.state.isPlaylistVisible = pl.isVisible
         saveAuxFrame(video?.window, "video")
         saveAuxFrame(browser?.window, "browser")
         if let studio = visualizerStudioWindow {
