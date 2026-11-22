@@ -72,6 +72,9 @@ func interfaceTests() {
         }
         PersistenceManager.shared.state.desktopFontSize = 8
         assertEqual(marquee.trueTypeFont().pointSize, 8, "A size that fits is not shrunk")
+        marquee.scrollOffset = 30
+        marquee.fontSettingsChanged()
+        assertEqual(marquee.scrollOffset, 0, "A font change redraws the title from its beginning")
     }
 
     testGroup("Marquee Loops With *** Separator") {
@@ -312,6 +315,23 @@ func interfaceTests() {
             host.frame = NSRect(x: 0, y: 0, width: 560, height: 440)
             host.layoutSubtreeIfNeeded()
             assertTrue(host.fittingSize.width > 0, "\(item.title) page renders")
+        }
+
+        // Display page fits without scrolling in both bitmap and desktop title font modes, so "Interface scale" is never cut off
+        let savedFontMode = PersistenceManager.shared.state.marqueeFontMode
+        defer { PersistenceManager.shared.state.marqueeFontMode = savedFontMode }
+        for mode in [MarqueeFontMode.bitmap, .desktop] {
+            PersistenceManager.shared.state.marqueeFontMode = mode
+            let prefsController = PreferencesWindowController(initialTreeItem: .display)
+            if let contentView = prefsController.window?.contentView {
+                assertEqual(contentView.appearance?.name, .aqua, "Win32 dialogs stay in light (.aqua) appearance even in macOS Dark Mode")
+                contentView.layoutSubtreeIfNeeded()
+                func findScrollViews(_ v: NSView) -> [NSScrollView] { (v as? NSScrollView).map { [$0] } ?? v.subviews.flatMap(findScrollViews) }
+                if let rightScroll = findScrollViews(contentView).last, let doc = rightScroll.documentView {
+                    assertTrue(doc.frame.height <= rightScroll.frame.height + 1,
+                               "Display page in \(mode) mode (\(doc.frame.height) pt) fits in Preferences (\(rightScroll.frame.height) pt) without scrolling")
+                }
+            }
         }
 
         // Options ▸ Convert %20 / underscore (titles that are file names)

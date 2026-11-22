@@ -222,17 +222,32 @@ func libraryTests() {
         engine.stop()
         try? FileManager.default.removeItem(at: cached)
 
-        // Cache cap: the oldest files go, the one just played stays
-        let prune = cache.appendingPathComponent("prune", isDirectory: true)
-        try FileManager.default.createDirectory(at: prune, withIntermediateDirectories: true)
-        for (i, age) in [300.0, 200, 100].enumerated() {
-            let f = prune.appendingPathComponent("c\(i).bin")
+        // Shared cache (Converted + Subsonic): newest files across both folders stay within limit,
+        // the playing file stays even above the limit, .partial. files are untouched, and clear leaves only the playing file
+        let pruneConv = cache.appendingPathComponent("prune-converted", isDirectory: true)
+        let pruneSub = cache.appendingPathComponent("prune-subsonic", isDirectory: true)
+        try FileManager.default.createDirectory(at: pruneConv, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pruneSub, withIntermediateDirectories: true)
+        let folders = [pruneConv, pruneSub]
+        let c0 = pruneSub.appendingPathComponent("c0.bin") // oldest (playing)
+        let c1 = pruneConv.appendingPathComponent("c1.bin") // middle (converted)
+        let c2 = pruneSub.appendingPathComponent("c2.bin") // newest (subsonic)
+        let partial = pruneConv.appendingPathComponent("work.partial.flac")
+        for (f, age) in [(c0, 300.0), (c1, 200.0), (c2, 100.0), (partial, 400.0)] {
             try Data(count: 1000).write(to: f)
             try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -age)], ofItemAtPath: f.path)
         }
-        Subsonic.pruneCache(keeping: prune.appendingPathComponent("c0.bin"), limit: 1500, folder: prune)
-        let left = try FileManager.default.contentsOfDirectory(atPath: prune.path).sorted()
-        assertEqual(left, ["c0.bin", "c2.bin"], "Over the limit: older files removed, the newest and the playing one kept")
+        assertEqual(CacheStore.size(in: folders), 3000, "In-progress .partial. files are not counted in cache size")
+        CacheStore.trim(limit: 1500, keeping: c0, folders: folders)
+        assertTrue(FileManager.default.fileExists(atPath: c0.path) && FileManager.default.fileExists(atPath: c2.path),
+                   "Newest file and playing file are kept across both folders")
+        assertTrue(!FileManager.default.fileExists(atPath: c1.path), "Older file over the limit is removed")
+        assertTrue(FileManager.default.fileExists(atPath: partial.path), "In-progress .partial. file is never touched")
+        CacheStore.clear(keeping: c0, folders: folders)
+        assertTrue(FileManager.default.fileExists(atPath: c0.path) && !FileManager.default.fileExists(atPath: c2.path)
+                   && FileManager.default.fileExists(atPath: partial.path),
+                   "Clear removes everything except the playing file and .partial. conversions")
+        assertEqual(AppState().cacheLimitBytes, 1 << 30, "Default cache limit is 1 GB")
     }
 
     testGroup("Last.fm Scrobbler: signature, Last.fm's rule, queue") {

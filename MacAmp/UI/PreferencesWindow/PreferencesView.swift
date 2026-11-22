@@ -55,18 +55,6 @@ public class PreferencesViewModel: ObservableObject {
     @Published public var selectedTreeItem: PrefTreeItem = .setup
     
     // Window & Display State
-    @Published public var isAlwaysOnTop: Bool {
-        didSet {
-            PersistenceManager.shared.state.isAlwaysOnTop = isAlwaysOnTop
-            PersistenceManager.shared.saveSession()
-            PlayerCoordinator.shared.setAlwaysOnTop(isAlwaysOnTop)
-            MainMenuManager.shared.updateStates()
-        }
-    }
-
-    @Published public var scaleFactor: ScaleFactor {
-        didSet { PlayerCoordinator.shared.setScale(scaleFactor) }
-    }
     @Published var interfaceScale: InterfaceScale {
         didSet { PlayerCoordinator.shared.setInterfaceScale(interfaceScale) }
     }
@@ -99,22 +87,6 @@ public class PreferencesViewModel: ObservableObject {
         }
     }
     
-    @Published public var isMarqueeScrollEnabled: Bool {
-        didSet {
-            PersistenceManager.shared.state.isMarqueeScrollEnabled = isMarqueeScrollEnabled
-            PersistenceManager.shared.saveSession()
-            PlayerCoordinator.shared.mainView?.marquee.needsDisplay = true
-            PlayerCoordinator.shared.mainView?.marquee.fontSettingsChanged()
-        }
-    }
-    
-    @Published public var showTrackNumberInTitle: Bool {
-        didSet {
-            PersistenceManager.shared.state.showTrackNumberInTitle = showTrackNumberInTitle
-            PersistenceManager.shared.saveSession()
-        }
-    }
-    
     // Skins List
     @Published public var installedSkins: [URL] = []
     @Published public var selectedSkinURL: URL?
@@ -136,26 +108,10 @@ public class PreferencesViewModel: ObservableObject {
         }
     }
     
-    @Published public var playlistZeroPadding: Bool {
-        didSet {
-            PersistenceManager.shared.state.playlistZeroPadding = playlistZeroPadding
-            PersistenceManager.shared.saveSession()
-            PlayerCoordinator.shared.plView?.needsDisplay = true
-        }
-    }
-    
     @Published public var savePlaylistRelativePaths: Bool {
         didSet {
             PersistenceManager.shared.state.savePlaylistRelativePaths = savePlaylistRelativePaths
             PersistenceManager.shared.saveSession()
-        }
-    }
-    
-    @Published public var playlistShowExtensions: Bool {
-        didSet {
-            PersistenceManager.shared.state.playlistShowExtensions = playlistShowExtensions
-            PersistenceManager.shared.saveSession()
-            PlayerCoordinator.shared.plView?.needsDisplay = true
         }
     }
     
@@ -280,18 +236,12 @@ public class PreferencesViewModel: ObservableObject {
     
     public init() {
         let state = PersistenceManager.shared.state
-        self.isAlwaysOnTop = state.isAlwaysOnTop
-        self.scaleFactor = state.scaleFactor
         self.interfaceScale = state.interfaceScale
         self.marqueeFontMode = state.marqueeFontMode
         self.desktopFontFamily = state.desktopFontFamily
         self.desktopFontSize = state.desktopFontSize
-        self.isMarqueeScrollEnabled = state.isMarqueeScrollEnabled
-        self.showTrackNumberInTitle = state.showTrackNumberInTitle
         self.windowSnapDistance = state.windowSnapDistance
         self.showNumbersInPlaylist = state.showNumbersInPlaylist
-        self.playlistZeroPadding = state.playlistZeroPadding
-        self.playlistShowExtensions = state.playlistShowExtensions
         self.savePlaylistRelativePaths = state.savePlaylistRelativePaths
         self.authenticShuffle = state.authenticShuffle
         self.audioFadeOutDurationMs = state.audioFadeOutDurationMs
@@ -442,7 +392,6 @@ public struct PreferencesView: View {
     private var configuring: PluginConfig?
     
     private let availableFonts = ["Monaco", "Menlo", "Geneva", "SF Pro Display", "Courier New", "Helvetica"]
-    private let availableFontSizes: [Double] = [8, 9, 10, 11, 12, 14]
     
     public init(viewModel: PreferencesViewModel, onClose: (() -> Void)? = nil) {
         self.viewModel = viewModel
@@ -455,7 +404,10 @@ public struct PreferencesView: View {
     }
     
     public var body: some View {
-        if let configuring { configureBody(configuring) } else { pages }
+        Group {
+            if let configuring { configureBody(configuring) } else { pages }
+        }
+        .environment(\.colorScheme, .light)
     }
 
     private var pages: some View {
@@ -517,8 +469,6 @@ public struct PreferencesView: View {
                     .padding(.trailing, 6)
                     .overlayScrollers()
                 }
-                
-                Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -566,11 +516,13 @@ public struct PreferencesView: View {
     private func note(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 10))
-            .foregroundColor(.secondary)
+            .foregroundColor(Win32Colors.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
     }
     
     // MARK: - Options ▸ Display (docs/UI-screens/pref-options-display.png)
+    private static let displayLeftColumnWidth: CGFloat = 200
+
     private var displaySection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Win32GroupBox("Display options") {
@@ -617,48 +569,64 @@ public struct PreferencesView: View {
             Win32GroupBox("Show MacAmp in:") {
                 VStack(alignment: .leading, spacing: 4) {
                     // (Dock, menu bar), 2.95's Taskbar only / System tray only / Taskbar and system tray / None
-                    ForEach([("Dock only", true, false), ("Menu bar only", false, true), ("Dock and menu bar", true, true), ("None", false, false)], id: \.0) { title, dock, menuBar in
-                        Win32RadioButton(title, isSelected: PersistenceManager.shared.state.showDockIcon == dock && PersistenceManager.shared.state.showMenuBarIcon == menuBar) {
-                            setLibrary(\.showDockIcon, dock)
-                            setLibrary(\.showMenuBarIcon, menuBar)
-                            StatusBarManager.shared.setVisible(menuBar)
-                            StatusBarManager.shared.setDockIconVisible(dock)
+                    HStack(alignment: .top, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            showMacAmpInRadio("Dock only", dock: true, menuBar: false)
+                            showMacAmpInRadio("Menu bar only", dock: false, menuBar: true)
+                        }
+                        .frame(width: Self.displayLeftColumnWidth, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 4) {
+                            showMacAmpInRadio("Dock and menu bar", dock: true, menuBar: true)
+                            showMacAmpInRadio("None", dock: false, menuBar: false)
                         }
                     }
-                    note("Without the Dock icon MacAmp isn't in ⌘Tab and its menu bar menus are hidden; right-click a MacAmp window for the menu.")
+                    note("Without Dock icon: no ⌘Tab or menu bar; right-click player for menu.")
                 }
             }
 
             // MacAmp additions (principle 5: a separate group below the classic options)
             Win32GroupBox("MacAmp") {
                 VStack(alignment: .leading, spacing: 4) {
-                    Win32Checkbox("Always On Top (⌃A)", isOn: $viewModel.isAlwaysOnTop)
-                    Win32Checkbox("Scroll the song title when it is wider than the display", isOn: $viewModel.isMarqueeScrollEnabled)
-                    Win32Checkbox("Zero-pad numbers in Playlist (e.g. '01.')", isOn: $viewModel.playlistZeroPadding)
-                    Win32Checkbox("Show file extensions in Playlist", isOn: $viewModel.playlistShowExtensions)
+                    let customTitleFont = viewModel.marqueeFontMode == .desktop
+                    HStack(spacing: 6) {
+                        Text("Song title font:")
+                            .font(.system(size: 11))
+                            .foregroundColor(customTitleFont ? Win32Colors.text : Win32Colors.textDisabled)
+                        Win32ComboBox(selection: $viewModel.desktopFontFamily,
+                                      options: availableFonts.map { (value: $0, title: $0) }, width: 140)
+                        titleFontSizePicker
+                    }
+                    .disabled(!customTitleFont)
                     HStack(spacing: 12) {
-                        Win32RadioButton("Normal size", isSelected: viewModel.scaleFactor == .x1) { viewModel.scaleFactor = .x1 }
-                        Win32RadioButton("Double size (⌃D)", isSelected: viewModel.scaleFactor == .x2) { viewModel.scaleFactor = .x2 }
-                    }
-                    if viewModel.marqueeFontMode == .desktop {
-                        HStack(spacing: 6) {
-                            Text("Title font:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
-                            Win32ComboBox(selection: $viewModel.desktopFontFamily,
-                                          options: availableFonts.map { (value: $0, title: $0) }, width: 140)
-                            Win32ComboBox(selection: $viewModel.desktopFontSize,
-                                          options: availableFontSizes.map { (value: $0, title: "\(Int($0)) pt") }, width: 64)
+                        Text("Interface scale:").font(.system(size: 11)).foregroundColor(Win32Colors.text).fixedSize()
+                        ForEach(InterfaceScale.allCases, id: \.rawValue) { scale in
+                            Win32RadioButton("\(scale.rawValue)%", isSelected: viewModel.interfaceScale == scale) { viewModel.interfaceScale = scale }
+                                .fixedSize()
                         }
+                        Spacer(minLength: 0)
                     }
-                }
-            }
-            Win32GroupBox("Interface scale") {
-                HStack(spacing: 12) {
-                    ForEach(InterfaceScale.allCases, id: \.rawValue) { scale in
-                        Win32RadioButton("\(scale.rawValue)%", isSelected: viewModel.interfaceScale == scale) { viewModel.interfaceScale = scale }
-                    }
+                    note("Clocks and playlist totals come from the skin and scale with the player.")
                 }
             }
         }
+    }
+
+    private func showMacAmpInRadio(_ title: String, dock: Bool, menuBar: Bool) -> some View {
+        Win32RadioButton(title, isSelected: PersistenceManager.shared.state.showDockIcon == dock && PersistenceManager.shared.state.showMenuBarIcon == menuBar) {
+            setLibrary(\.showDockIcon, dock)
+            setLibrary(\.showMenuBarIcon, menuBar)
+            StatusBarManager.shared.setVisible(menuBar)
+            StatusBarManager.shared.setDockIconVisible(dock)
+        }
+    }
+
+    private var titleFontSizePicker: some View {
+        let family = viewModel.desktopFontFamily
+        let current = MarqueeView.fittedTitleFont(family: family, size: viewModel.desktopFontSize).pointSize
+        let sizes = Set((6...14).map { MarqueeView.fittedTitleFont(family: family, size: CGFloat($0)).pointSize })
+        return Win32ComboBox(selection: Binding(get: { current }, set: { viewModel.desktopFontSize = $0 }),
+                             options: sizes.union([current]).sorted().map { (value: $0, title: "\($0.formatted()) pt") },
+                             width: 64)
     }
     
     // MARK: - Section: Visualization
@@ -714,7 +682,7 @@ public struct PreferencesView: View {
             
             Text("Tip: right-click the visualizer in the main window for the same options.")
                 .font(.system(size: 10))
-                .foregroundColor(.secondary)
+                .foregroundColor(Win32Colors.secondaryText)
         }
     }
     
@@ -738,7 +706,8 @@ public struct PreferencesView: View {
                     
                     Text("Control playback from any application when MacAmp is in background:")
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Win32Colors.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                     
                     VStack(alignment: .leading, spacing: 5) {
                         ForEach(hotkeysController.displayRows, id: \.action) { row in
@@ -746,7 +715,7 @@ public struct PreferencesView: View {
                         }
                     }
                     .padding(6)
-                    .background(Color(nsColor: .controlBackgroundColor))
+                    .background(Win32Colors.windowBg)
                     .modifier(Win32SunkenBorder())
                     
                     if viewModel.isGlobalHotkeysEnabled && !hotkeysController.unavailableHotkeys.isEmpty {
@@ -760,7 +729,7 @@ public struct PreferencesView: View {
             Win32GroupBox("Media Keys") {
                 Text("Hardware media keys (F7, F8, F9), AirPods and headphone controls work globally. No special permissions are required.")
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Win32Colors.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -807,16 +776,16 @@ public struct PreferencesView: View {
             Win32GroupBox("MacAmp: playback") {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("Fade out on Pause/Stop:").font(.system(size: 11))
+                        Text("Fade out on Pause/Stop:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
                         Spacer()
-                        Text("\(Int(viewModel.audioFadeOutDurationMs)) ms").font(.system(size: 11, design: .monospaced))
+                        Text("\(Int(viewModel.audioFadeOutDurationMs)) ms").font(.system(size: 11, design: .monospaced)).foregroundColor(Win32Colors.text)
                     }
                     Win32Slider(value: $viewModel.audioFadeOutDurationMs, in: 0...2000, step: 50)
                     HStack {
-                        Text("Crossfade between tracks:").font(.system(size: 11))
+                        Text("Crossfade between tracks:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
                         Spacer()
                         Text(viewModel.crossfadeSeconds > 0 ? "\(Int(viewModel.crossfadeSeconds)) s" : "Off")
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(.system(size: 11, design: .monospaced)).foregroundColor(Win32Colors.text)
                     }
                     Win32Slider(value: $viewModel.crossfadeSeconds, in: 0...10, step: 1)
                     note("Crossfade: files only; not with Stop after current, Manual advance or inside a CUE album.")
@@ -885,6 +854,7 @@ public struct PreferencesView: View {
                         Text("Folder:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
                         Text(state.cdRipFolder.path)
                             .font(.system(size: 11))
+                            .foregroundColor(Win32Colors.text)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .padding(.horizontal, 4)
@@ -1120,7 +1090,8 @@ public struct PreferencesView: View {
     static func configureVisPlugin(viewModel: PreferencesViewModel) {
         let state = PersistenceManager.shared.state
         let current = state.avsPluginSelected ? 2 : state.goomPluginSelected ? 1 : 0
-        showConfigure([.studio, .goom, .avs][current], title: visPlugins[current] + " configuration", viewModel: viewModel)
+        let titles = ["Visualizer Studio Configuration", "What A Goom! Configuration", "AVS Configuration"]
+        showConfigure([.studio, .goom, .avs][current], title: titles[current], viewModel: viewModel)
     }
 
     private func showAbout(_ name: String, _ text: String) {
@@ -1169,7 +1140,10 @@ public struct PreferencesView: View {
                                     PersistenceManager.shared.scheduleSave()
                                 }), height: nil)
                 pluginButtons {
-                    Win32Button("Configure") { showConfigure(current == 1 ? .diskWriter : .coreAudio, title: rows[current] + " configuration") }
+                    Win32Button("Configure") {
+                        showConfigure(current == 1 ? .diskWriter : .coreAudio,
+                                      title: current == 1 ? "Disk Writer Configuration" : "Core Audio Output Configuration")
+                    }
                     Win32Button("About") {
                         showAbout(rows[current], current == 1
                             ? "Play writes the playlist, from the selected track to the end, into audio files (WAV, AIFF, FLAC, ALAC, AAC; Ogg Vorbis and MP3 with the FFmpeg plug-in) instead of playing it."
@@ -1190,6 +1164,7 @@ public struct PreferencesView: View {
                     Text("Folder:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
                     Text(state.diskWriterFolder.path)
                         .font(.system(size: 11))
+                        .foregroundColor(Win32Colors.text)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .padding(.horizontal, 4)
@@ -1340,7 +1315,7 @@ public struct PreferencesView: View {
             VStack(alignment: .leading, spacing: 4) {
                 PluginListBox(rows: rows, selection: Binding(get: { viewModel.isDspEnabled ? 1 : 0 }, set: { viewModel.isDspEnabled = $0 == 1 }), height: nil)
                 pluginButtons {
-                    Win32Button("Configure") { showConfigure(.dsp, title: rows[1] + " configuration") }.disabled(!viewModel.isDspEnabled)
+                    Win32Button("Configure") { showConfigure(.dsp, title: "DSP Effects Configuration") }.disabled(!viewModel.isDspEnabled)
                 }
             }
             .frame(height: Self.fullPageHeight)
@@ -1355,8 +1330,10 @@ public struct PreferencesView: View {
             VStack(alignment: .leading, spacing: 4) {
                 PluginListBox(rows: rows, selection: $generalPlugin, height: nil)
                 pluginButtons {
+                    let titles = ["Global Hotkeys Configuration", "Album Art Configuration", "Last.fm Scrobbler Configuration"]
+                    let idx = min(generalPlugin, 2)
                     Win32Button("Configure") {
-                        showConfigure([.hotkeys, .albumArt, .lastFM][min(generalPlugin, 2)], title: rows[min(generalPlugin, 2)] + " configuration")
+                        showConfigure([.hotkeys, .albumArt, .lastFM][idx], title: titles[idx])
                     }
                 }
             }
@@ -1384,9 +1361,7 @@ public struct PreferencesView: View {
         VStack(alignment: .leading, spacing: 6) {
             Win32GroupBox("Audio Output Device") {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Select where MacAmp routes sound (Bluetooth, HDMI, USB DAC, or Built-in):")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                    note("Select where MacAmp routes sound (Bluetooth, HDMI, USB DAC, or built-in speakers).")
                     
                     VStack(alignment: .leading, spacing: 4) {
                         // System Default option
@@ -1400,7 +1375,7 @@ public struct PreferencesView: View {
                         
                         Text("  Currently active: [\(defaultTransport)] \(defaultName)")
                             .font(.system(size: 10))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Win32Colors.secondaryText)
                             .padding(.leading, 18)
                         
                         Divider().padding(.vertical, 2)
@@ -1415,13 +1390,13 @@ public struct PreferencesView: View {
                                 if device.isDefault {
                                     Text("(macOS Default)")
                                         .font(.system(size: 10, weight: .bold))
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(Win32Colors.secondaryText)
                                 }
                             }
                         }
                     }
                     .padding(8)
-                    .background(Color(nsColor: .controlBackgroundColor))
+                    .background(Win32Colors.windowBg)
                     .modifier(Win32SunkenBorder())
                     
                     HStack {
@@ -1457,7 +1432,7 @@ public struct PreferencesView: View {
                 .frame(width: 90, alignment: .leading)
             Text(val)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.secondary)
+                .foregroundColor(Win32Colors.secondaryText)
             Spacer()
         }
     }
@@ -1551,9 +1526,9 @@ public struct PreferencesView: View {
     
     // MARK: - Section 6: Skins
     // MARK: - Skins (docs/UI-screens/pref-skins.png)
-    /// Inside a group box that fills the page (Input plug-ins, Skins), as in 2.95: the list takes what the rest leaves,
-    /// only it scrolls, and both pages end level with the tree
-    private static let fullPageHeight: CGFloat = 358
+    /// Inside a group box that fills the page (Input plug-ins, Skins, Bookmarks), as in 2.95: the list takes what the rest leaves,
+    /// only it scrolls, and the page ends level with the tree
+    fileprivate static let fullPageHeight: CGFloat = 358
 
     private var skinsSection: some View {
         Win32GroupBox("Skins") {
@@ -1620,7 +1595,7 @@ public struct PreferencesView: View {
 }
 
 // MARK: - Setup ▸ File types (Winamp "File type setup")
-/// Winamp's Bookmarks page: the list with Open / Enqueue / Remove / Edit (double-click opens).
+/// Winamp's Bookmarks page: the list with Edit / Remove / Open / Enqueue below it (double-click opens).
 private struct BookmarksSection: View {
     @ObservedObject private var store = BookmarkStore.shared
     @State private var selection = Set<UUID>()
@@ -1630,13 +1605,13 @@ private struct BookmarksSection: View {
 
     var body: some View {
         Win32GroupBox("Bookmarks") {
-            HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         if store.items.isEmpty {
                             Text("(no bookmarks) — add with ⌥I or the playlist's \"Bookmark item(s)\"")
                                 .font(.system(size: 11))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Win32Colors.secondaryText)
                                 .padding(4)
                         }
                         ForEach(store.items) { bookmark in
@@ -1646,18 +1621,21 @@ private struct BookmarksSection: View {
                     .padding(2)
                     .overlayScrollers()
                 }
-                .frame(maxWidth: .infinity, minHeight: 260, maxHeight: 260)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.white)
                 .win32Sunken()
 
-                VStack(spacing: 6) {
-                    Win32Button("Open", width: 70) { PlayerCoordinator.shared.openBookmarks(selected, enqueue: false) }
-                    Win32Button("Enqueue", width: 70) { PlayerCoordinator.shared.openBookmarks(selected, enqueue: true) }
-                    Win32Button("Remove", width: 70) { store.remove(selection); selection = [] }
-                    Win32Button("Edit", width: 70) { if let first = selected.first { edit(first) } }
+                HStack(spacing: 6) {
+                    Win32Button("Edit", width: 75) { if let first = selected.first { edit(first) } }
+                    Win32Button("Remove", width: 75) { store.remove(selection); selection = [] }
+                    Spacer().frame(width: 8)
+                    Win32Button("Open", width: 75) { PlayerCoordinator.shared.openBookmarks(selected, enqueue: false) }
+                    Win32Button("Enqueue", width: 75) { PlayerCoordinator.shared.openBookmarks(selected, enqueue: true) }
+                    Spacer(minLength: 0)
                 }
                 .disabled(selection.isEmpty)
             }
+            .frame(height: PreferencesView.fullPageHeight)
         }
     }
 
@@ -1732,7 +1710,7 @@ private struct FileTypesSection: View {
                         Text(error).font(.system(size: 10)).foregroundColor(.red).fixedSize(horizontal: false, vertical: true)
                     } else if !icons.canChangeIcons {
                         Text("Icons can be changed in local builds only")
-                            .font(.system(size: 10)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                            .font(.system(size: 10)).foregroundColor(Win32Colors.secondaryText).fixedSize(horizontal: false, vertical: true)
                     }
                     Win32Checkbox("Register types on MacAmp start", isOn: Binding(
                         get: { registerOnStart },
@@ -1748,7 +1726,7 @@ private struct FileTypesSection: View {
                     ))
                     Text("Finder: right-click ▸ Services ▸ Play / Enqueue in MacAmp")
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Win32Colors.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(width: 128)
@@ -1843,7 +1821,7 @@ private struct AgentSection: View {
                     }
                 ))
                 if let loginStatus {
-                    Text(loginStatus).font(.system(size: 10)).foregroundColor(.secondary).padding(.leading, 19)
+                    Text(loginStatus).font(.system(size: 10)).foregroundColor(Win32Colors.secondaryText).padding(.leading, 19)
                 }
                 Win32Checkbox("Show MacAmp icon in the menu bar", isOn: Binding(
                     get: { showMenuBarIcon },
@@ -1937,48 +1915,86 @@ private struct SetupSection: View {
     @State private var offline = PersistenceManager.shared.state.networkOffline
     @State private var proxy = PersistenceManager.shared.state.httpProxy
     @State private var checksForUpdates = PersistenceManager.shared.state.checkForUpdates
+    @State private var cacheLimit = PersistenceManager.shared.state.cacheLimitBytes
+    @State private var cacheInUse = CacheStore.size()
 
     var body: some View {
-        Win32GroupBox("MacAmp setup") {
-            VStack(alignment: .leading, spacing: 6) {
-                Win32GroupBox("Internet settings") {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Win32RadioButton("Use the system Internet connection", isSelected: !offline) { setOffline(false) }
-                        Win32RadioButton("No Internet connection available", isSelected: offline) { setOffline(true) }
-                        Win32GroupBox("HTTP proxy: 'Server:Port' (blank for none)") {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Win32TextField(text: Binding(
-                                    get: { proxy },
+        VStack(alignment: .leading, spacing: 6) {
+            Win32GroupBox("MacAmp setup") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Win32GroupBox("Internet settings") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Win32RadioButton("Use the system Internet connection", isSelected: !offline) { setOffline(false) }
+                            Win32RadioButton("No Internet connection available", isSelected: offline) { setOffline(true) }
+                            Win32GroupBox("HTTP proxy: 'Server:Port' (blank for none)") {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Win32TextField(text: Binding(
+                                        get: { proxy },
+                                        set: { newValue in
+                                            proxy = newValue
+                                            PersistenceManager.shared.state.httpProxy = newValue
+                                            PersistenceManager.shared.scheduleSave()
+                                        }
+                                    ))
+                                    if !proxy.trimmingCharacters(in: .whitespaces).isEmpty && MacAmpNetwork.parseProxy(proxy) == nil {
+                                        Text("Use the form server:port, e.g. proxy.example.com:8080")
+                                            .font(.system(size: 10)).foregroundColor(.red)
+                                    }
+                                }
+                            }
+                            .disabled(offline)
+                            HStack {
+                                Win32Checkbox("Check for new versions of MacAmp at startup", isOn: Binding(
+                                    get: { checksForUpdates },
                                     set: { newValue in
-                                        proxy = newValue
-                                        PersistenceManager.shared.state.httpProxy = newValue
+                                        checksForUpdates = newValue
+                                        PersistenceManager.shared.state.checkForUpdates = newValue
                                         PersistenceManager.shared.scheduleSave()
                                     }
                                 ))
-                                if !proxy.trimmingCharacters(in: .whitespaces).isEmpty && MacAmpNetwork.parseProxy(proxy) == nil {
-                                    Text("Use the form server:port, e.g. proxy.example.com:8080")
-                                        .font(.system(size: 10)).foregroundColor(.red)
-                                }
+                                Spacer()
+                                Win32Button("Check now", width: 80) { Task { await UpdateChecker.check(manual: true) } }
                             }
+                            .disabled(offline)
                         }
-                        .disabled(offline)
-                        HStack {
-                            Win32Checkbox("Check for new versions of MacAmp at startup", isOn: Binding(
-                                get: { checksForUpdates },
-                                set: { newValue in
-                                    checksForUpdates = newValue
-                                    PersistenceManager.shared.state.checkForUpdates = newValue
-                                    PersistenceManager.shared.scheduleSave()
-                                }
-                            ))
-                            Spacer()
-                            Win32Button("Check now", width: 80) { Task { await UpdateChecker.check(manual: true) } }
+                    }
+                }
+            }
+            Win32GroupBox("Cache") {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Converted plug-in files and Subsonic tracks are kept here so they play at once next time.")
+                        .font(.system(size: 10))
+                        .foregroundColor(Win32Colors.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 6) {
+                        Text("Maximum size:").font(.system(size: 11)).foregroundColor(Win32Colors.text)
+                        Win32ComboBox(selection: Binding(
+                            get: { cacheLimit },
+                            set: { newLimit in
+                                cacheLimit = newLimit
+                                PersistenceManager.shared.state.cacheLimitBytes = newLimit
+                                PersistenceManager.shared.scheduleSave()
+                                CacheStore.trim(limit: newLimit, keeping: CacheStore.activeFile())
+                                cacheInUse = CacheStore.size()
+                            }
+                        ), options: CacheStore.limits.map { (value: $0.bytes, title: $0.title) }, width: 90)
+                        Spacer()
+                    }
+                    HStack(spacing: 6) {
+                        Text("In use: \(CacheStore.formattedSize(cacheInUse))")
+                            .font(.system(size: 11))
+                            .foregroundColor(Win32Colors.text)
+                        Spacer()
+                        Win32Button("Clear cache", width: 85) {
+                            CacheStore.clear(keeping: CacheStore.activeFile())
+                            cacheInUse = CacheStore.size()
                         }
-                        .disabled(offline)
+                        .disabled(cacheInUse == 0)
                     }
                 }
             }
         }
+        .onAppear { cacheInUse = CacheStore.size() }
     }
 
     private func setOffline(_ value: Bool) {
@@ -2045,7 +2061,7 @@ struct SubsonicPrefsGroup: View {
                     Win32TextField(text: $password, secure: true)
                 }
                 Text("Your own music server (2005+, not in Winamp 2.95). When connected, Library shows a Subsonic section; tracks are downloaded as they play, and the password is stored encrypted for this Mac.")
-                    .font(.system(size: 10)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 10)).foregroundColor(Win32Colors.secondaryText).fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
                     Win32Button("Connect", width: nil) { connect() }
                         .disabled(busy || server.trimmingCharacters(in: .whitespaces).isEmpty || user.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -2128,7 +2144,7 @@ struct LastFMPrefsGroup: View {
                     Spacer(minLength: 0)
                 }
                 Text("Tracks you play go to your Last.fm profile once played for half their length or \(Int(AppConstants.LastFM.scrobbleAfterAtMost / 60)) minutes (\(Int(AppConstants.LastFM.shortestScrobbled)) seconds or shorter and radio are skipped). Without network they wait and are sent later.")
-                    .font(.system(size: 10)).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 10)).foregroundColor(Win32Colors.secondaryText).fixedSize(horizontal: false, vertical: true)
             }
         }
     }

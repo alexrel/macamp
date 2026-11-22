@@ -179,6 +179,79 @@ enum PluginManager {
     }
 }
 
+/// Shared cache across `Caches/MacAmp/Converted` (plug-in conversions) and `Caches/MacAmp/Subsonic` (downloaded tracks).
+enum CacheStore {
+    static let defaultLimit: Int64 = 1 << 30
+    static let limits: [(bytes: Int64, title: String)] = [
+        (256 << 20, "256 MB"),
+        (512 << 20, "512 MB"),
+        (1 << 30, "1 GB"),
+        (2 << 30, "2 GB"),
+        (4 << 30, "4 GB"),
+    ]
+    static var folders: [URL] { [PluginConversion.cacheFolder, Subsonic.cacheFolder] }
+
+    private static func isTemporary(_ url: URL) -> Bool {
+        url.lastPathComponent.contains(".partial.")
+    }
+
+    private static func files(in folders: [URL]) -> [(url: URL, size: Int64, date: Date)] {
+        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]
+        return folders.flatMap { folder in
+            ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys)) ?? [])
+                .compactMap { url -> (url: URL, size: Int64, date: Date)? in
+                    guard !isTemporary(url),
+                          let v = try? url.resourceValues(forKeys: Set(keys)),
+                          v.isRegularFile == true else { return nil }
+                    return (url, Int64(v.fileSize ?? 0), v.contentModificationDate ?? .distantPast)
+                }
+        }
+    }
+
+    static func size(in folders: [URL] = folders) -> Int64 {
+        files(in: folders).reduce(0) { $0 + $1.size }
+    }
+
+    /// Keeps the newest files across all cache folders up to `limit` bytes; `keeping` and `.partial.` files stay.
+    @discardableResult
+    static func trim(limit: Int64 = PersistenceManager.shared.state.cacheLimitBytes,
+                     keeping: URL? = nil,
+                     folders: [URL] = folders) -> Int64 {
+        let kept = keeping?.standardizedFileURL
+        var total: Int64 = 0
+        var freed: Int64 = 0
+        for file in files(in: folders).sorted(by: { $0.date > $1.date }) {
+            total += file.size
+            if (limit <= 0 || total > limit), file.url.standardizedFileURL != kept {
+                if (try? FileManager.default.removeItem(at: file.url)) != nil {
+                    freed += file.size
+                }
+            }
+        }
+        return freed
+    }
+
+    @discardableResult
+    static func clear(keeping: URL? = nil, folders: [URL] = folders) -> Int64 {
+        trim(limit: 0, keeping: keeping, folders: folders)
+    }
+
+    @MainActor static func activeFile() -> URL? {
+        guard AudioEngine.shared.status != .stopped, let url = AudioEngine.shared.currentMetadata?.url else { return nil }
+        if Subsonic.isTrack(url) { return Subsonic.cacheFile(for: url) }
+        let local = url.withoutPlaybackRange
+        return PluginConversion.needsConversion(local) ? PluginConversion.cachedOutput(for: local) : local
+    }
+
+    static func formattedSize(_ bytes: Int64) -> String {
+        guard bytes > 0 else { return "0 KB" }
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = bytes < (1 << 20) ? [.useKB] : bytes < (1 << 30) ? [.useMB] : [.useGB]
+        formatter.countStyle = .binary
+        return formatter.string(fromByteCount: bytes)
+    }
+}
+
 /// Converting a file once with a converter plug-in (Caches/MacAmp/Converted), then playing the result:
 /// audio → FLAC (lossless); video → MP4, its streams copied when macOS decodes them, else H.264 (the Mac's
 /// hardware encoder) / AAC; text subtitles → mov_text. All audio tracks and subtitles come along.
@@ -186,8 +259,6 @@ enum PluginConversion {
     static var cacheFolder: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("MacAmp/Converted", isDirectory: true)
     }
-    /// shortcut: a fixed 4 GB cache, oldest files go first; make it a preference if people keep many films
-    static let cacheLimit: Int64 = 4 << 30
 
     /// Progress (0...1) of a running conversion, for the marquee and the video window
     @MainActor static var onProgress: ((URL, Double) -> Void)?
@@ -285,7 +356,7 @@ enum PluginConversion {
             try? FileManager.default.removeItem(at: partial)
             throw error
         }
-        trimCache(keeping: output)
+        CacheStore.trim(keeping: output)
         return output
     }
 
@@ -400,24 +471,8 @@ enum PluginConversion {
             try? FileManager.default.removeItem(at: partial)
             throw error
         }
-        trimCache(keeping: output)
+        CacheStore.trim(keeping: output)
         return output
-    }
-
-    /// Oldest conversions go first once the folder passes the limit
-    static func trimCache(keeping current: URL) {
-        let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
-        let files = ((try? FileManager.default.contentsOfDirectory(at: cacheFolder, includingPropertiesForKeys: keys)) ?? [])
-            .compactMap { url -> (URL, Date, Int64)? in
-                guard let v = try? url.resourceValues(forKeys: Set(keys)) else { return nil }
-                return (url, v.contentModificationDate ?? .distantPast, Int64(v.fileSize ?? 0))
-            }
-            .sorted { $0.1 < $1.1 }
-        var total = files.reduce(Int64(0)) { $0 + $1.2 }
-        for (url, _, size) in files where total > cacheLimit && url != current {
-            try? FileManager.default.removeItem(at: url)
-            total -= size
-        }
     }
 
     struct PluginError: LocalizedError {

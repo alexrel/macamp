@@ -12,6 +12,7 @@ public enum Win32Colors {
     /// The selected row in every list (tree, plug-ins, skins, dialogs): the accent colour macOS highlights menu items with
     public static let selectionHighlight = Color(nsColor: .controlAccentColor)
     public static let text = Color.black
+    public static let secondaryText = Color(white: 0.25)
     public static let textDisabled = Color(red: 128/255, green: 128/255, blue: 128/255)
 }
 
@@ -243,7 +244,7 @@ public struct Win32Checkbox: View {
                     .font(.system(size: 11))
                     .foregroundColor(Win32Colors.text)
                 
-                Spacer()
+                Spacer(minLength: 0)
             }
         }
         .buttonStyle(.plain)
@@ -286,7 +287,7 @@ public struct Win32RadioButton: View {
                     .font(.system(size: 11))
                     .foregroundColor(Win32Colors.text)
                 
-                Spacer()
+                Spacer(minLength: 0)
             }
         }
         .buttonStyle(.plain)

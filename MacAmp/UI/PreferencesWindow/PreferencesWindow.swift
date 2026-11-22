@@ -18,23 +18,33 @@ public class PreferencesWindow: NSWindow {
         super.sendEvent(event)
     }
 
-    /// Opens `content` as the plug-in dialog `title`, beside Preferences (over it when the screen has no room)
+    /// Focus that lands on Preferences some other way (its title bar, ⌘-Tab, the Dock) goes on to the open dialog
+    override public func becomeKey() {
+        super.becomeKey()
+        if let dialog = pluginDialog, dialog.isVisible { DispatchQueue.main.async { dialog.makeKeyAndOrderFront(nil) } }
+    }
+
+    /// Opens `content` as the plug-in dialog `title`, centred over Preferences. Preferences stays put while it's open;
+    /// the dialog itself can be moved anywhere
     func showPluginDialog<Content: View>(title: String, _ content: Content) {
         pluginDialog?.close()
         let dialog = PluginDialogWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
         dialog.title = title
         dialog.isReleasedWhenClosed = false
         dialog.installScaledDialog(content)
+        dialog.fitTitle()
         dialog.level = level
         let visible = (screen ?? NSScreen.main)?.visibleFrame ?? frame
-        var origin = NSPoint(x: frame.maxX + 4, y: frame.maxY - dialog.frame.height)
-        if origin.x + dialog.frame.width > visible.maxX { origin = NSPoint(x: frame.midX - dialog.frame.width / 2, y: frame.midY - dialog.frame.height / 2) }
-        dialog.setFrameOrigin(origin)
-        addChildWindow(dialog, ordered: .above) // moves and hides with Preferences
+        let size = dialog.frame.size
+        dialog.setFrameOrigin(NSPoint(x: min(max(frame.midX - size.width / 2, visible.minX), visible.maxX - size.width),
+                                      y: min(max(frame.midY - size.height / 2, visible.minY), visible.maxY - size.height)))
+        addChildWindow(dialog, ordered: .above) // stays above Preferences and hides with it
+        isMovable = false // a child follows its parent: Preferences waits, as it does for clicks and keys
         pluginDialog = dialog
         dialog.onClose = { [weak self, weak dialog] in
             guard let self, let dialog, self.pluginDialog === dialog else { return }
             self.removeChildWindow(dialog)
+            self.isMovable = true
             self.pluginDialog = nil
             self.makeKeyAndOrderFront(nil)
         }
@@ -135,4 +145,34 @@ private final class PluginDialogWindow: NSWindow {
         onClose?()
         onClose = nil
     }
+
+    /// macOS keeps the place of the hidden minimise and zoom buttons, so a long title was cut short with room to spare:
+    /// a title that doesn't fit centred starts right after the close button instead, as on a Win32 caption
+    func fitTitle() {
+        guard let close = standardWindowButton(.closeButton), let bar = close.superview,
+              let zoom = standardWindowButton(.zoomButton) else { return }
+        let font = NSFont.titleBarFont(ofSize: 0)
+        let width = (title as NSString).size(withAttributes: [.font: font]).width
+        guard width / 2 > frame.width / 2 - zoom.frame.maxX - Self.titleGap else { return }
+        let label = NSTextField(labelWithString: title)
+        label.font = font
+        label.textColor = .windowFrameTextColor
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        bar.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: close.frame.maxX + Self.titleGap),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: bar.trailingAnchor, constant: -Self.titleGap),
+            label.centerYAnchor.constraint(equalTo: close.centerYAnchor),
+        ])
+        titleVisibility = .hidden
+        titleLabel = label
+    }
+
+    private static let titleGap: CGFloat = 8
+    private var titleLabel: NSTextField?
+    // Dimmed like the system title when the dialog isn't the key window
+    override func becomeKey() { super.becomeKey(); titleLabel?.textColor = .windowFrameTextColor }
+    override func resignKey() { super.resignKey(); titleLabel?.textColor = .disabledControlTextColor }
 }

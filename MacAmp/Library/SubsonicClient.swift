@@ -60,8 +60,6 @@ public enum Subsonic {
     static let apiVersion = "1.16.1"
     static let clientName = "MacAmp"
     public static let scheme = "subsonic"
-    /// Played tracks are downloaded whole (seeking, EQ and plug-ins work as for local files); the cache keeps the newest up to this size
-    static let cacheLimitBytes: Int64 = 1 << 30
     static let searchLimit = 500
 
     // MARK: Settings
@@ -278,23 +276,8 @@ public enum Subsonic {
         try FileManager.default.createDirectory(at: cacheFolder, withIntermediateDirectories: true)
         try? FileManager.default.removeItem(at: file)
         try FileManager.default.moveItem(at: temp, to: file)
-        pruneCache(keeping: file)
+        CacheStore.trim(keeping: file)
         return file
-    }
-
-    /// Oldest files go first once the cache is over `cacheLimitBytes`
-    static func pruneCache(keeping current: URL, limit: Int64 = cacheLimitBytes, folder: URL = cacheFolder) {
-        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
-        guard let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys) else { return }
-        let sized = files.compactMap { url -> (URL, Int64, Date)? in
-            guard let v = try? url.resourceValues(forKeys: Set(keys)) else { return nil }
-            return (url, Int64(v.fileSize ?? 0), v.contentModificationDate ?? .distantPast)
-        }.sorted { $0.2 > $1.2 }
-        var total: Int64 = 0
-        for (url, size, _) in sized {
-            total += size
-            if total > limit && url.standardizedFileURL != current.standardizedFileURL { try? FileManager.default.removeItem(at: url) }
-        }
     }
 
     // MARK: Password (LocalSecret: encrypted in the app's defaults, never in session.json)

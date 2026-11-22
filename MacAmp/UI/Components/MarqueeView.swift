@@ -58,18 +58,23 @@ public class MarqueeView: WinampControlView {
         frame = MarqueeView.preferredFrame
         cachedWidthKey = nil
         needsDisplay = true
-        updateScrollTimer()
+        resetScroll()
     }
     
     /// The chosen TrueType font, shrunk if needed so whole letters (ascender to descender) fit the LCD.
     func trueTypeFont() -> NSFont {
         let state = PersistenceManager.shared.state
-        var size = CGFloat(state.desktopFontSize)
+        return Self.fittedTitleFont(family: state.desktopFontFamily, size: state.desktopFontSize, height: bounds.height)
+    }
+
+    static func fittedTitleFont(family: String, size requestedSize: CGFloat,
+                                height: CGFloat = AppConstants.MainWindow.Layout.marqueeTrueType.height) -> NSFont {
+        var size = requestedSize
         func make(_ size: CGFloat) -> NSFont {
-            NSFont(name: state.desktopFontFamily, size: size) ?? NSFont.systemFont(ofSize: size)
+            NSFont(name: family, size: size) ?? NSFont.systemFont(ofSize: size)
         }
         var font = make(size)
-        while font.ascender - font.descender > bounds.height - 1, size > 5 {
+        while font.ascender - font.descender > height - 1, size > 5 {
             size -= 0.5
             font = make(size)
         }

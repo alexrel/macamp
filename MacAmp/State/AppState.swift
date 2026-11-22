@@ -53,6 +53,12 @@ public struct AppState: Codable {
         get { httpProxyStorage ?? "" }
         set { httpProxyStorage = newValue }
     }
+    /// Setup ▸ Cache: shared maximum size for Converted and Subsonic caches (default 1 GB)
+    public var cacheLimitBytesStorage: Int64? = nil
+    public var cacheLimitBytes: Int64 {
+        get { cacheLimitBytesStorage ?? CacheStore.defaultLimit }
+        set { cacheLimitBytesStorage = newValue }
+    }
     /// Display ▸ Show MacAmp in: Dock (2.95's taskbar); with showMenuBarIcon (the system tray)
     public var showDockIconStorage: Bool? = nil
     public var showDockIcon: Bool { get { showDockIconStorage ?? true } set { showDockIconStorage = newValue } }

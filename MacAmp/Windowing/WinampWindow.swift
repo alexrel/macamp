@@ -16,6 +16,7 @@ extension NSWindow {
 
     func installScaledDialog<Content: View>(_ content: Content, size: NSSize? = nil) {
         let scaled = ScaledHostingContent(content, size: size) // no size: the content's own fitting size
+        scaled.appearance = NSAppearance(named: .aqua)
         if scaled.logicalSize.width <= 0 || scaled.logicalSize.height <= 0 { scaled.logicalSize = contentRect(forFrameRect: frame).size }
         scaled.frame.size = scaled.logicalSize
         contentView = scaled
@@ -137,6 +138,7 @@ private struct ScaledContent<Content: View>: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .scaleEffect(zoom.value, anchor: .topLeading)
         }
+        .environment(\.colorScheme, .light)
     }
 }
 
