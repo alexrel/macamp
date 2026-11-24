@@ -62,7 +62,9 @@ extension PlayerCoordinator {
             mainView.marquee.resetScroll()
             mainView.needsDisplay = true
         }
+        audioEngine.beginTrackTransition()
         Task {
+            defer { self.audioEngine.endTrackTransition() }
             do {
                 let meta = try await audioEngine.load(url: track.url)
                 self.videoTrackLoaded(track.url)

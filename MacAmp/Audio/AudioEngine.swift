@@ -2,6 +2,14 @@ import Foundation
 import AppKit
 import AVFoundation
 import os
+import MacAmpObjC
+
+private enum AudioNodeBus {
+    static let main: AVAudioNodeBus = 0
+    static let filePrimary: AVAudioNodeBus = 0
+    static let stream: AVAudioNodeBus = 1
+    static let fileCrossfade: AVAudioNodeBus = 2
+}
 
 public struct TrackMetadata: Equatable {
     public let url: URL
@@ -71,19 +79,43 @@ public class AudioEngine {
     private var finishedWhilePaused = false
     private var playbackActivity: NSObjectProtocol?
     private var activeLoads: Int = 0
-    private var isAdvancingTrack = false
+    private var transitionCount: Int = 0
     private var stalledRecoveryAttempts = 0
+    /// Paused by recoverStalledOutput(); the next wake or output change plays on (exposed for tests).
+    public private(set) var pausedByStalledOutput = false
+
+    /// True while a ProcessInfo user-initiated playback assertion is held (exposed for tests).
+    public var isHoldingPlaybackActivity: Bool { playbackActivity != nil }
+
+    public func beginTrackTransition() {
+        transitionCount += 1
+        updatePlaybackActivity()
+    }
+
+    public func endTrackTransition() {
+        transitionCount = max(0, transitionCount - 1)
+        updatePlaybackActivity()
+        idleEngineIfQuiet()
+    }
 
     private func updatePlaybackActivity() {
-        let shouldHold = status == .playing || activeLoads > 0 || isAdvancingTrack
+        let shouldHold = status == .playing || activeLoads > 0 || transitionCount > 0
         if shouldHold {
             if playbackActivity == nil {
-                playbackActivity = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "MacAmp playback")
+                playbackActivity = ProcessInfo.processInfo.beginActivity(
+                    options: [.userInitiated, .idleSystemSleepDisabled],
+                    reason: AppConstants.Audio.playbackActivityReason
+                )
             }
         } else if let playbackActivity {
             ProcessInfo.processInfo.endActivity(playbackActivity)
             self.playbackActivity = nil
         }
+    }
+
+    /// Test hook verifying Objective-C @try/@catch isolation inside a @MainActor Task.
+    public func testRaiseCaughtObjCException(_ reason: String) -> Bool {
+        MacAmpObjC.raiseTestException(reason)
     }
 
     public private(set) var status: PlayerStatus = .stopped {
@@ -206,10 +238,18 @@ public class AudioEngine {
         // AVFoundation stops the engine and posts this from its own internal queue.
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.engine.isRunning else { return }
+            self.stalledRecoveryAttempts = 0
             let savedTime = self.currentTrackTime
             let devices = AudioDeviceManager.shared
             devices.refreshDevices()
             _ = self.applyOutputDevice(devices.activeOutputDeviceID())
+            if self.pausedByStalledOutput {
+                self.resumeAfterStalledOutput()
+                return
+            }
+            if self.status == .playing {
+                guard self.ensureEngineRunning() else { return }
+            }
             self.restoreAfterOutputChange(at: savedTime)
             print("AudioEngine: Audio configuration changed, playback is \(self.status)")
         }
@@ -217,14 +257,26 @@ public class AudioEngine {
 
     @objc private func handleSystemOrDisplayWake(_ notification: Notification) {
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.status == .playing, !self.engine.isRunning else { return }
+            guard let self else { return }
+            if self.pausedByStalledOutput {
+                self.resumeAfterStalledOutput()
+                return
+            }
+            guard self.status == .playing else { return }
             self.stalledRecoveryAttempts = 0
+            let nodeStopped = (!self.isStreaming && !self.playerNode.isPlaying)
+                || (self.isStreamDecodedInEngine && self.isStreamNodeStarted && !self.streamNode.isPlaying)
+            guard !self.engine.isRunning || nodeStopped else { return }
             let savedTime = self.currentTrackTime
-            let devices = AudioDeviceManager.shared
-            devices.refreshDevices()
-            _ = self.applyOutputDevice(devices.activeOutputDeviceID(), force: true)
+            guard self.forceRestartEngine() else { return }
             self.restoreAfterOutputChange(at: savedTime)
         }
+    }
+
+    /// Plays on after recoverStalledOutput() paused; stays armed while the output is still unavailable.
+    private func resumeAfterStalledOutput() {
+        play()
+        if status != .playing { pausedByStalledOutput = true }
     }
 
     private func restoreAfterOutputChange(at savedTime: TimeInterval) {
@@ -259,7 +311,7 @@ public class AudioEngine {
 
     public func reinstallMixerTap() {
         if isTapInstalled {
-            engine.mainMixerNode.removeTap(onBus: 0)
+            MacAmpObjC.removeTap(on: engine.mainMixerNode, bus: AudioNodeBus.main)
             isTapInstalled = false
         }
         updateAnalysisTap()
@@ -269,14 +321,14 @@ public class AudioEngine {
     private func updateAnalysisTap() {
         let wanted = isAnalysisEnabled && status == .playing
         if wanted && !isTapInstalled {
-            let tapFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+            let tapFormat = engine.mainMixerNode.outputFormat(forBus: AudioNodeBus.main)
             guard tapFormat.sampleRate > 0 && tapFormat.channelCount > 0 else { return }
             let frame = visualizerFrame
             let analyzer = fftAnalyzer
             var silentWindows = 0 // tap thread only
             let tapVolume = tapVolume
             tapVolume.withLock { $0 = engine.mainMixerNode.outputVolume }
-            engine.mainMixerNode.installTap(onBus: 0, bufferSize: AppConstants.Audio.bufferSize, format: tapFormat) { [weak self] buffer, _ in
+            isTapInstalled = MacAmpObjC.installTap(on: engine.mainMixerNode, bus: AudioNodeBus.main, bufferSize: AppConstants.Audio.bufferSize) { [weak self] buffer in
                 guard let channels = buffer.floatChannelData else { return }
                 let window = analyzer.windowSize
                 // The tap hears the signal after the volume control; Winamp's visualizer doesn't follow the volume.
@@ -297,7 +349,7 @@ public class AudioEngine {
                     // Keep delivering ~2 s of silence so falling bars and peaks can finish,
                     // then skip main-thread wakeups entirely until the signal returns
                     silentWindows = hasSignal ? 0 : silentWindows + 1
-                    if silentWindows > 90 { continue }
+                    if silentWindows > AppConstants.Audio.silentVisualizerWindowLimit { continue }
                     // Spread the windows over the buffer's duration so the display moves with the audio
                     DispatchQueue.main.asyncAfter(deadline: .now() + Double(w) * windowDuration) {
                         frame.publish(slot: slot)
@@ -306,9 +358,8 @@ public class AudioEngine {
                     }
                 }
             }
-            isTapInstalled = true
         } else if !wanted && isTapInstalled {
-            engine.mainMixerNode.removeTap(onBus: 0)
+            MacAmpObjC.removeTap(on: engine.mainMixerNode, bus: AudioNodeBus.main)
             isTapInstalled = false
             visualizerFrame.clear()
             // One final (zeroed) frame so the display empties instead of freezing
@@ -327,8 +378,8 @@ public class AudioEngine {
         engine.attach(timePitchNode)
         engine.attach(reverbNode)
 
-        engine.connect(playerNode, to: sourceMixer, fromBus: 0, toBus: 0, format: nil)
-        engine.connect(spareNode, to: sourceMixer, fromBus: 0, toBus: 2, format: nil)
+        engine.connect(playerNode, to: sourceMixer, fromBus: AudioNodeBus.main, toBus: AudioNodeBus.filePrimary, format: nil)
+        engine.connect(spareNode, to: sourceMixer, fromBus: AudioNodeBus.main, toBus: AudioNodeBus.fileCrossfade, format: nil)
         // streamNode is connected to bus 1 once the stream's decoded format is known
         engine.connect(sourceMixer, to: eqNode, format: nil)
         // EQ -> [TimePitch] -> [Reverb] -> mainMixer: DSP nodes are wired in only while active (see rewireDSPChain)
@@ -362,45 +413,56 @@ public class AudioEngine {
         AudioUnitSetParameter(unit, kHALOutputParam_Volume, kAudioUnitScope_Global, 0, 0, 0)
     }
 
+    private func startEngineOnce() -> Bool {
+        MacAmpObjC.start(engine)
+    }
+
+    @discardableResult
+    private func forceRestartEngine() -> Bool {
+        if isTapInstalled {
+            MacAmpObjC.removeTap(on: engine.mainMixerNode, bus: AudioNodeBus.main)
+            isTapInstalled = false
+        }
+        MacAmpObjC.stop(engine)
+        let devices = AudioDeviceManager.shared
+        devices.refreshDevices()
+        _ = applyOutputDevice(devices.activeOutputDeviceID(), force: true)
+        MacAmpObjC.prepare(engine)
+        if startEngineOnce() {
+            silenceIfTestRun()
+            updateAnalysisTap()
+            print("AudioEngine: Engine restarted after refreshing the output device")
+            return true
+        }
+        // Sample rate or channel layout may have changed while sleeping; reset the graph state and retry once.
+        MacAmpObjC.reset(engine)
+        _ = applyOutputDevice(devices.activeOutputDeviceID(), force: true)
+        MacAmpObjC.prepare(engine)
+        if startEngineOnce() {
+            silenceIfTestRun()
+            updateAnalysisTap()
+            print("AudioEngine: Engine restarted after reset")
+            return true
+        }
+        print("AudioEngine: Could not restart AVAudioEngine")
+        return false
+    }
+
     @discardableResult
     private func ensureEngineRunning() -> Bool {
         silenceIfTestRun()
         if engine.isRunning { return true }
-        do {
-            try engine.start()
-        } catch {
-            engine.stop()
-            let devices = AudioDeviceManager.shared
-            devices.refreshDevices()
-            _ = applyOutputDevice(devices.activeOutputDeviceID(), force: true)
-            reinstallMixerTap()
-            engine.prepare()
-            do {
-                try engine.start()
-                print("AudioEngine: Engine restarted after refreshing the output device")
-            } catch {
-                // Sample rate or channel layout may have changed while sleeping; reset the graph state and retry once.
-                engine.reset()
-                _ = applyOutputDevice(devices.activeOutputDeviceID(), force: true)
-                reinstallMixerTap()
-                engine.prepare()
-                do {
-                    try engine.start()
-                    print("AudioEngine: Engine restarted after reset")
-                } catch {
-                    print("AudioEngine: Could not restart AVAudioEngine: \(error)")
-                    return false
-                }
-            }
+        if startEngineOnce() {
+            silenceIfTestRun()
+            return true
         }
-        silenceIfTestRun()
-        return true
+        return forceRestartEngine()
     }
     
     /// Pauses the audio I/O while nothing is audible, so a paused/stopped player uses 0% CPU.
     private func idleEngineIfQuiet() {
-        guard status != .playing, engine.isRunning else { return }
-        engine.pause()
+        guard status != .playing, activeLoads == 0, transitionCount == 0, engine.isRunning else { return }
+        MacAmpObjC.pause(engine)
     }
     
     public var isEngineRunning: Bool { engine.isRunning }
@@ -447,16 +509,16 @@ public class AudioEngine {
         guard timePitch != wiredTimePitch || reverb != wiredReverb else { return }
         let wasRunning = engine.isRunning
         let resumeAt = status == .playing && !isStreaming && audioFile != nil ? currentTime : nil
-        if wasRunning { engine.pause() }
-        engine.disconnectNodeOutput(eqNode)
-        engine.disconnectNodeOutput(timePitchNode)
-        engine.disconnectNodeOutput(reverbNode)
+        if wasRunning { MacAmpObjC.pause(engine) }
+        MacAmpObjC.disconnectOutput(in: engine, node: eqNode)
+        MacAmpObjC.disconnectOutput(in: engine, node: timePitchNode)
+        MacAmpObjC.disconnectOutput(in: engine, node: reverbNode)
         var chain: [AVAudioNode] = [eqNode]
         if timePitch { chain.append(timePitchNode) }
         if reverb { chain.append(reverbNode) }
         chain.append(engine.mainMixerNode)
         for i in 0..<(chain.count - 1) {
-            engine.connect(chain[i], to: chain[i + 1], format: nil)
+            _ = MacAmpObjC.connect(in: engine, from: chain[i], to: chain[i + 1], fromBus: AudioNodeBus.main, toBus: AudioNodeBus.main, format: nil)
         }
         wiredTimePitch = timePitch
         wiredReverb = reverb
@@ -544,6 +606,7 @@ public class AudioEngine {
     @MainActor
     public func load(url: URL) async throws -> TrackMetadata {
         stalledRecoveryAttempts = 0
+        pausedByStalledOutput = false
         activeLoads += 1
         updatePlaybackActivity()
         defer {
@@ -693,7 +756,7 @@ public class AudioEngine {
         } else {
             crossfadeArmed = false
             cutCrossfade()
-            playerNode.stop()
+            MacAmpObjC.stop(playerNode)
         }
         audioFile = nil
         playbackTimer?.invalidate()
@@ -784,8 +847,8 @@ public class AudioEngine {
         if streamFormat != format {
             // A different format can't be appended to buffers already queued on the node
             resetStreamNode()
-            engine.disconnectNodeOutput(streamNode)
-            engine.connect(streamNode, to: sourceMixer, fromBus: 0, toBus: 1, format: format)
+            MacAmpObjC.disconnectOutput(in: engine, node: streamNode)
+            _ = MacAmpObjC.connect(in: engine, from: streamNode, to: sourceMixer, fromBus: AudioNodeBus.main, toBus: AudioNodeBus.stream, format: format)
             streamFormat = format
         }
     }
@@ -795,12 +858,14 @@ public class AudioEngine {
         reconnectAttempts = 0
         let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
         let nodeToken = streamNodeToken
-        streamBufferedSeconds += seconds
-        streamNode.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+        let scheduled = MacAmpObjC.scheduleBuffer(on: streamNode, buffer: buffer) { [weak self] in
             DispatchQueue.main.async {
                 guard let self, self.streamNodeToken == nodeToken else { return }
                 self.streamBufferedSeconds = max(0, self.streamBufferedSeconds - seconds)
             }
+        }
+        if scheduled {
+            streamBufferedSeconds += seconds
         }
         startStreamNodeIfReady()
     }
@@ -809,10 +874,10 @@ public class AudioEngine {
         guard status == .playing, !isStreamNodeStarted, streamBufferedSeconds >= AudioEngine.streamPrebufferSeconds else { return }
         guard ensureEngineRunning() else {
             stopInternal(fade: false)
-            onStreamEvent?("Audio output unavailable")
+            onStreamEvent?(AppConstants.Audio.outputUnavailableMessage)
             return
         }
-        streamNode.play()
+        guard MacAmpObjC.play(streamNode) else { return }
         isStreamNodeStarted = true
         fadeInFromSilence()
     }
@@ -820,7 +885,7 @@ public class AudioEngine {
     /// Drops everything queued on streamNode.
     private func resetStreamNode() {
         streamNodeToken += 1
-        streamNode.stop()
+        MacAmpObjC.stop(streamNode)
         streamBufferedSeconds = 0
         isStreamNodeStarted = false
     }
@@ -882,6 +947,7 @@ public class AudioEngine {
     // MARK: - Playback Control
     public func play() {
         stalledRecoveryAttempts = 0
+        pausedByStalledOutput = false
         if isStreaming {
             if status == .playing { return }
             status = .playing
@@ -907,7 +973,7 @@ public class AudioEngine {
         // Resuming from pause: unpause the node (or, if the pause fade is still running, just cancel it)
         if status == .paused {
             guard ensureEngineRunning() else {
-                onStreamEvent?("Audio output unavailable")
+                onStreamEvent?(AppConstants.Audio.outputUnavailableMessage)
                 return
             }
             status = .playing
@@ -916,7 +982,10 @@ public class AudioEngine {
                 handlePlaybackCompletion()
                 return
             }
-            playerNode.play()
+            if !MacAmpObjC.play(playerNode) {
+                seek(to: currentTrackTime)
+                return
+            }
             fade(to: 1.0, duration: AudioEngine.fadeInDuration)
             startTimer()
             return
@@ -926,7 +995,7 @@ public class AudioEngine {
         let gen = playbackGeneration
         finishedWhilePaused = false
 
-        playerNode.stop()
+        MacAmpObjC.stop(playerNode)
 
         let startFrame = rangeStartFrame + AVAudioFramePosition(max(0, min(currentTrackTime, fileDuration)) * sampleRate)
         let frameCount = AVAudioFrameCount(max(0, rangeEndFrame - startFrame))
@@ -934,19 +1003,20 @@ public class AudioEngine {
             handlePlaybackCompletion()
             return
         }
+        startFrameOffset = startFrame
         guard ensureEngineRunning() else {
-            preparePaused(at: currentTrackTime)
-            onStreamEvent?("Audio output unavailable")
+            crossfadeArmed = false
+            cutCrossfade()
+            onStreamEvent?(AppConstants.Audio.outputUnavailableMessage)
+            status = .playing
+            startTimer()
             return
         }
-
-        startFrameOffset = startFrame
-        scheduleFileSegment(file, from: startFrame, frames: frameCount, generation: gen)
 
         if crossfadeArmed && isCrossfading {
             crossfadeArmed = false
             playerNode.volume = 0
-            playerNode.play()
+            startFileNode(file: file, from: startFrame, frames: frameCount, generation: gen)
             status = .playing
             startCrossfadeRamp(over: crossfadeDuration)
         } else {
@@ -954,17 +1024,36 @@ public class AudioEngine {
             cutCrossfade()
             playerNode.volume = 1
             sourceMixer.outputVolume = 0
-            playerNode.play()
+            startFileNode(file: file, from: startFrame, frames: frameCount, generation: gen)
             status = .playing
             fade(to: 1.0, duration: AudioEngine.fadeInDuration)
         }
         startTimer()
     }
 
+    private func startFileNode(file: AVAudioFile, from startFrame: AVAudioFramePosition, frames: AVAudioFrameCount, generation gen: Int) {
+        scheduleFileSegment(file, from: startFrame, frames: frames, generation: gen)
+        if MacAmpObjC.play(playerNode) {
+            return
+        }
+        // Engine reported isRunning == true while its HAL IO unit was wedged/asleep ("player did not see an IO cycle.")
+        guard forceRestartEngine() else { return }
+        // Invalidate any completion callback flushed when forceRestartEngine() stopped the engine.
+        playbackGeneration += 1
+        let retryGen = playbackGeneration
+        scheduleFileSegment(file, from: startFrame, frames: frames, generation: retryGen)
+        _ = MacAmpObjC.play(playerNode)
+    }
+
     private func scheduleFileSegment(_ file: AVAudioFile, from startFrame: AVAudioFramePosition, frames: AVAudioFrameCount, generation gen: Int) {
         // .dataPlayedBack: fire when the audio has actually been heard, not merely read from disk
         // (otherwise short files "finish" immediately and long ones lose their tail).
-        playerNode.scheduleSegment(file, startingFrame: startFrame, frameCount: frames, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+        let outFormat = playerNode.outputFormat(forBus: AudioNodeBus.main)
+        if outFormat.sampleRate == 0 || outFormat.channelCount == 0 {
+            let bus = engine.outputConnectionPoints(for: playerNode, outputBus: AudioNodeBus.main).first?.bus ?? AudioNodeBus.filePrimary
+            _ = MacAmpObjC.connect(in: engine, from: playerNode, to: sourceMixer, fromBus: AudioNodeBus.main, toBus: bus, format: nil)
+        }
+        _ = MacAmpObjC.scheduleSegment(on: playerNode, file: file, startingFrame: startFrame, frameCount: frames) { [weak self] in
             DispatchQueue.main.async {
                 // An output change can stop the engine and deliver this callback for unplayed audio.
                 guard let self, self.playbackGeneration == gen, self.engine.isRunning else { return }
@@ -1013,7 +1102,7 @@ public class AudioEngine {
             guard let self, finished, self.status == .paused, self.playbackGeneration == gen else { return }
             // The node kept playing during the fade; remember where it really stopped
             self.currentTrackTime = self.nodePlaybackTime() ?? self.currentTrackTime
-            self.playerNode.pause()
+            MacAmpObjC.pause(self.playerNode)
             self.onTimeUpdate?(self.currentTrackTime)
             self.idleEngineIfQuiet()
         }
@@ -1040,14 +1129,13 @@ public class AudioEngine {
 
     /// Position of the file player node, in seconds of the file's timeline (unclamped).
     private func rawNodePlaybackTime() -> TimeInterval? {
-        // playerTime(forNodeTime:) throws on a render time with neither clock valid (the engine has not rendered yet)
-        guard let nodeTime = playerNode.lastRenderTime, nodeTime.isSampleTimeValid || nodeTime.isHostTimeValid,
-              let playerTime = playerNode.playerTime(forNodeTime: nodeTime),
-              playerTime.sampleRate > 0 else {
+        var sampleTime: Double = 0
+        var rate: Double = 0
+        guard MacAmpObjC.playbackTime(for: playerNode, sampleTime: &sampleTime, sampleRate: &rate), rate > 0 else {
             return nil
         }
         // playerTime counts in the node's output rate, which can differ from the file's rate (44.1k file on a 48k device)
-        let played = Double(playerTime.sampleTime) / playerTime.sampleRate
+        let played = sampleTime / rate
         return Double(startFrameOffset - rangeStartFrame) / sampleRate + played
     }
 
@@ -1075,6 +1163,7 @@ public class AudioEngine {
     private func stopInternal(fade shouldFade: Bool, duration: TimeInterval? = nil) {
         let wasPlaying = (status == .playing)
         stalledRecoveryAttempts = 0
+        pausedByStalledOutput = false
         crossfadeArmed = false
         cutCrossfade()
         playbackGeneration += 1
@@ -1117,7 +1206,7 @@ public class AudioEngine {
         fade(to: 0, duration: fadeDuration) { [weak self] _ in
             // Skip if play()/seek()/load() already took over the node
             guard let self, self.playbackGeneration == gen else { return }
-            self.playerNode.stop()
+            MacAmpObjC.stop(self.playerNode)
             self.idleEngineIfQuiet()
         }
     }
@@ -1133,29 +1222,29 @@ public class AudioEngine {
         finishedWhilePaused = false
         crossfadeArmed = false
         cutCrossfade()
-        playerNode.stop()
+        MacAmpObjC.stop(playerNode)
 
         let targetFrame = rangeStartFrame + AVAudioFramePosition(clampedTime * sampleRate)
         let frameCount = AVAudioFrameCount(max(0, rangeEndFrame - targetFrame))
         startFrameOffset = targetFrame
 
         if status == .playing, frameCount > 0, !ensureEngineRunning() {
-            preparePaused(at: clampedTime)
-            onStreamEvent?("Audio output unavailable")
+            onStreamEvent?(AppConstants.Audio.outputUnavailableMessage)
+            startTimer()
+            onTimeUpdate?(clampedTime)
             return
-        }
-        if frameCount > 0 {
-            scheduleFileSegment(file, from: targetFrame, frames: frameCount, generation: gen)
         }
 
         if status == .playing {
             if frameCount > 0 {
-                playerNode.play()
+                startFileNode(file: file, from: targetFrame, frames: frameCount, generation: gen)
                 fade(to: 1.0, duration: AudioEngine.fadeInDuration)
                 startTimer()
             } else {
                 handlePlaybackCompletion()
             }
+        } else if frameCount > 0 {
+            scheduleFileSegment(file, from: targetFrame, frames: frameCount, generation: gen)
         }
 
         onTimeUpdate?(clampedTime)
@@ -1173,7 +1262,7 @@ public class AudioEngine {
         finishedWhilePaused = false
         crossfadeArmed = false
         cutCrossfade()
-        playerNode.stop()
+        MacAmpObjC.stop(playerNode)
 
         if let file = audioFile {
             let targetFrame = rangeStartFrame + AVAudioFramePosition(clampedTime * sampleRate)
@@ -1200,12 +1289,11 @@ public class AudioEngine {
             return
         }
         if status == .playing {
-            isAdvancingTrack = true
+            beginTrackTransition()
             stopInternal(fade: false)
             onPlaybackFinished?()
             DispatchQueue.main.async { [weak self] in
-                self?.isAdvancingTrack = false
-                self?.updatePlaybackActivity()
+                self?.endTrackTransition()
             }
         } else if status == .paused {
             // Track reached its end during the pause fade-out; advance when the user resumes
@@ -1217,11 +1305,11 @@ public class AudioEngine {
         playbackTimer?.invalidate()
         var lastSampleTime: AVAudioFramePosition?
         var stalledTicks = 0
-        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: AppConstants.Audio.playbackTimerInterval, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             guard self.status == .playing else { return }
             let scheduledEnd = self.sampleRate > 0 ? Double(self.rangeEndFrame - self.rangeStartFrame) / self.sampleRate : self.fileDuration
-            let endThreshold = max(self.fileDuration, scheduledEnd) + 0.35
+            let endThreshold = max(self.fileDuration, scheduledEnd) + AppConstants.Audio.trackEndGraceSeconds
             if let raw = self.rawNodePlaybackTime(), max(self.fileDuration, scheduledEnd) > 0, raw >= endThreshold {
                 self.handlePlaybackCompletion()
                 return
@@ -1230,7 +1318,7 @@ public class AudioEngine {
             let sampleTime: AVAudioFramePosition? = (renderTime?.isSampleTimeValid == true) ? renderTime?.sampleTime : nil
             if sampleTime == nil || sampleTime == lastSampleTime {
                 stalledTicks += 1
-                if stalledTicks >= 15 {
+                if stalledTicks >= AppConstants.Audio.stalledTickLimit {
                     stalledTicks = 0
                     self.recoverStalledOutput()
                     return
@@ -1245,24 +1333,23 @@ public class AudioEngine {
             self.onTimeUpdate?(cur)
             self.startCrossfadeIfDue(at: cur)
         }
-        timer.tolerance = 0.02 // lets macOS coalesce wakeups
+        timer.tolerance = AppConstants.Audio.playbackTimerTolerance // lets macOS coalesce wakeups
         RunLoop.main.add(timer, forMode: .common)
         playbackTimer = timer
     }
 
     private func recoverStalledOutput() {
         let savedTime = currentTrackTime
-        if stalledRecoveryAttempts >= 2 {
+        stalledRecoveryAttempts += 1
+        // A dead output can hang every attempt in AVAudioPlayerNode.play() and keeps the Mac awake: pause until a wake or output change
+        guard stalledRecoveryAttempts <= AppConstants.Audio.fastRecoveryAttemptLimit else {
             stalledRecoveryAttempts = 0
             preparePaused(at: savedTime)
-            onStreamEvent?("Audio output unavailable")
+            pausedByStalledOutput = true
+            onStreamEvent?(AppConstants.Audio.outputUnavailableMessage)
             return
         }
-        stalledRecoveryAttempts += 1
-        if engine.isRunning { engine.stop() }
-        let devices = AudioDeviceManager.shared
-        devices.refreshDevices()
-        _ = applyOutputDevice(devices.activeOutputDeviceID(), force: true)
+        guard forceRestartEngine() else { return }
         restoreAfterOutputChange(at: savedTime)
     }
 
@@ -1304,7 +1391,7 @@ public class AudioEngine {
         crossfadeTimer?.invalidate()
         crossfadeTimer = nil
         if isCrossfading {
-            spareNode.stop()
+            MacAmpObjC.stop(spareNode)
             isCrossfading = false
         }
         spareNode.volume = 1

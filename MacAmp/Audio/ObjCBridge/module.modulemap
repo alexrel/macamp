@@ -1,0 +1,5 @@
+module MacAmpObjC {
+    requires objc
+    header "ObjCExceptionCatcher.h"
+    export *
+}

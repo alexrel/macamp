@@ -259,6 +259,7 @@ run_tests() {
            -I "$DERIVED_DATA/Build/Products/Debug/" \
            -I MacAmp/Vendor/GOOM \
            -I MacAmp/Vendor/AVS \
+           -I MacAmp/Audio/ObjCBridge \
            -framework Cocoa -framework AVFoundation -framework AppKit -framework WebKit -framework Carbon \
            -framework OpenGL -framework SceneKit \
            -L "$PWD/$BUILD_DIR/projectm/install/lib" -lprojectM-4 \

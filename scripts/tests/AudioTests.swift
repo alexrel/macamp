@@ -304,6 +304,104 @@ func audioTests() {
         NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.screensDidWakeNotification, object: nil)
         assertTrue(spinRunLoop(until: { audio.isEngineRunning }, timeout: 1), "Display wake restarts the engine")
         assertTrue(spinRunLoop(until: { finishes == 1 }, timeout: 3), "Recovered track finishes naturally")
+
+        // Output that can't restart: after the fast retries playback pauses (no endless main-thread hangs,
+        // no held sleep assertion) and the next display wake plays on
+        let startSelector = NSSelectorFromString("startAndReturnError:")
+        if let startMethod = class_getInstanceMethod(AVAudioEngine.self, startSelector) {
+            let deadURL = try makeTestWAV(named: "dead-output.wav", seconds: 30)
+            _ = try loadSync(audio, deadURL)
+            audio.play()
+            assertTrue(spinRunLoop(until: { audio.currentTime > 0.3 }, timeout: 2), "Playback has started before the output dies")
+            let origStart = method_getImplementation(startMethod)
+            let failStart: @convention(block) (AnyObject, OpaquePointer?) -> Bool = { _, _ in false }
+            let failIMP = imp_implementationWithBlock(failStart)
+            method_setImplementation(startMethod, failIMP)
+            audio.engine.stop()
+            let limit = Double(AppConstants.Audio.fastRecoveryAttemptLimit + 1)
+            let gaveUp = spinRunLoop(until: { audio.status == .paused },
+                                     timeout: limit * Double(AppConstants.Audio.stalledTickLimit) * AppConstants.Audio.playbackTimerInterval + 2)
+            method_setImplementation(startMethod, origStart)
+            imp_removeBlock(failIMP)
+            assertTrue(gaveUp, "Recovery pauses after the fast retries instead of retrying forever")
+            assertTrue(audio.pausedByStalledOutput, "The pause is remembered as caused by the dead output")
+            assertTrue(!audio.isHoldingPlaybackActivity, "The paused player lets the Mac sleep")
+            NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+            assertTrue(spinRunLoop(until: { audio.status == .playing && audio.isEngineRunning }, timeout: 1), "Wake plays on")
+            assertTrue(!audio.pausedByStalledOutput, "Resumed playback clears the dead-output pause")
+            audio.stop()
+        }
+
+        // An Objective-C NSException inside a @MainActor Task must be caught without corrupting MainActor TLS
+        func checkMainActorIsolation() -> Bool { MainActor.assumeIsolated { true } }
+        var isolatedChecked = false
+        Task { @MainActor in
+            let ok = audio.testRaiseCaughtObjCException("player did not see an IO cycle.")
+            assertTrue(!ok, "Objective-C @try/@catch reports the caught NSException")
+            isolatedChecked = checkMainActorIsolation()
+        }
+        assertTrue(spinRunLoop(until: { isolatedChecked }, timeout: 1), "MainActor.assumeIsolated survives a caught NSException inside Task")
+
+        // Real AVFAudio 'player did not see an IO cycle.' NSException on play() inside a @MainActor Task:
+        // caught in Objective-C, restarts the wedged engine, ignores the flushed segment, and plays on
+        let awaitCycleSelector = NSSelectorFromString("awaitIOCycle:")
+        if let clockClass = NSClassFromString("AVAudioClock"),
+           let method = class_getInstanceMethod(clockClass, awaitCycleSelector) {
+            let origIMP = method_getImplementation(method)
+            var failOnce = true
+            let hookBlock: @convention(block) (AnyObject, UnsafeMutablePointer<UInt32>?) -> AnyObject? = { obj, outLatency in
+                if failOnce {
+                    failOnce = false
+                    return nil
+                }
+                typealias OrigFn = @convention(c) (AnyObject, Selector, UnsafeMutablePointer<UInt32>?) -> AnyObject?
+                return unsafeBitCast(origIMP, to: OrigFn.self)(obj, awaitCycleSelector, outLatency)
+            }
+            let hookIMP = imp_implementationWithBlock(hookBlock)
+            method_setImplementation(method, hookIMP)
+            defer {
+                method_setImplementation(method, origIMP)
+                imp_removeBlock(hookIMP)
+            }
+
+            var wedgedFinishes = 0
+            audio.onPlaybackFinished = { wedgedFinishes += 1 }
+            let wedgedURL = try makeTestWAV(named: "wedged-io.wav", seconds: 2.0)
+            _ = try loadSync(audio, wedgedURL)
+            var survivedIsolation = false
+            Task { @MainActor in
+                audio.play()
+                survivedIsolation = checkMainActorIsolation()
+            }
+            assertTrue(spinRunLoop(until: { survivedIsolation && audio.currentTime > 0.25 }, timeout: 2.5),
+                       "Wedged IO unit NSException caught, engine restarted, and playback advances")
+            assertEqual(wedgedFinishes, 0, "Flushed segment on engine restart does not fire a spurious track end")
+            audio.stop()
+        }
+
+        // Track transition holds both playbackActivity and engine.isRunning continuously between tracks
+        let nextURL = try makeTestWAV(named: "stall-next.wav", seconds: 1.0)
+        var stayedRunning = true
+        var activityStayedHeld = true
+        audio.onPlaybackFinished = {
+            audio.beginTrackTransition()
+            stayedRunning = stayedRunning && audio.isEngineRunning
+            activityStayedHeld = activityStayedHeld && audio.isHoldingPlaybackActivity
+            Task { @MainActor in
+                defer { audio.endTrackTransition() }
+                _ = try? await audio.load(url: nextURL)
+                stayedRunning = stayedRunning && audio.isEngineRunning
+                activityStayedHeld = activityStayedHeld && audio.isHoldingPlaybackActivity
+                audio.play()
+            }
+        }
+        let shortFirst = try makeTestWAV(named: "stall-first.wav", seconds: 0.4)
+        _ = try loadSync(audio, shortFirst)
+        audio.play()
+        assertTrue(spinRunLoop(until: { audio.currentMetadata?.url == nextURL && audio.status == .playing }, timeout: 3),
+                   "Advances to the next track")
+        assertTrue(stayedRunning, "AVAudioEngine stays running continuously across track transition")
+        assertTrue(activityStayedHeld, "ProcessInfo playback activity assertion is never dropped between tracks")
     }
 
     // 16. Fade-out / fade-in (§4)

@@ -347,7 +347,19 @@ public enum AppConstants {
         public static let volumeStep: Double = 4.0 / 255
         /// Below this volume the visualizer no longer scales the signal back up (at zero there is nothing to scale)
         public static let visualizerVolumeFloor: Float = 0.001
+        /// Silent analysis windows (~2 s) delivered so spectrum bars/peaks finish falling before main-thread wakeups pause
+        public static let silentVisualizerWindowLimit: Int = 90
         public static let defaultBalance: Double = 0.0 // -1.0 (Left) ... 0.0 (Center) ... +1.0 (Right)
+        public static let playbackActivityReason = "MacAmp playback"
+        public static let outputUnavailableMessage = "Audio output unavailable"
+        public static let playbackTimerInterval: TimeInterval = 0.1
+        public static let playbackTimerTolerance: TimeInterval = 0.02
+        /// Fallback margin past scheduled duration in case Core Audio drops the segment completion callback
+        public static let trackEndGraceSeconds: TimeInterval = 0.35
+        /// Consecutive 0.1 s ticks without render-clock progress (1.5 s) before restarting a stalled output unit
+        public static let stalledTickLimit: Int = 15
+        /// Stalled-output restarts before pausing until the next wake or output change (each can block the main thread for seconds)
+        public static let fastRecoveryAttemptLimit: Int = 3
         
         /// Everything MacAmp plays: its own formats plus those of installed plug-ins (in_ffmpeg: MKV, WMA, APE...)
         public static var supportedExtensions: Set<String> { builtInExtensions.union(PluginManager.extensions) }

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA6CEB4C05DBFB5A7397E866 /* ObjCExceptionCatcher.m in Sources */ = {isa = PBXBuildFile; fileRef = AA6886CEEE22F05C6A87875A /* ObjCExceptionCatcher.m */; settings = {COMPILER_FLAGS = "-fobjc-arc-exceptions"; }; };
 		B5AB9B10CB55F59D4EF3548A /* Plugins.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD621A59E72B867B0B60EE3B /* Plugins.swift */; };
 		B2376188569563E98DD4553D /* VideoTracks.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF61533853BFB65F3F708AFB /* VideoTracks.swift */; };
 		5759A2D28D830FC80ADBC870 /* PlayerCoordinator+Media.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E4C8D11110792F911B5870 /* PlayerCoordinator+Media.swift */; };
@@ -200,6 +201,7 @@
 		AB2CBA81A5E99B6E7BCA0029 /* MIDIRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MIDIRenderer.swift"; sourceTree = "<group>"; };
 		ABF846DE5D12CDC2CD418AB6 /* DiskWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DiskWriter.swift"; sourceTree = "<group>"; };
 		AA6886CEEE22F05C6A878759 /* AudioEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioEngine.swift"; sourceTree = "<group>"; };
+		AA6886CEEE22F05C6A87875A /* ObjCExceptionCatcher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "ObjCExceptionCatcher.m"; sourceTree = "<group>"; };
 		AADF92433DF4605233A653D6 /* AudioMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AudioMetadataService.swift"; sourceTree = "<group>"; };
 		AA05E180143679538AA8E2C1 /* EqualizerPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EqualizerPresets.swift"; sourceTree = "<group>"; };
 		AA962E83A0FAE25570805F4F /* FFTAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FFTAnalyzer.swift"; sourceTree = "<group>"; };
@@ -405,6 +407,7 @@
 				D3E642F5EEE3E4B391510A2D /* AudioCD.swift */,
 				AA0D4B086012575E24AB9073 /* AudioDeviceManager.swift */,
 				AA6886CEEE22F05C6A878759 /* AudioEngine.swift */,
+				AA6886CEEE22F05C6A87875A /* ObjCExceptionCatcher.m */,
 				ABF846DE5D12CDC2CD418AB6 /* DiskWriter.swift */,
 				AB2CBA81A5E99B6E7BCA0029 /* MIDIRenderer.swift */,
 				AADF92433DF4605233A653D6 /* AudioMetadataService.swift */,
@@ -816,6 +819,7 @@
 				AAE0CA665F5ECB5A40A155FB /* AppState.swift in Sources */,
 				AA23E98EB7712053029F4B2D /* AudioDeviceManager.swift in Sources */,
 				AA6CEB4C05DBFB5A7397E865 /* AudioEngine.swift in Sources */,
+				AA6CEB4C05DBFB5A7397E866 /* ObjCExceptionCatcher.m in Sources */,
 				AA3AF846DE5D12CDC2CD418A /* DiskWriter.swift in Sources */,
 				AA962CBA81A5E99B6E7BCA00 /* MIDIRenderer.swift in Sources */,
 				AA00DEAB8724A25242A42B3C /* AudioMetadataService.swift in Sources */,
@@ -988,7 +992,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = alexrel.MacAmp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = ("$(SRCROOT)/MacAmp/Vendor/projectM", "$(SRCROOT)/MacAmp/Vendor/GOOM", "$(SRCROOT)/MacAmp/Vendor/AVS");
+				SWIFT_INCLUDE_PATHS = ("$(SRCROOT)/MacAmp/Vendor/projectM", "$(SRCROOT)/MacAmp/Vendor/GOOM", "$(SRCROOT)/MacAmp/Vendor/AVS", "$(SRCROOT)/MacAmp/Audio/ObjCBridge");
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -1024,7 +1028,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = alexrel.MacAmp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_INCLUDE_PATHS = ("$(SRCROOT)/MacAmp/Vendor/projectM", "$(SRCROOT)/MacAmp/Vendor/GOOM", "$(SRCROOT)/MacAmp/Vendor/AVS");
+				SWIFT_INCLUDE_PATHS = ("$(SRCROOT)/MacAmp/Vendor/projectM", "$(SRCROOT)/MacAmp/Vendor/GOOM", "$(SRCROOT)/MacAmp/Vendor/AVS", "$(SRCROOT)/MacAmp/Audio/ObjCBridge");
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
