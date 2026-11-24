@@ -42,6 +42,10 @@ with ID3v1 and ID3v2 side by side, the Media Library and the About box with the 
 
 ## What's new
 
+### 0.12.2
+
+- **Playback:** the next track starts when the previous one ends while the display is off, and the player no longer stops responding or crashes afterwards; if the audio output stays unavailable, MacAmp pauses and plays on once the Mac or the display wakes.
+
 ### 0.12.1
 
 - **Playback:** keeps playing across display sleep, wake and audio output device changes, and recovers if Core Audio drops a segment callback while the screen is off.
